@@ -44,5 +44,7 @@ class Action:
     """``BEGIN_ROUND`` 时必填：长度 136 的标准牌山（须与 ``build_deck`` 多重集合一致）。"""
     tile: Tile | None = None
     """``DISCARD`` 时必填：要打出的牌。"""
+    declare_riichi: bool = False
+    """``DISCARD`` 时可选：真表示该打为立直宣言（须门清听牌且够支付立直棒）。"""
     meld: Meld | None = None
     """鸣牌/暗杠/加杠时必填；大明杠等须 ``called_tile`` 与所鸣舍牌一致。"""

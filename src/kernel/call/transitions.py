@@ -50,6 +50,9 @@ def _replace_board(board: BoardState, **kwargs: object) -> BoardState:
         ),
         rinshan_draw_index=kwargs.get("rinshan_draw_index", board.rinshan_draw_index),
         call_state=kwargs.get("call_state", board.call_state),
+        riichi=kwargs.get("riichi", board.riichi),
+        ippatsu_eligible=kwargs.get("ippatsu_eligible", board.ippatsu_eligible),
+        double_riichi=kwargs.get("double_riichi", board.double_riichi),
     )
 
 
@@ -249,20 +252,17 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
         new_melds = list(board.melds)
         new_melds[seat] = board.melds[seat] + (m2,)
         new_river = _remove_claimed_river(board)
-        return BoardState(
+        return _replace_board(
+            board,
             hands=tuple(new_concealed if s == seat else board.hands[s] for s in range(4)),
-            live_wall=board.live_wall,
-            live_draw_index=board.live_draw_index,
-            dead_wall=board.dead_wall,
-            revealed_indicators=board.revealed_indicators,
+            melds=tuple(new_melds),
+            river=new_river,
             current_seat=seat,
             turn_phase=TurnPhase.MUST_DISCARD,
-            river=new_river,
-            melds=tuple(new_melds),
             last_draw_tile=None,
             last_draw_was_rinshan=False,
-            rinshan_draw_index=board.rinshan_draw_index,
             call_state=None,
+            ippatsu_eligible=frozenset(),
         )
 
     if meld.kind == MeldKind.PON:
@@ -282,20 +282,17 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
         new_melds = list(board.melds)
         new_melds[seat] = board.melds[seat] + (m2,)
         new_river = _remove_claimed_river(board)
-        return BoardState(
+        return _replace_board(
+            board,
             hands=tuple(new_concealed if s == seat else board.hands[s] for s in range(4)),
-            live_wall=board.live_wall,
-            live_draw_index=board.live_draw_index,
-            dead_wall=board.dead_wall,
-            revealed_indicators=board.revealed_indicators,
+            melds=tuple(new_melds),
+            river=new_river,
             current_seat=seat,
             turn_phase=TurnPhase.MUST_DISCARD,
-            river=new_river,
-            melds=tuple(new_melds),
             last_draw_tile=None,
             last_draw_was_rinshan=False,
-            rinshan_draw_index=board.rinshan_draw_index,
             call_state=None,
+            ippatsu_eligible=frozenset(),
         )
 
     if meld.kind == MeldKind.DAIMINKAN:
@@ -315,22 +312,19 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
         new_melds = list(board.melds)
         new_melds[seat] = board.melds[seat] + (m2,)
         new_river = _remove_claimed_river(board)
-        intermediate = BoardState(
+        intermediate = _replace_board(
+            board,
             hands=tuple(new_concealed if s == seat else board.hands[s] for s in range(4)),
-            live_wall=board.live_wall,
-            live_draw_index=board.live_draw_index,
-            dead_wall=board.dead_wall,
-            revealed_indicators=board.revealed_indicators,
+            melds=tuple(new_melds),
+            river=new_river,
             current_seat=seat,
             turn_phase=TurnPhase.MUST_DISCARD,
-            river=new_river,
-            melds=tuple(new_melds),
             last_draw_tile=None,
             last_draw_was_rinshan=False,
-            rinshan_draw_index=board.rinshan_draw_index,
             call_state=None,
         )
-        return apply_after_kan_rinshan_draw(intermediate, seat)
+        after_kan = apply_after_kan_rinshan_draw(intermediate, seat)
+        return _replace_board(after_kan, ippatsu_eligible=frozenset())
 
     msg = f"unsupported meld kind for open meld: {meld.kind!r}"
     raise ValueError(msg)
@@ -361,4 +355,7 @@ def board_after_ron_winners(board: BoardState) -> BoardState:
         last_draw_was_rinshan=False,
         rinshan_draw_index=board.rinshan_draw_index,
         call_state=None,
+        riichi=board.riichi,
+        ippatsu_eligible=frozenset(),
+        double_riichi=board.double_riichi,
     )

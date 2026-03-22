@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from kernel.call import apply_open_meld, apply_pass_call, apply_ron, board_after_ron_winners
 from kernel.deal import assert_wall_is_standard_deck, build_board_after_split
 from kernel.engine.actions import Action, ActionKind
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState
+from kernel.hand.multiset import remove_tile
 from kernel.kan import apply_ankan, apply_shankuminkan
 from kernel.play import apply_discard, apply_draw
 from kernel.play.model import TurnPhase
+from kernel.riichi.tenpai import is_tenpai_seven_pairs
+from kernel.table.model import RIICHI_STICK_POINTS
 from kernel.wall import split_wall
 
 
@@ -193,14 +196,46 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
             if action.tile is None:
                 msg = "DISCARD requires tile"
                 raise IllegalActionError(msg)
+            seat = action.seat
+            if action.declare_riichi:
+                if board.riichi[seat]:
+                    msg = "already riichi"
+                    raise IllegalActionError(msg)
+                if board.melds[seat]:
+                    msg = "riichi requires menzen"
+                    raise IllegalActionError(msg)
+                if state.table.scores[seat] < RIICHI_STICK_POINTS:
+                    msg = "insufficient points for riichi stick"
+                    raise IllegalActionError(msg)
+                try:
+                    hand_after = remove_tile(board.hands[seat], action.tile)
+                except ValueError as e:
+                    raise IllegalActionError(str(e)) from e
+                if not is_tenpai_seven_pairs(hand_after, ()):
+                    msg = "not tenpai (seven-pairs subset)"
+                    raise IllegalActionError(msg)
             try:
-                new_board = apply_discard(board, action.seat, action.tile)
+                new_board = apply_discard(
+                    board,
+                    seat,
+                    action.tile,
+                    declare_riichi=action.declare_riichi,
+                )
             except ValueError as e:
                 raise IllegalActionError(str(e)) from e
+            new_table = state.table
+            if action.declare_riichi:
+                scores = list(state.table.scores)
+                scores[seat] -= RIICHI_STICK_POINTS
+                new_table = replace(
+                    state.table,
+                    scores=tuple(scores),
+                    kyoutaku=state.table.kyoutaku + RIICHI_STICK_POINTS,
+                )
             return ApplyOutcome(
                 new_state=GameState(
                     phase=phase,
-                    table=state.table,
+                    table=new_table,
                     board=new_board,
                     ron_winners=None,
                 ),

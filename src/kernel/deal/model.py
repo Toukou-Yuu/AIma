@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from typing import FrozenSet
 
 from kernel.hand.melds import Meld, meld_tile_count, validate_meld_shape
 from kernel.hand.validate import validate_tile_conservation
@@ -64,6 +65,12 @@ class BoardState:
     """已从 ``dead_wall.rinshan`` 顺序摸走的张数，下一张为 ``rinshan[rinshan_draw_index]``。"""
     call_state: CallResolution | None = None
     """非空当且仅当 ``turn_phase == CALL_RESPONSE``。"""
+    riichi: tuple[bool, bool, bool, bool] = (False, False, False, False)
+    """各席是否已宣言立直（不可逆）。"""
+    ippatsu_eligible: FrozenSet[int] = frozenset()
+    """尚处于一发机会内的立直席（鸣牌或荣和结算后清空）；供后续点数模块消费。"""
+    double_riichi: FrozenSet[int] = frozenset()
+    """双立直席（本局该席第一打即立直）；须同时为已立直席。"""
 
     def __post_init__(self) -> None:
         validate_board_state(self)
@@ -110,6 +117,21 @@ def validate_board_state(board: BoardState) -> None:
     if (board.turn_phase == TurnPhase.CALL_RESPONSE) != (board.call_state is not None):
         msg = "CALL_RESPONSE phase requires non-None call_state and vice versa"
         raise ValueError(msg)
+
+    if len(board.riichi) != 4:
+        msg = "riichi must be a 4-tuple"
+        raise ValueError(msg)
+    for s in board.ippatsu_eligible:
+        if not 0 <= s <= 3:
+            msg = "ippatsu_eligible seats must be 0..3"
+            raise ValueError(msg)
+    for s in board.double_riichi:
+        if not 0 <= s <= 3:
+            msg = "double_riichi seats must be 0..3"
+            raise ValueError(msg)
+        if not board.riichi[s]:
+            msg = "double_riichi seat must be riichi"
+            raise ValueError(msg)
 
     cur = board.current_seat
     if board.turn_phase == TurnPhase.NEED_DRAW:

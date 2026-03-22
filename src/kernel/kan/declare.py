@@ -51,6 +51,9 @@ def apply_ankan(board: BoardState, seat: int, meld: Meld) -> BoardState:
         last_draw_was_rinshan=False,
         rinshan_draw_index=board.rinshan_draw_index,
         call_state=None,
+        riichi=board.riichi,
+        ippatsu_eligible=board.ippatsu_eligible,
+        double_riichi=board.double_riichi,
     )
     return apply_after_kan_rinshan_draw(intermediate, seat)
 
@@ -74,6 +77,9 @@ def apply_shankuminkan(board: BoardState, seat: int, meld: Meld) -> BoardState:
         raise ValueError(msg)
     if board.call_state is not None:
         msg = "SHANKUMINKAN not allowed during CALL_RESPONSE"
+        raise ValueError(msg)
+    if board.riichi[seat]:
+        msg = "SHANKUMINKAN not allowed after riichi (only ANKAN)"
         raise ValueError(msg)
     k_new = triplet_key(meld.tiles[0])
     idx = -1
@@ -112,5 +118,8 @@ def apply_shankuminkan(board: BoardState, seat: int, meld: Meld) -> BoardState:
         last_draw_was_rinshan=False,
         rinshan_draw_index=board.rinshan_draw_index,
         call_state=None,
+        riichi=board.riichi,
+        ippatsu_eligible=board.ippatsu_eligible,
+        double_riichi=board.double_riichi,
     )
     return apply_after_kan_rinshan_draw(intermediate, seat)

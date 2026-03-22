@@ -22,11 +22,12 @@ class TurnPhase(Enum):
 
 @dataclass(frozen=True, slots=True)
 class RiverEntry:
-    """河牌一条记录。``tsumogiri`` 为真表示摸打（刚摸进的同一张即打出）。"""
+    """河牌一条记录。``tsumogiri`` 为真表示摸打；``riichi`` 为真表示该打同时宣告立直。"""
 
     seat: int
     tile: Tile
     tsumogiri: bool = False
+    riichi: bool = False
 
 
 CallStage = Literal["ron", "pon_kan", "chi"]

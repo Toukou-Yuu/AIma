@@ -42,10 +42,19 @@ def apply_draw(board: BoardState, seat: int) -> BoardState:
         last_draw_was_rinshan=False,
         rinshan_draw_index=board.rinshan_draw_index,
         call_state=None,
+        riichi=board.riichi,
+        ippatsu_eligible=board.ippatsu_eligible,
+        double_riichi=board.double_riichi,
     )
 
 
-def apply_discard(board: BoardState, seat: int, tile: Tile) -> BoardState:
+def apply_discard(
+    board: BoardState,
+    seat: int,
+    tile: Tile,
+    *,
+    declare_riichi: bool = False,
+) -> BoardState:
     """打牌：``MUST_DISCARD``；写入河，下家为下一摸席并进入 ``CALL_RESPONSE``。"""
     from kernel.deal.model import BoardState
 
@@ -55,13 +64,30 @@ def apply_discard(board: BoardState, seat: int, tile: Tile) -> BoardState:
     if seat != board.current_seat:
         msg = "DISCARD seat must equal current_seat"
         raise ValueError(msg)
+    if declare_riichi and board.riichi[seat]:
+        msg = "cannot declare riichi when already riichi"
+        raise ValueError(msg)
+    if board.riichi[seat]:
+        if board.last_draw_tile is None or tile != board.last_draw_tile:
+            msg = "riichi player must discard the tile just drawn (tsumogiri)"
+            raise ValueError(msg)
     tsumogiri = board.last_draw_tile is not None and tile == board.last_draw_tile
     new_hands = list(board.hands)
     new_hands[seat] = remove_tile(new_hands[seat], tile)
-    entry = RiverEntry(seat=seat, tile=tile, tsumogiri=tsumogiri)
+    entry = RiverEntry(seat=seat, tile=tile, tsumogiri=tsumogiri, riichi=declare_riichi)
     new_river = board.river + (entry,)
     river_index = len(new_river) - 1
     next_seat = (seat + 1) % 4
+    new_riichi = board.riichi
+    new_ippatsu = board.ippatsu_eligible
+    new_double = board.double_riichi
+    if declare_riichi:
+        nr = list(board.riichi)
+        nr[seat] = True
+        new_riichi = tuple(nr)
+        new_ippatsu = frozenset(board.ippatsu_eligible | {seat})
+        if not any(e.seat == seat for e in board.river):
+            new_double = frozenset(board.double_riichi | {seat})
     return BoardState(
         hands=tuple(new_hands),
         live_wall=board.live_wall,
@@ -76,4 +102,7 @@ def apply_discard(board: BoardState, seat: int, tile: Tile) -> BoardState:
         last_draw_was_rinshan=False,
         rinshan_draw_index=board.rinshan_draw_index,
         call_state=CallResolution.initial_after_discard(seat, river_index, tile),
+        riichi=new_riichi,
+        ippatsu_eligible=new_ippatsu,
+        double_riichi=new_double,
     )
