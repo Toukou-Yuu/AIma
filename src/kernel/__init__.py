@@ -15,6 +15,17 @@ from kernel.hand import (
     validate_meld_shape,
     validate_tile_conservation,
 )
+from kernel.table import (
+    DEFAULT_STARTING_POINTS,
+    RIICHI_STICK_POINTS,
+    MatchPreset,
+    PrevailingWind,
+    RoundNumber,
+    TableSnapshot,
+    initial_table_snapshot,
+    seat_wind_rank,
+    validate_table_snapshot,
+)
 from kernel.tiles import Suit, Tile, build_deck, shuffle_deck
 from kernel.wall import (
     DEAD_WALL_SIZE,
@@ -28,14 +39,20 @@ from kernel.wall import (
 )
 
 __all__ = [
+    "DEFAULT_STARTING_POINTS",
     "DEAD_WALL_SIZE",
     "DeadWall",
     "INDICATOR_COUNT",
     "LIVE_WALL_SIZE",
+    "MatchPreset",
     "Meld",
     "MeldKind",
+    "PrevailingWind",
+    "RIICHI_STICK_POINTS",
     "RINSHAN_COUNT",
+    "RoundNumber",
     "Suit",
+    "TableSnapshot",
     "Tile",
     "WALL_SIZE",
     "WallSplit",
@@ -43,14 +60,17 @@ __all__ = [
     "build_deck",
     "concealed_from_iterable",
     "concealed_total",
+    "initial_table_snapshot",
     "meld_tile_count",
     "remove_tile",
     "remove_tiles",
+    "seat_wind_rank",
     "shuffle_deck",
     "split_wall",
     "tiles_from_concealed_and_melds",
     "triplet_key",
     "validate_hand_package",
     "validate_meld_shape",
+    "validate_table_snapshot",
     "validate_tile_conservation",
 ]
