@@ -1,0 +1,6 @@
+# Conda 环境：AIma
+# 创建：conda env create -f environment.yml
+# 激活：conda activate aima
+name: aima
+channels:
+  - conda-forge
