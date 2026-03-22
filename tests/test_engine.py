@@ -20,6 +20,7 @@ from kernel import (
     initial_table_snapshot,
     shuffle_deck,
 )
+from tests.call_helpers import clear_call_window_state
 
 
 def _wall136(*, seed: int = 0):
@@ -119,6 +120,7 @@ def test_apply_discard_draw_cycle_via_engine() -> None:
         g,
         Action(ActionKind.DISCARD, seat=ds, tile=t0),
     ).new_state
+    g1 = clear_call_window_state(g1)
     b1 = g1.board
     assert b1 is not None
     assert b1.turn_phase == TurnPhase.NEED_DRAW
@@ -136,6 +138,7 @@ def test_apply_draw_omitted_seat_uses_current() -> None:
     assert b is not None
     d0 = next(iter(b.hands[b.current_seat].elements()))
     g1 = apply(g, Action(ActionKind.DISCARD, seat=b.current_seat, tile=d0)).new_state
+    g1 = clear_call_window_state(g1)
     g2 = apply(g1, Action(ActionKind.DRAW)).new_state
     assert g2.board is not None
     assert g2.board.turn_phase == TurnPhase.MUST_DISCARD
@@ -162,6 +165,7 @@ def test_apply_draw_wrong_seat_raises() -> None:
     assert b is not None
     d0 = next(iter(b.hands[b.current_seat].elements()))
     g1 = apply(g, Action(ActionKind.DISCARD, seat=b.current_seat, tile=d0)).new_state
+    g1 = clear_call_window_state(g1)
     wrong = (g1.board.current_seat + 1) % 4 if g1.board else 0
     with pytest.raises(IllegalActionError, match="current_seat"):
         apply(g1, Action(ActionKind.DRAW, seat=wrong))

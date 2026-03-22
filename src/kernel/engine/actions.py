@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from kernel.hand.melds import Meld
 from kernel.tiles.model import Tile
 
 
@@ -19,6 +20,12 @@ class ActionKind(Enum):
     """自摸：须在 ``IN_ROUND`` 且当前为 ``NEED_DRAW``；``seat`` 可省略（视为 ``current_seat``）。"""
     DISCARD = "discard"
     """打牌：须在 ``MUST_DISCARD``；须指定 ``seat``（须为 ``current_seat``）与 ``tile``。"""
+    PASS_CALL = "pass_call"
+    """放弃当前鸣牌/荣和机会；须在 ``CALL_RESPONSE``，``seat`` 须为当前阶段有权表态者。"""
+    RON = "ron"
+    """荣和；须在应答窗口的荣和阶段且形成立（当前默认可判七对子）。"""
+    OPEN_MELD = "open_meld"
+    """吃 / 碰 / 大明杠；须配合 ``meld`` 字段。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,3 +40,5 @@ class Action:
     """``BEGIN_ROUND`` 时必填：长度 136 的标准牌山（须与 ``build_deck`` 多重集合一致）。"""
     tile: Tile | None = None
     """``DISCARD`` 时必填：要打出的牌。"""
+    meld: Meld | None = None
+    """``OPEN_MELD`` 时必填：副露内容（须含 ``called_tile`` 与舍牌一致）。"""

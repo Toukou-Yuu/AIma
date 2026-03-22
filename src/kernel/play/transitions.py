@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from kernel.hand.multiset import add_tile, remove_tile
-from kernel.play.model import RiverEntry, TurnPhase
+from kernel.play.model import CallResolution, RiverEntry, TurnPhase
 from kernel.tiles.model import Tile
 
 if TYPE_CHECKING:
@@ -37,12 +37,14 @@ def apply_draw(board: BoardState, seat: int) -> BoardState:
         current_seat=seat,
         turn_phase=TurnPhase.MUST_DISCARD,
         river=board.river,
+        melds=board.melds,
         last_draw_tile=tile,
+        call_state=None,
     )
 
 
 def apply_discard(board: BoardState, seat: int, tile: Tile) -> BoardState:
-    """打牌：``MUST_DISCARD``；写入河，轮转下家并进入 ``NEED_DRAW``。"""
+    """打牌：``MUST_DISCARD``；写入河，下家为下一摸席并进入 ``CALL_RESPONSE``。"""
     from kernel.deal.model import BoardState
 
     if board.turn_phase != TurnPhase.MUST_DISCARD:
@@ -55,6 +57,8 @@ def apply_discard(board: BoardState, seat: int, tile: Tile) -> BoardState:
     new_hands = list(board.hands)
     new_hands[seat] = remove_tile(new_hands[seat], tile)
     entry = RiverEntry(seat=seat, tile=tile, tsumogiri=tsumogiri)
+    new_river = board.river + (entry,)
+    river_index = len(new_river) - 1
     next_seat = (seat + 1) % 4
     return BoardState(
         hands=tuple(new_hands),
@@ -63,7 +67,9 @@ def apply_discard(board: BoardState, seat: int, tile: Tile) -> BoardState:
         dead_wall=board.dead_wall,
         revealed_indicators=board.revealed_indicators,
         current_seat=next_seat,
-        turn_phase=TurnPhase.NEED_DRAW,
-        river=board.river + (entry,),
+        turn_phase=TurnPhase.CALL_RESPONSE,
+        river=new_river,
+        melds=board.melds,
         last_draw_tile=None,
+        call_state=CallResolution.initial_after_discard(seat, river_index, tile),
     )

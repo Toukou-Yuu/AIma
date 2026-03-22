@@ -20,6 +20,8 @@ class GameState:
     phase: GamePhase
     table: TableSnapshot
     board: BoardState | None = None
+    ron_winners: frozenset[int] | None = None
+    """``HAND_OVER`` 且为荣和结束时，和了座位集合（一炮多响）；否则 ``None``。"""
 
 
 def initial_game_state(table: TableSnapshot | None = None) -> GameState:
