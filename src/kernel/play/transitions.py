@@ -39,6 +39,8 @@ def apply_draw(board: BoardState, seat: int) -> BoardState:
         river=board.river,
         melds=board.melds,
         last_draw_tile=tile,
+        last_draw_was_rinshan=False,
+        rinshan_draw_index=board.rinshan_draw_index,
         call_state=None,
     )
 
@@ -71,5 +73,7 @@ def apply_discard(board: BoardState, seat: int, tile: Tile) -> BoardState:
         river=new_river,
         melds=board.melds,
         last_draw_tile=None,
+        last_draw_was_rinshan=False,
+        rinshan_draw_index=board.rinshan_draw_index,
         call_state=CallResolution.initial_after_discard(seat, river_index, tile),
     )

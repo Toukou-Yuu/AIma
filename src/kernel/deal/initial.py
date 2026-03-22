@@ -78,4 +78,6 @@ def build_board_after_split(wall_split: WallSplit, dealer_seat: int) -> BoardSta
         turn_phase=TurnPhase.MUST_DISCARD,
         river=(),
         last_draw_tile=None,
+        last_draw_was_rinshan=False,
+        rinshan_draw_index=0,
     )

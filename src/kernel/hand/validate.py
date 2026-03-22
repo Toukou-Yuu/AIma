@@ -26,11 +26,11 @@ def tiles_from_concealed_and_melds(
 def validate_tile_conservation(
     concealed: Counter[Tile],
     melds: Sequence[Meld],
-    expected_total: Literal[13, 14],
+    expected_total: Literal[13, 14] | int,
 ) -> None:
     """
     校验：门内张数 + 各副露张数之和 == expected_total。
-    常见：未摸牌 13；摸进后未打出 14。
+    常见：未摸牌 13；摸进后未打出 14；岭上待打时当前家 15（见 ``last_draw_was_rinshan``）。
     """
     c = concealed_total(concealed)
     m = sum(meld_tile_count(x) for x in melds)

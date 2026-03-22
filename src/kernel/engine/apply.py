@@ -9,6 +9,7 @@ from kernel.deal import assert_wall_is_standard_deck, build_board_after_split
 from kernel.engine.actions import Action, ActionKind
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState
+from kernel.kan import apply_ankan, apply_shankuminkan
 from kernel.play import apply_discard, apply_draw
 from kernel.play.model import TurnPhase
 from kernel.wall import split_wall
@@ -46,6 +47,7 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
     - ``PRE_DEAL`` + ``BEGIN_ROUND``（附带合法 136 张 ``wall``）→ ``IN_ROUND`` 并写入 ``board``
     - ``IN_ROUND`` + ``NOOP`` → 恒等
     - ``IN_ROUND`` + ``DRAW`` / ``DISCARD`` → 摸打（``kernel.play``）
+    - ``IN_ROUND`` + ``MUST_DISCARD`` + ``ANKAN`` / ``SHANKUMINKAN`` → ``kernel.kan``
     - ``IN_ROUND`` 且 ``board.turn_phase == CALL_RESPONSE``：
       ``PASS_CALL`` / ``RON`` / ``OPEN_MELD``（``kernel.call``）；荣和成立时转 ``HAND_OVER``。
     其余组合抛 ``IllegalActionError``。
@@ -193,6 +195,52 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 raise IllegalActionError(msg)
             try:
                 new_board = apply_discard(board, action.seat, action.tile)
+            except ValueError as e:
+                raise IllegalActionError(str(e)) from e
+            return ApplyOutcome(
+                new_state=GameState(
+                    phase=phase,
+                    table=state.table,
+                    board=new_board,
+                    ron_winners=None,
+                ),
+                events=(),
+            )
+        if kind == ActionKind.ANKAN:
+            if board.turn_phase != TurnPhase.MUST_DISCARD:
+                msg = "ANKAN requires MUST_DISCARD"
+                raise IllegalActionError(msg)
+            if action.seat is None:
+                msg = "ANKAN requires seat"
+                raise IllegalActionError(msg)
+            if action.meld is None:
+                msg = "ANKAN requires meld"
+                raise IllegalActionError(msg)
+            try:
+                new_board = apply_ankan(board, action.seat, action.meld)
+            except ValueError as e:
+                raise IllegalActionError(str(e)) from e
+            return ApplyOutcome(
+                new_state=GameState(
+                    phase=phase,
+                    table=state.table,
+                    board=new_board,
+                    ron_winners=None,
+                ),
+                events=(),
+            )
+        if kind == ActionKind.SHANKUMINKAN:
+            if board.turn_phase != TurnPhase.MUST_DISCARD:
+                msg = "SHANKUMINKAN requires MUST_DISCARD"
+                raise IllegalActionError(msg)
+            if action.seat is None:
+                msg = "SHANKUMINKAN requires seat"
+                raise IllegalActionError(msg)
+            if action.meld is None:
+                msg = "SHANKUMINKAN requires meld"
+                raise IllegalActionError(msg)
+            try:
+                new_board = apply_shankuminkan(board, action.seat, action.meld)
             except ValueError as e:
                 raise IllegalActionError(str(e)) from e
             return ApplyOutcome(

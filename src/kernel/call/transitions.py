@@ -2,15 +2,33 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import TYPE_CHECKING
 
 from kernel.hand.melds import Meld, MeldKind, triplet_key, validate_meld_shape
 from kernel.hand.multiset import remove_tiles
+from kernel.kan.rinshan import apply_after_kan_rinshan_draw
 from kernel.play.model import CallResolution, TurnPhase, kamicha_seat
 from kernel.tiles.model import Tile
 
 if TYPE_CHECKING:
     from kernel.deal.model import BoardState
+
+
+def _hand_subset_for_open_meld(meld: Meld, claimed: Tile, want_from_hand: int) -> list[Tile]:
+    """
+    副露多重集中去掉恰好一张与 ``claimed`` 相等的牌（按 ``Tile`` 值），
+    剩余张数须等于 ``want_from_hand``，并从手牌中移除。
+    """
+    c = Counter(meld.tiles)
+    if c[claimed] < 1:
+        msg = "meld tiles must include claimed_tile"
+        raise ValueError(msg)
+    c[claimed] -= 1
+    if sum(c.values()) != want_from_hand:
+        msg = f"open meld must use {want_from_hand} hand tiles besides claim"
+        raise ValueError(msg)
+    return list(c.elements())
 
 
 def _replace_board(board: BoardState, **kwargs: object) -> BoardState:
@@ -27,6 +45,10 @@ def _replace_board(board: BoardState, **kwargs: object) -> BoardState:
         river=kwargs.get("river", board.river),
         melds=kwargs.get("melds", board.melds),
         last_draw_tile=kwargs.get("last_draw_tile", board.last_draw_tile),
+        last_draw_was_rinshan=kwargs.get(
+            "last_draw_was_rinshan", board.last_draw_was_rinshan
+        ),
+        rinshan_draw_index=kwargs.get("rinshan_draw_index", board.rinshan_draw_index),
         call_state=kwargs.get("call_state", board.call_state),
     )
 
@@ -221,10 +243,7 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
         if seat != kamicha_seat(ds):
             msg = "CHI only by kamicha"
             raise ValueError(msg)
-        from_hand = [t for t in meld.tiles if t != tile]
-        if len(from_hand) != 2:
-            msg = "chi must use exactly two hand tiles besides claim"
-            raise ValueError(msg)
+        from_hand = _hand_subset_for_open_meld(meld, tile, 2)
         new_concealed = remove_tiles(board.hands[seat], from_hand)
         m2 = _strip_called_meld(meld, seat, ds)
         new_melds = list(board.melds)
@@ -241,6 +260,8 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
             river=new_river,
             melds=tuple(new_melds),
             last_draw_tile=None,
+            last_draw_was_rinshan=False,
+            rinshan_draw_index=board.rinshan_draw_index,
             call_state=None,
         )
 
@@ -251,10 +272,7 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
         if cs.pon_kan_order[cs.pon_kan_idx] != seat:
             msg = "PON: not your turn in pon_kan order"
             raise ValueError(msg)
-        from_hand = [t for t in meld.tiles if t != tile]
-        if len(from_hand) != 2:
-            msg = "pon must use exactly two hand tiles besides claim"
-            raise ValueError(msg)
+        from_hand = _hand_subset_for_open_meld(meld, tile, 2)
         k0 = triplet_key(tile)
         if any(triplet_key(t) != k0 for t in from_hand):
             msg = "pon hand tiles must match claimed triplet_key"
@@ -275,6 +293,8 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
             river=new_river,
             melds=tuple(new_melds),
             last_draw_tile=None,
+            last_draw_was_rinshan=False,
+            rinshan_draw_index=board.rinshan_draw_index,
             call_state=None,
         )
 
@@ -285,10 +305,7 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
         if cs.pon_kan_order[cs.pon_kan_idx] != seat:
             msg = "DAIMINKAN: not your turn in pon_kan order"
             raise ValueError(msg)
-        from_hand = [t for t in meld.tiles if t != tile]
-        if len(from_hand) != 3:
-            msg = "daiminkan must use three hand tiles besides claim"
-            raise ValueError(msg)
+        from_hand = _hand_subset_for_open_meld(meld, tile, 3)
         k0 = triplet_key(tile)
         if any(triplet_key(t) != k0 for t in from_hand):
             msg = "daiminkan hand tiles must match claimed triplet_key"
@@ -298,7 +315,7 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
         new_melds = list(board.melds)
         new_melds[seat] = board.melds[seat] + (m2,)
         new_river = _remove_claimed_river(board)
-        return BoardState(
+        intermediate = BoardState(
             hands=tuple(new_concealed if s == seat else board.hands[s] for s in range(4)),
             live_wall=board.live_wall,
             live_draw_index=board.live_draw_index,
@@ -309,8 +326,11 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
             river=new_river,
             melds=tuple(new_melds),
             last_draw_tile=None,
+            last_draw_was_rinshan=False,
+            rinshan_draw_index=board.rinshan_draw_index,
             call_state=None,
         )
+        return apply_after_kan_rinshan_draw(intermediate, seat)
 
     msg = f"unsupported meld kind for open meld: {meld.kind!r}"
     raise ValueError(msg)
@@ -338,5 +358,7 @@ def board_after_ron_winners(board: BoardState) -> BoardState:
         river=board.river,
         melds=board.melds,
         last_draw_tile=None,
+        last_draw_was_rinshan=False,
+        rinshan_draw_index=board.rinshan_draw_index,
         call_state=None,
     )

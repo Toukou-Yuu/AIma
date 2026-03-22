@@ -26,6 +26,10 @@ class ActionKind(Enum):
     """荣和；须在应答窗口的荣和阶段且形成立（当前默认可判七对子）。"""
     OPEN_MELD = "open_meld"
     """吃 / 碰 / 大明杠；须配合 ``meld`` 字段。"""
+    ANKAN = "ankan"
+    """暗杠；``IN_ROUND`` 且 ``MUST_DISCARD``、非岭上待打；须 ``meld`` 为 ``MeldKind.ANKAN``。"""
+    SHANKUMINKAN = "shankuminkan"
+    """加杠；条件同暗杠；须 ``meld`` 为 ``MeldKind.SHANKUMINKAN``。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,4 +45,4 @@ class Action:
     tile: Tile | None = None
     """``DISCARD`` 时必填：要打出的牌。"""
     meld: Meld | None = None
-    """``OPEN_MELD`` 时必填：副露内容（须含 ``called_tile`` 与舍牌一致）。"""
+    """鸣牌/暗杠/加杠时必填；大明杠等须 ``called_tile`` 与所鸣舍牌一致。"""
