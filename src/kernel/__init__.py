@@ -1,5 +1,20 @@
 """日麻对局内核（牌、牌山、状态机等）。大模型调用见 ``llm`` 包。"""
 
+from kernel.hand import (
+    Meld,
+    MeldKind,
+    add_tile,
+    concealed_from_iterable,
+    concealed_total,
+    meld_tile_count,
+    remove_tile,
+    remove_tiles,
+    tiles_from_concealed_and_melds,
+    triplet_key,
+    validate_hand_package,
+    validate_meld_shape,
+    validate_tile_conservation,
+)
 from kernel.tiles import Suit, Tile, build_deck, shuffle_deck
 from kernel.wall import (
     DEAD_WALL_SIZE,
@@ -17,12 +32,25 @@ __all__ = [
     "DeadWall",
     "INDICATOR_COUNT",
     "LIVE_WALL_SIZE",
+    "Meld",
+    "MeldKind",
     "RINSHAN_COUNT",
     "Suit",
     "Tile",
     "WALL_SIZE",
     "WallSplit",
+    "add_tile",
     "build_deck",
+    "concealed_from_iterable",
+    "concealed_total",
+    "meld_tile_count",
+    "remove_tile",
+    "remove_tiles",
     "shuffle_deck",
     "split_wall",
+    "tiles_from_concealed_and_melds",
+    "triplet_key",
+    "validate_hand_package",
+    "validate_meld_shape",
+    "validate_tile_conservation",
 ]
