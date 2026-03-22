@@ -1,5 +1,14 @@
 """日麻对局内核（牌、牌山、状态机等）。大模型调用见 ``llm`` 包。"""
 
+from kernel.deal import (
+    FIRST_DORA_INDICATOR_INDEX,
+    INITIAL_DEAL_TILES,
+    LIVE_WALL_AFTER_DEAL,
+    BoardState,
+    assert_wall_is_standard_deck,
+    build_board_after_split,
+    validate_board_state,
+)
 from kernel.engine import (
     Action,
     ActionKind,
@@ -53,11 +62,15 @@ __all__ = [
     "Action",
     "ActionKind",
     "ApplyOutcome",
+    "BoardState",
     "DEFAULT_STARTING_POINTS",
     "DEAD_WALL_SIZE",
     "DeadWall",
     "EngineError",
+    "FIRST_DORA_INDICATOR_INDEX",
     "INDICATOR_COUNT",
+    "INITIAL_DEAL_TILES",
+    "LIVE_WALL_AFTER_DEAL",
     "LIVE_WALL_SIZE",
     "GamePhase",
     "GameState",
@@ -76,6 +89,8 @@ __all__ = [
     "WallSplit",
     "add_tile",
     "apply",
+    "assert_wall_is_standard_deck",
+    "build_board_after_split",
     "build_deck",
     "concealed_from_iterable",
     "concealed_total",
@@ -89,6 +104,7 @@ __all__ = [
     "split_wall",
     "tiles_from_concealed_and_melds",
     "triplet_key",
+    "validate_board_state",
     "validate_hand_package",
     "validate_meld_shape",
     "validate_table_snapshot",

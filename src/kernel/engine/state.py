@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from kernel.deal import BoardState
 from kernel.engine.phase import GamePhase
 from kernel.table import TableSnapshot, initial_table_snapshot
 
@@ -13,14 +14,15 @@ class GameState:
     """
     对局状态根节点。
 
-    K5 起可在此挂载本墙游标、手牌、河、宝牌等；K4 不校验牌张守恒。
+    ``board`` 在 ``PRE_DEAL`` 为 ``None``；``BEGIN_ROUND`` 后为配牌结果（手牌、剩余本墙、王牌等）。
     """
 
     phase: GamePhase
     table: TableSnapshot
+    board: BoardState | None = None
 
 
 def initial_game_state(table: TableSnapshot | None = None) -> GameState:
     """开局：``PRE_DEAL``；``table`` 缺省时为半庄默认场况。"""
     t = table if table is not None else initial_table_snapshot()
-    return GameState(phase=GamePhase.PRE_DEAL, table=t)
+    return GameState(phase=GamePhase.PRE_DEAL, table=t, board=None)

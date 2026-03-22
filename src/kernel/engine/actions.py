@@ -5,14 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from kernel.tiles.model import Tile
+
 
 class ActionKind(Enum):
     """动作种类。"""
 
     NOOP = "noop"
     """恒等探针；仅在 ``IN_ROUND`` 合法。"""
-    BEGIN_ROUND_STUB = "begin_round_stub"
-    """配牌前 → 局中占位；仅供壳层测试，配牌逻辑见后续版本。"""
+    BEGIN_ROUND = "begin_round"
+    """配牌前 → 局中：须提供完整 136 张牌山并完成配牌与首张表宝指示牌。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,3 +25,5 @@ class Action:
     """动作类型。"""
     seat: int | None = None
     """执行者座位 ``0..3``；未使用时可省略。若给出则必须合法。"""
+    wall: tuple[Tile, ...] | None = None
+    """``BEGIN_ROUND`` 时必填：长度 136 的标准牌山（须与 ``build_deck`` 多重集合一致）。"""
