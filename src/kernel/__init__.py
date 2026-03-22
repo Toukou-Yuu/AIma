@@ -5,6 +5,8 @@ from kernel.deal import (
     INITIAL_DEAL_TILES,
     LIVE_WALL_AFTER_DEAL,
     BoardState,
+    RiverEntry,
+    TurnPhase,
     assert_wall_is_standard_deck,
     build_board_after_split,
     validate_board_state,
@@ -35,6 +37,7 @@ from kernel.hand import (
     validate_meld_shape,
     validate_tile_conservation,
 )
+from kernel.play import apply_discard, apply_draw
 from kernel.table import (
     DEFAULT_STARTING_POINTS,
     RIICHI_STICK_POINTS,
@@ -63,6 +66,8 @@ __all__ = [
     "ActionKind",
     "ApplyOutcome",
     "BoardState",
+    "RiverEntry",
+    "TurnPhase",
     "DEFAULT_STARTING_POINTS",
     "DEAD_WALL_SIZE",
     "DeadWall",
@@ -89,6 +94,8 @@ __all__ = [
     "WallSplit",
     "add_tile",
     "apply",
+    "apply_discard",
+    "apply_draw",
     "assert_wall_is_standard_deck",
     "build_board_after_split",
     "build_deck",

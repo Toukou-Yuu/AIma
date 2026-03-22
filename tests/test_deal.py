@@ -11,6 +11,7 @@ from kernel import (
     LIVE_WALL_AFTER_DEAL,
     Suit,
     Tile,
+    TurnPhase,
     assert_wall_is_standard_deck,
     build_board_after_split,
     build_deck,
@@ -29,6 +30,10 @@ def test_build_board_hand_counts() -> None:
     counts = sorted(sum(h.values()) for h in b.hands)
     assert counts == [13, 13, 13, 14]
     assert b.hands[0].total() == 14
+    assert b.current_seat == 0
+    assert b.turn_phase == TurnPhase.MUST_DISCARD
+    assert b.river == ()
+    assert b.last_draw_tile is None
 
 
 def test_build_board_dealer_seat_2() -> None:
@@ -37,6 +42,8 @@ def test_build_board_dealer_seat_2() -> None:
     assert b.hands[2].total() == 14
     for s in (0, 1, 3):
         assert b.hands[s].total() == 13
+    assert b.current_seat == 2
+    assert b.turn_phase == TurnPhase.MUST_DISCARD
 
 
 def test_live_wall_length_and_index() -> None:

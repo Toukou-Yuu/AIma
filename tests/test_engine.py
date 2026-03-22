@@ -13,6 +13,7 @@ from kernel import (
     Suit,
     TableSnapshot,
     Tile,
+    TurnPhase,
     apply,
     build_deck,
     initial_game_state,
@@ -100,3 +101,67 @@ def test_invalid_action_seat_raises() -> None:
     g = initial_game_state()
     with pytest.raises(IllegalActionError, match="seat"):
         apply(g, Action(ActionKind.BEGIN_ROUND, wall=_wall136(), seat=4))
+
+
+def _in_round_after_deal(*, seed: int = 12):
+    g0 = initial_game_state()
+    return apply(g0, Action(ActionKind.BEGIN_ROUND, wall=_wall136(seed=seed))).new_state
+
+
+def test_apply_discard_draw_cycle_via_engine() -> None:
+    g = _in_round_after_deal(seed=13)
+    b = g.board
+    assert b is not None
+    ds = g.table.dealer_seat
+    assert b.turn_phase == TurnPhase.MUST_DISCARD
+    t0 = next(iter(b.hands[ds].elements()))
+    g1 = apply(
+        g,
+        Action(ActionKind.DISCARD, seat=ds, tile=t0),
+    ).new_state
+    b1 = g1.board
+    assert b1 is not None
+    assert b1.turn_phase == TurnPhase.NEED_DRAW
+    assert b1.current_seat == (ds + 1) % 4
+    g2 = apply(g1, Action(ActionKind.DRAW, seat=b1.current_seat)).new_state
+    b2 = g2.board
+    assert b2 is not None
+    assert b2.turn_phase == TurnPhase.MUST_DISCARD
+    assert b2.last_draw_tile is not None
+
+
+def test_apply_draw_omitted_seat_uses_current() -> None:
+    g = _in_round_after_deal(seed=14)
+    b = g.board
+    assert b is not None
+    d0 = next(iter(b.hands[b.current_seat].elements()))
+    g1 = apply(g, Action(ActionKind.DISCARD, seat=b.current_seat, tile=d0)).new_state
+    g2 = apply(g1, Action(ActionKind.DRAW)).new_state
+    assert g2.board is not None
+    assert g2.board.turn_phase == TurnPhase.MUST_DISCARD
+
+
+def test_apply_discard_requires_tile_and_seat() -> None:
+    g = _in_round_after_deal(seed=15)
+    b = g.board
+    assert b is not None
+    with pytest.raises(IllegalActionError, match="tile"):
+        apply(g, Action(ActionKind.DISCARD, seat=b.current_seat))
+    with pytest.raises(IllegalActionError, match="seat"):
+        apply(
+            g,
+            Action(
+                ActionKind.DISCARD, seat=None, tile=next(iter(b.hands[b.current_seat].elements()))
+            ),
+        )
+
+
+def test_apply_draw_wrong_seat_raises() -> None:
+    g = _in_round_after_deal(seed=16)
+    b = g.board
+    assert b is not None
+    d0 = next(iter(b.hands[b.current_seat].elements()))
+    g1 = apply(g, Action(ActionKind.DISCARD, seat=b.current_seat, tile=d0)).new_state
+    wrong = (g1.board.current_seat + 1) % 4 if g1.board else 0
+    with pytest.raises(IllegalActionError, match="current_seat"):
+        apply(g1, Action(ActionKind.DRAW, seat=wrong))

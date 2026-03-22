@@ -10,6 +10,7 @@ from kernel.deal.model import (
     INITIAL_DEAL_TILES,
     BoardState,
 )
+from kernel.play.model import TurnPhase
 from kernel.tiles.deck import build_deck
 from kernel.tiles.model import Tile
 from kernel.wall.split import LIVE_WALL_SIZE, WallSplit
@@ -73,4 +74,8 @@ def build_board_after_split(wall_split: WallSplit, dealer_seat: int) -> BoardSta
         live_draw_index=0,
         dead_wall=wall_split.dead,
         revealed_indicators=revealed,
+        current_seat=dealer_seat,
+        turn_phase=TurnPhase.MUST_DISCARD,
+        river=(),
+        last_draw_tile=None,
     )

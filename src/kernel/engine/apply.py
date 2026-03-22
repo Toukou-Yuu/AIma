@@ -8,6 +8,7 @@ from kernel.deal import assert_wall_is_standard_deck, build_board_after_split
 from kernel.engine.actions import Action, ActionKind
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState
+from kernel.play import apply_discard, apply_draw
 from kernel.wall import split_wall
 
 
@@ -42,6 +43,7 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
     K5 起转移表：
     - ``PRE_DEAL`` + ``BEGIN_ROUND``（附带合法 136 张 ``wall``）→ ``IN_ROUND`` 并写入 ``board``
     - ``IN_ROUND`` + ``NOOP`` → 恒等
+    - ``IN_ROUND`` + ``DRAW`` / ``DISCARD`` → 摸打主循环（见 ``kernel.play``）
     其余组合抛 ``IllegalActionError``。
     """
     _validate_action_seat(action)
@@ -71,6 +73,41 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
     if phase == GamePhase.IN_ROUND:
         if kind == ActionKind.NOOP:
             return ApplyOutcome(new_state=state, events=())
+        board = state.board
+        if board is None:
+            msg = "IN_ROUND requires board"
+            raise IllegalActionError(msg)
+        if kind == ActionKind.DRAW:
+            seat = action.seat if action.seat is not None else board.current_seat
+            if seat != board.current_seat:
+                msg = "DRAW seat must match current_seat when provided"
+                raise IllegalActionError(msg)
+            try:
+                new_board = apply_draw(board, seat)
+            except ValueError as e:
+                raise IllegalActionError(str(e)) from e
+            return ApplyOutcome(
+                new_state=GameState(phase=phase, table=state.table, board=new_board),
+                events=(),
+            )
+        if kind == ActionKind.DISCARD:
+            if action.seat is None:
+                msg = "DISCARD requires seat"
+                raise IllegalActionError(msg)
+            if action.seat != board.current_seat:
+                msg = "DISCARD seat must equal current_seat"
+                raise IllegalActionError(msg)
+            if action.tile is None:
+                msg = "DISCARD requires tile"
+                raise IllegalActionError(msg)
+            try:
+                new_board = apply_discard(board, action.seat, action.tile)
+            except ValueError as e:
+                raise IllegalActionError(str(e)) from e
+            return ApplyOutcome(
+                new_state=GameState(phase=phase, table=state.table, board=new_board),
+                events=(),
+            )
         msg = f"action {kind.value} not allowed in phase {phase.value}"
         raise IllegalActionError(msg)
 
