@@ -1,5 +1,16 @@
 """日麻对局内核（牌、牌山、状态机等）。大模型调用见 ``llm`` 包。"""
 
+from kernel.engine import (
+    Action,
+    ActionKind,
+    ApplyOutcome,
+    EngineError,
+    GamePhase,
+    GameState,
+    IllegalActionError,
+    apply,
+    initial_game_state,
+)
 from kernel.hand import (
     Meld,
     MeldKind,
@@ -39,11 +50,18 @@ from kernel.wall import (
 )
 
 __all__ = [
+    "Action",
+    "ActionKind",
+    "ApplyOutcome",
     "DEFAULT_STARTING_POINTS",
     "DEAD_WALL_SIZE",
     "DeadWall",
+    "EngineError",
     "INDICATOR_COUNT",
     "LIVE_WALL_SIZE",
+    "GamePhase",
+    "GameState",
+    "IllegalActionError",
     "MatchPreset",
     "Meld",
     "MeldKind",
@@ -57,9 +75,11 @@ __all__ = [
     "WALL_SIZE",
     "WallSplit",
     "add_tile",
+    "apply",
     "build_deck",
     "concealed_from_iterable",
     "concealed_total",
+    "initial_game_state",
     "initial_table_snapshot",
     "meld_tile_count",
     "remove_tile",
