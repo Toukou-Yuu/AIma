@@ -42,19 +42,36 @@ def main() -> None:
     generated = []
 
     # 数牌：万 (m)、饼 (p)、条 (s)，1-9
-    for suit in ["m", "p", "s"]:
-        for num in range(1, 10):
-            tile = f"{num}{suit}"
-            # 万子只有带 jp/cn 后缀的版本，饼和条不带后缀
-            if suit == "m":
-                src_file = SRC_DIR / f"{num}{suit}jp.png"
-            else:
-                src_file = SRC_DIR / f"{num}{suit}.png"
+    # 万子和条子有 jp/cn 版本，饼子没有后缀
+    # 万子：带 jp 后缀
+    for num in range(1, 10):
+        tile = f"{num}m"
+        src_file = SRC_DIR / f"{num}mjp.png"
+        if src_file.exists():
+            img = Image.open(src_file)
+            save_variants(img, tile)
+            generated.append(tile)
 
-            if src_file.exists():
-                img = Image.open(src_file)
-                save_variants(img, tile)
-                generated.append(tile)
+    # 条子：带 jp 后缀（1s 有 1sjp.png，2-9s 直接是 2s.png 等）
+    for num in range(1, 10):
+        tile = f"{num}s"
+        # 优先尝试 jp 版本，没有则用无后缀版本
+        src_file = SRC_DIR / f"{num}sjp.png"
+        if not src_file.exists():
+            src_file = SRC_DIR / f"{num}s.png"
+        if src_file.exists():
+            img = Image.open(src_file)
+            save_variants(img, tile)
+            generated.append(tile)
+
+    # 饼子：不带后缀
+    for num in range(1, 10):
+        tile = f"{num}p"
+        src_file = SRC_DIR / f"{num}p.png"
+        if src_file.exists():
+            img = Image.open(src_file)
+            save_variants(img, tile)
+            generated.append(tile)
 
     # 赤牌：5m, 5p, 5s（用 0m, 0p, 0s 表示）
     for suit in ["m", "p", "s"]:
@@ -80,6 +97,18 @@ def main() -> None:
             img = Image.open(src_file)
             save_variants(img, tile_z)
             generated.append(tile_z)
+
+    # 牌背：用于宝牌指示牌、副露覆盖、明杠等
+    # 源文件有 blue.png 和 orange.png 两种牌背颜色
+    # 我们默认使用蓝色牌背，命名为 back
+    for color in ["blue", "orange"]:
+        src_file = SRC_DIR / f"{color}.png"
+        if src_file.exists():
+            img = Image.open(src_file)
+            # 蓝色牌背命名为 back，橙色命名为 back_orange
+            base_name = "back" if color == "blue" else "back_orange"
+            save_variants(img, base_name)
+            generated.append(base_name)
 
     # 花牌（如果有）：春夏秋冬梅兰竹菊（暂时跳过，日麻不用）
 
