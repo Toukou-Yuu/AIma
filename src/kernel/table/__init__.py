@@ -13,9 +13,9 @@ from kernel.table.model import (
 )
 from kernel.table.transitions import (
     advance_round,
-    should_match_end,
     compute_match_ranking,
     final_settlement,
+    should_match_end,
 )
 
 __all__ = [

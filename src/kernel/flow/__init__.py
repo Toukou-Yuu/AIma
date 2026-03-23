@@ -2,9 +2,9 @@
 
 from kernel.flow.model import FlowKind, FlowResult, TenpaiResult
 from kernel.flow.settle import (
+    compute_tenpai_result,
     settle_flow,
     settle_tenpai,
-    compute_tenpai_result,
     should_continue_dealer,
     update_honba,
 )

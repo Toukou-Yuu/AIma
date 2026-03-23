@@ -6,12 +6,12 @@ from dataclasses import replace
 
 from kernel.deal.model import BoardState
 from kernel.scoring.dora import count_dora_total, count_ura_dora_total
-from kernel.scoring.fu import compute_fu, compute_fu_detail
-from kernel.win_shape.pinfu import pinfu_eligible
+from kernel.scoring.fu import compute_fu_detail
 from kernel.scoring.points import child_ron_payment_from_discarder, child_tsumo_payments
 from kernel.scoring.yaku import _prevailing_wind_tile, count_yaku_han
 from kernel.table.model import TableSnapshot, seat_wind_rank
 from kernel.tiles.model import Suit, Tile
+from kernel.win_shape.pinfu import pinfu_eligible
 
 
 def _is_haitei(board: BoardState) -> bool:
@@ -72,6 +72,7 @@ def settle_ron_table(
 
         # 检测七对子
         from kernel.call.win import can_ron_seven_pairs
+
         is_chiitoitsu = can_ron_seven_pairs(board.hands[w], board.melds[w], win_tile)
 
         pf = pinfu_eligible(
@@ -181,6 +182,7 @@ def settle_tsumo_table(
 
     # 检测七对子
     from kernel.call.win import can_win_seven_pairs_concealed_14
+
     is_chiitoitsu = can_win_seven_pairs_concealed_14(board.hands[winner], board.melds[winner])
 
     pf = pinfu_eligible(

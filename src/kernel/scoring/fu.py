@@ -7,7 +7,6 @@ from collections import Counter
 from kernel.hand.melds import Meld, MeldKind, triplet_key
 from kernel.tiles.model import Suit, Tile
 
-
 # 基础符：非平和
 FU_BASE = 20
 
@@ -92,8 +91,7 @@ def _count_sets_by_kind(
         elif count == 3:
             # 检查是否已在副露中
             is_melded = any(
-                m.kind == MeldKind.PON and triplet_key(m.tiles[0]) == key
-                for m in melds
+                m.kind == MeldKind.PON and triplet_key(m.tiles[0]) == key for m in melds
             )
             if not is_melded:
                 anko_keys.append(key)
@@ -181,7 +179,9 @@ def compute_fu_detail(
         result["menzen_ron"] = 0
 
     # 总计（切上到 10 的倍数）
-    total = result["base"] + result["tsumo"] + result["pair"] + result["sets"] + result["menzen_ron"]
+    total = (
+        result["base"] + result["tsumo"] + result["pair"] + result["sets"] + result["menzen_ron"]
+    )
     # 切上（round up to nearest 10）
     total = (total + 9) // 10 * 10
     result["total"] = total
@@ -220,13 +220,22 @@ def compute_fu_full(
 
     menzen = len(melds) == 0
     pf = pinfu_eligible(
-        concealed, melds, win_tile, for_ron=for_ron,
-        round_wind_tile=round_wind, seat_wind_tile=self_wind
+        concealed,
+        melds,
+        win_tile,
+        for_ron=for_ron,
+        round_wind_tile=round_wind,
+        seat_wind_tile=self_wind,
     )
     detail = compute_fu_detail(
-        concealed, melds, win_tile,
-        for_ron=for_ron, menzen=menzen, pinfu=pf,
-        self_wind=self_wind, round_wind=round_wind
+        concealed,
+        melds,
+        win_tile,
+        for_ron=for_ron,
+        menzen=menzen,
+        pinfu=pf,
+        self_wind=self_wind,
+        round_wind=round_wind,
     )
     return detail["total"]
 

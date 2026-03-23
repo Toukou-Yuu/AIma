@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from kernel.hand.melds import Meld, meld_tile_count
+from kernel.hand.melds import Meld
 from kernel.tiles.model import Suit, Tile
 from kernel.wall.split import DeadWall
 

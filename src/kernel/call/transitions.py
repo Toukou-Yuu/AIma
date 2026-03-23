@@ -6,10 +6,10 @@ from collections import Counter
 from typing import TYPE_CHECKING
 
 from kernel.hand.melds import Meld, MeldKind, triplet_key, validate_meld_shape
-from kernel.scoring.furiten import is_furiten_for_tile
 from kernel.hand.multiset import remove_tiles
 from kernel.kan.rinshan import apply_after_kan_rinshan_draw
 from kernel.play.model import CallResolution, TurnPhase, kamicha_seat
+from kernel.scoring.furiten import is_furiten_for_tile
 from kernel.tiles.model import Tile
 
 if TYPE_CHECKING:
@@ -46,9 +46,7 @@ def _replace_board(board: BoardState, **kwargs: object) -> BoardState:
         river=kwargs.get("river", board.river),
         melds=kwargs.get("melds", board.melds),
         last_draw_tile=kwargs.get("last_draw_tile", board.last_draw_tile),
-        last_draw_was_rinshan=kwargs.get(
-            "last_draw_was_rinshan", board.last_draw_was_rinshan
-        ),
+        last_draw_was_rinshan=kwargs.get("last_draw_was_rinshan", board.last_draw_was_rinshan),
         rinshan_draw_index=kwargs.get("rinshan_draw_index", board.rinshan_draw_index),
         call_state=kwargs.get("call_state", board.call_state),
         riichi=kwargs.get("riichi", board.riichi),
@@ -256,7 +254,6 @@ def _remove_claimed_river(board: BoardState) -> tuple[Tile, ...]:
 
 def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
     """吃 / 碰 / 大明杠：鸣入当前 ``call_state`` 所指的舍牌。"""
-    from kernel.deal.model import BoardState
 
     validate_meld_shape(meld)
     if board.turn_phase != TurnPhase.CALL_RESPONSE:

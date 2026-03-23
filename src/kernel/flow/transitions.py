@@ -6,7 +6,6 @@ from collections import Counter
 from typing import TYPE_CHECKING
 
 from kernel.flow.model import FlowKind, FlowResult
-from kernel.hand.melds import Meld, triplet_key
 from kernel.tiles.model import Suit, Tile
 
 if TYPE_CHECKING:

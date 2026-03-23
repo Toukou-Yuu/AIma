@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 
 from kernel.deal.model import BoardState
-from kernel.hand.melds import Meld, MeldKind, meld_tile_count, triplet_key
+from kernel.hand.melds import Meld, MeldKind, triplet_key
 from kernel.table.model import PrevailingWind, TableSnapshot, seat_wind_rank
 from kernel.tiles.model import Suit, Tile
 from kernel.win_shape.pinfu import pinfu_eligible
@@ -225,7 +225,9 @@ def _count_ananko(concealed: Counter[Tile], melds: tuple[Meld, ...]) -> int:
     return count
 
 
-def _is_toitoi(melds: tuple[Meld, ...], concealed: Counter[Tile], win_tile: Tile, for_ron: bool) -> bool:
+def _is_toitoi(
+    melds: tuple[Meld, ...], concealed: Counter[Tile], win_tile: Tile, for_ron: bool
+) -> bool:
     """对对和：四刻子 + 一对。"""
     full = concealed.copy()
     if for_ron:
@@ -319,7 +321,9 @@ def _is_daisangen(full: Counter[Tile]) -> bool:
     return True
 
 
-def _is_suuankou(concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile, for_ron: bool) -> bool:
+def _is_suuankou(
+    concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile, for_ron: bool
+) -> bool:
     """
     四暗刻：门前清四组暗刻 + 对子。
     荣和时不算四暗刻（荣和破坏门清），但四暗刻单骑除外。
@@ -356,7 +360,9 @@ def _is_suuankou(concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Ti
     return False
 
 
-def _is_suuankou_tanki(concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile, for_ron: bool) -> bool:
+def _is_suuankou_tanki(
+    concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile, for_ron: bool
+) -> bool:
     """
     四暗刻单骑：门前清四暗刻 + 单骑待牌。
     双倍役满。
@@ -394,11 +400,18 @@ def _is_kokushi_musou(concealed: Counter[Tile], melds: tuple[Meld, ...]) -> bool
 
     # 十三种幺九牌
     terminals = [
-        Tile(Suit.MAN, 1), Tile(Suit.MAN, 9),
-        Tile(Suit.PIN, 1), Tile(Suit.PIN, 9),
-        Tile(Suit.SOU, 1), Tile(Suit.SOU, 9),
-        Tile(Suit.HONOR, 1), Tile(Suit.HONOR, 2), Tile(Suit.HONOR, 3),
-        Tile(Suit.HONOR, 4), Tile(Suit.HONOR, 5), Tile(Suit.HONOR, 6),
+        Tile(Suit.MAN, 1),
+        Tile(Suit.MAN, 9),
+        Tile(Suit.PIN, 1),
+        Tile(Suit.PIN, 9),
+        Tile(Suit.SOU, 1),
+        Tile(Suit.SOU, 9),
+        Tile(Suit.HONOR, 1),
+        Tile(Suit.HONOR, 2),
+        Tile(Suit.HONOR, 3),
+        Tile(Suit.HONOR, 4),
+        Tile(Suit.HONOR, 5),
+        Tile(Suit.HONOR, 6),
         Tile(Suit.HONOR, 7),
     ]
 
@@ -420,7 +433,9 @@ def _is_kokushi_musou(concealed: Counter[Tile], melds: tuple[Meld, ...]) -> bool
     return pair_count == 1
 
 
-def _is_kokushi_thirteen_waits(concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile) -> bool:
+def _is_kokushi_thirteen_waits(
+    concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile
+) -> bool:
     """
     国士无理十三面：十三面待牌的国士。
     双倍役满。
@@ -442,11 +457,18 @@ def _is_kokushi_thirteen_waits(concealed: Counter[Tile], melds: tuple[Meld, ...]
 
     # 检查是否包含所有十三种幺九牌
     terminals = [
-        Tile(Suit.MAN, 1), Tile(Suit.MAN, 9),
-        Tile(Suit.PIN, 1), Tile(Suit.PIN, 9),
-        Tile(Suit.SOU, 1), Tile(Suit.SOU, 9),
-        Tile(Suit.HONOR, 1), Tile(Suit.HONOR, 2), Tile(Suit.HONOR, 3),
-        Tile(Suit.HONOR, 4), Tile(Suit.HONOR, 5), Tile(Suit.HONOR, 6),
+        Tile(Suit.MAN, 1),
+        Tile(Suit.MAN, 9),
+        Tile(Suit.PIN, 1),
+        Tile(Suit.PIN, 9),
+        Tile(Suit.SOU, 1),
+        Tile(Suit.SOU, 9),
+        Tile(Suit.HONOR, 1),
+        Tile(Suit.HONOR, 2),
+        Tile(Suit.HONOR, 3),
+        Tile(Suit.HONOR, 4),
+        Tile(Suit.HONOR, 5),
+        Tile(Suit.HONOR, 6),
         Tile(Suit.HONOR, 7),
     ]
     for t in terminals:
@@ -509,8 +531,11 @@ def _is_ryuuiisou(full: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
     """
     # 绿一色允许的牌
     allowed_tiles = {
-        Tile(Suit.SOU, 2), Tile(Suit.SOU, 3), Tile(Suit.SOU, 4),
-        Tile(Suit.SOU, 6), Tile(Suit.SOU, 8),
+        Tile(Suit.SOU, 2),
+        Tile(Suit.SOU, 3),
+        Tile(Suit.SOU, 4),
+        Tile(Suit.SOU, 6),
+        Tile(Suit.SOU, 8),
         Tile(Suit.HONOR, 6),  # 发
     }
 
@@ -573,7 +598,9 @@ def _is_chuuren_poutou(concealed: Counter[Tile], melds: tuple[Meld, ...], win_ti
     return extra_count == 1
 
 
-def _is_junsei_chuuren_poutou(concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile) -> bool:
+def _is_junsei_chuuren_poutou(
+    concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile
+) -> bool:
     """
     纯正九莲宝灯：九面待牌的九莲宝灯。
     双倍役满。
@@ -610,7 +637,9 @@ def _is_suu_kantsu(melds: tuple[Meld, ...]) -> bool:
     四杠子：四组杠子。
     役满。
     """
-    kan_count = sum(1 for m in melds if m.kind in (MeldKind.DAIMINKAN, MeldKind.ANKAN, MeldKind.SHANKUMINKAN))
+    kan_count = sum(
+        1 for m in melds if m.kind in (MeldKind.DAIMINKAN, MeldKind.ANKAN, MeldKind.SHANKUMINKAN)
+    )
     return kan_count == 4
 
 
@@ -621,8 +650,13 @@ def _is_daisuushii(full: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
     """
     if melds:
         # 检查副露中的四风刻子
-        wind_kan_count = sum(1 for m in melds if m.kind in (MeldKind.KAN, MeldKind.ANKAN, MeldKind.PON)
-                            and m.tiles[0].suit == Suit.HONOR and m.tiles[0].rank in (1, 2, 3, 4))
+        wind_kan_count = sum(
+            1
+            for m in melds
+            if m.kind in (MeldKind.KAN, MeldKind.ANKAN, MeldKind.PON)
+            and m.tiles[0].suit == Suit.HONOR
+            and m.tiles[0].rank in (1, 2, 3, 4)
+        )
 
     # 统计四风刻子数量
     keys = _triplet_key_counts(full)

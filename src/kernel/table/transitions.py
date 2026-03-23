@@ -85,14 +85,12 @@ def should_match_end(table: TableSnapshot) -> bool:
     if table.match_preset == MatchPreset.TONPUSEN:
         # 东风战：东四局亲流后终局
         return (
-            table.prevailing_wind == PrevailingWind.EAST
-            and table.round_number == RoundNumber.FOUR
+            table.prevailing_wind == PrevailingWind.EAST and table.round_number == RoundNumber.FOUR
         )
     else:
         # 半庄战：南四局亲流后终局
         return (
-            table.prevailing_wind == PrevailingWind.SOUTH
-            and table.round_number == RoundNumber.FOUR
+            table.prevailing_wind == PrevailingWind.SOUTH and table.round_number == RoundNumber.FOUR
         )
 
 

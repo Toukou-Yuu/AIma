@@ -48,6 +48,4 @@ def is_tenpai_default(
     """
     if is_tenpai_seven_pairs(concealed_13, melds):
         return True
-    return any(
-        can_ron_default(concealed_13, melds, t) for t in _iter_ron_candidate_tiles()
-    )
+    return any(can_ron_default(concealed_13, melds, t) for t in _iter_ron_candidate_tiles())

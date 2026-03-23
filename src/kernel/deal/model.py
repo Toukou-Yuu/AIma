@@ -168,11 +168,7 @@ def validate_board_state(board: BoardState) -> None:
             if board.river[cs.river_index].tile != cs.claimed_tile:
                 msg = "claimed_tile must match river at river_index"
                 raise ValueError(msg)
-        discard_seat = (
-            cs.discard_seat
-            if cs.chankan_rinshan_pending
-            else board.river[-1].seat
-        )
+        discard_seat = cs.discard_seat if cs.chankan_rinshan_pending else board.river[-1].seat
         for s in range(4):
             tot = _seat_total_tiles(board.hands[s], board.melds[s])
             if s == discard_seat:
