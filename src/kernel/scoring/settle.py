@@ -41,11 +41,16 @@ def settle_ron_table(
     ura_indicators: tuple[Tile, ...] = (),
     allow_open_tanyao: bool = True,
     is_chankan: bool = False,
+    continue_dealer: bool = False,  # 新增：连庄判定结果
 ) -> TableSnapshot:
     """
     一炮多响：每位和了者从放铳家收取完整荣和点（含本场）；供托清零并按席位数整数分给和了者。
     里宝仅在和了者已立直时计入（``ura_indicators`` 非空时生效）。
     抢杠：``is_chankan=True`` 时计抢杠役。
+
+    **连庄判定**：
+    - ``continue_dealer=True``：本场 +1（亲家和了或流局亲听牌）
+    - ``continue_dealer=False``：本场重置为 0（亲流）
     """
     if not ron_winners:
         msg = "ron_winners must be non-empty"
@@ -143,7 +148,10 @@ def settle_ron_table(
         for i, w in enumerate(winners_sorted):
             scores[w] += base + (1 if i < rem else 0)
 
-    return replace(table, scores=tuple(scores), kyoutaku=0)
+    # 本场更新：连庄时 +1，亲流时重置
+    new_honba = table.honba + 1 if continue_dealer else 0
+
+    return replace(table, scores=tuple(scores), kyoutaku=0, honba=new_honba)
 
 
 def settle_tsumo_table(
@@ -154,8 +162,14 @@ def settle_tsumo_table(
     win_tile: Tile,
     ura_indicators: tuple[Tile, ...] = (),
     allow_open_tanyao: bool = True,
+    continue_dealer: bool = False,  # 新增：连庄判定结果
 ) -> TableSnapshot:
-    """自摸：三家点棒按子/亲公式；供托归和了者（整数根按席均分余数）。"""
+    """自摸：三家点棒按子/亲公式；供托归和了者（整数根按席均分余数）。
+
+    **连庄判定**：
+    - ``continue_dealer=True``：本场 +1（亲家和了）
+    - ``continue_dealer=False``：本场重置为 0（亲流）
+    """
     if not 0 <= winner <= 3:
         msg = "winner must be 0..3"
         raise ValueError(msg)
@@ -240,4 +254,7 @@ def settle_tsumo_table(
     if kt:
         scores[winner] += kt
 
-    return replace(table, scores=tuple(scores), kyoutaku=0)
+    # 本场更新：连庄时 +1，亲流时重置
+    new_honba = table.honba + 1 if continue_dealer else 0
+
+    return replace(table, scores=tuple(scores), kyoutaku=0, honba=new_honba)

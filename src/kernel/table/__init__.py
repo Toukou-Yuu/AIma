@@ -11,6 +11,12 @@ from kernel.table.model import (
     seat_wind_rank,
     validate_table_snapshot,
 )
+from kernel.table.transitions import (
+    advance_round,
+    should_match_end,
+    compute_match_ranking,
+    final_settlement,
+)
 
 __all__ = [
     "DEFAULT_STARTING_POINTS",
@@ -19,7 +25,11 @@ __all__ = [
     "RIICHI_STICK_POINTS",
     "RoundNumber",
     "TableSnapshot",
+    "advance_round",
+    "compute_match_ranking",
+    "final_settlement",
     "initial_table_snapshot",
     "seat_wind_rank",
+    "should_match_end",
     "validate_table_snapshot",
 ]

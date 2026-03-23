@@ -19,6 +19,8 @@ from kernel.riichi.tenpai import is_tenpai_default
 from kernel.scoring.dora import ura_indicators_for_settlement
 from kernel.scoring.settle import settle_ron_table, settle_tsumo_table
 from kernel.table.model import RIICHI_STICK_POINTS
+from kernel.table.transitions import advance_round, should_match_end, compute_match_ranking
+from kernel.wall.split import split_wall as deal_split_wall
 from kernel.wall import split_wall
 
 
@@ -120,6 +122,8 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                         len(new_board.revealed_indicators),
                     )
                     is_chankan = cs_pb.chankan_rinshan_pending
+                    # 连庄判定：亲家和了则连庄（一炮多响时任一亲家和了即连庄）
+                    continue_dealer = any(w == state.table.dealer_seat for w in cs_pb.ron_claimants)
                     new_table = settle_ron_table(
                         state.table,
                         new_board,
@@ -128,6 +132,7 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                         win_tile=cs_pb.claimed_tile,
                         ura_indicators=ura,
                         is_chankan=is_chankan,
+                        continue_dealer=continue_dealer,
                     )
                     return ApplyOutcome(
                         new_state=GameState(
@@ -163,6 +168,8 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                         len(new_board.revealed_indicators),
                     )
                     is_chankan = cs.chankan_rinshan_pending
+                    # 连庄判定：亲家和了则连庄（一炮多响时任一亲家和了即连庄）
+                    continue_dealer = any(w == state.table.dealer_seat for w in cs.ron_claimants)
                     new_table = settle_ron_table(
                         state.table,
                         new_board,
@@ -171,6 +178,7 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                         win_tile=cs.claimed_tile,
                         ura_indicators=ura,
                         is_chankan=is_chankan,
+                        continue_dealer=continue_dealer,
                     )
                     return ApplyOutcome(
                         new_state=GameState(
@@ -359,12 +367,15 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 board.dead_wall,
                 len(board.revealed_indicators),
             )
+            # 连庄判定：亲家自摸则连庄
+            continue_dealer = (seat == state.table.dealer_seat)
             new_table = settle_tsumo_table(
                 state.table,
                 board,
                 winner=seat,
                 win_tile=wt,
                 ura_indicators=ura,
+                continue_dealer=continue_dealer,
             )
             return ApplyOutcome(
                 new_state=GameState(
@@ -462,6 +473,144 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
         if kind in (ActionKind.PASS_CALL, ActionKind.RON, ActionKind.OPEN_MELD):
             msg = f"action {kind.value} only allowed during CALL_RESPONSE"
             raise IllegalActionError(msg)
+        msg = f"action {kind.value} not allowed in phase {phase.value}"
+        raise IllegalActionError(msg)
+
+    # HAND_OVER 阶段：和了后等待下一局或终局
+    if phase == GamePhase.HAND_OVER:
+        if kind == ActionKind.NOOP:
+            # 检查和了后是否终局
+            # 注意：settle_*_table 已经更新了 honba（连庄时 +1，亲流时重置）
+            # advance_round 只处理亲流时的局序/亲席变更
+            if should_match_end(state.table):
+                # 终局：计算名次，进入 MATCH_END
+                ranking = compute_match_ranking(state.table)
+                return ApplyOutcome(
+                    new_state=GameState(
+                        phase=GamePhase.MATCH_END,
+                        table=state.table,
+                        board=state.board,
+                        ron_winners=state.ron_winners,
+                    ),
+                    events=(),
+                )
+            else:
+                # 未终局：判断是否连庄
+                # 连庄条件：亲家和了（ron_winners 中包含 dealer_seat）
+                continue_dealer = (state.ron_winners is not None and state.table.dealer_seat in state.ron_winners)
+                new_table = advance_round(state.table, continue_dealer=continue_dealer)
+                # 重新开局配牌
+                w = action.wall if action.wall is not None else None
+                if w is None:
+                    # 需要外部提供牌山
+                    msg = "NEXT_ROUND requires wall"
+                    raise IllegalActionError(msg)
+                try:
+                    assert_wall_is_standard_deck(w)
+                except ValueError as e:
+                    raise IllegalActionError(str(e)) from e
+                try:
+                    split = deal_split_wall(w)
+                    board = build_board_after_split(split, new_table.dealer_seat)
+                except ValueError as e:
+                    raise IllegalActionError(str(e)) from e
+                return ApplyOutcome(
+                    new_state=GameState(
+                        phase=GamePhase.IN_ROUND,
+                        table=new_table,
+                        board=board,
+                        ron_winners=None,
+                    ),
+                    events=(),
+                )
+        msg = f"action {kind.value} not allowed in phase {phase.value}"
+        raise IllegalActionError(msg)
+
+    # FLOWN 阶段：流局后等待下一局或终局
+    if phase == GamePhase.FLOWN:
+        if kind == ActionKind.NOOP:
+            # 检查流局后是否终局
+            # 注意：settle_flow 已经更新了 honba（连庄时 +1，亲流时重置）
+            # 但 advance_round 需要知道是否连庄来决定是否推进局序
+            # 这里通过 honba 是否增加来判断（实际上需要更精确的逻辑）
+
+            # 简化处理：流局后亲家听牌则连庄（不推进局序），否则亲流（推进局序）
+            # 由于 settle_flow 已经更新了 honba，我们需要根据 honba 推断 continue_dealer
+            # 更好的方式是在 GameState 中存储 continue_dealer 标志
+
+            # 临时方案：检查表是否已更新本场（连庄时 honba 增加）
+            # 实际上这需要更精确的状态跟踪，这里先假设 settle_flow 后的 table 已正确设置 honba
+            # advance_round 在 continue_dealer=False 时才会推进局序
+
+            # 正确做法：需要在 settle_flow 返回额外信息，或者在 GameState 中存储连庄状态
+            # 这里先使用简化逻辑：流局后总是尝试推进局序（亲流），连庄时局序不变
+            # 由于 settle_flow 已经处理了 honba，advance_round 只需处理局序和亲席
+
+            # 检查是否终局
+            if should_match_end(state.table):
+                # 终局：计算名次，进入 MATCH_END
+                ranking = compute_match_ranking(state.table)
+                return ApplyOutcome(
+                    new_state=GameState(
+                        phase=GamePhase.MATCH_END,
+                        table=state.table,
+                        board=state.board,
+                        ron_winners=None,
+                        flow_result=state.flow_result,
+                        tenpai_result=state.tenpai_result,
+                    ),
+                    events=(),
+                )
+            else:
+                # 未终局：需要判断是否连庄
+                # 连庄条件：亲家听牌（honba 增加）
+                # 由于 settle_flow 已经更新了 honba，我们检查 honba 是否增加来判断
+                # 但这不够精确，更好的方式是在 GameState 中存储连庄标志
+
+                # 简化：假设 settle_flow 后的 table.honba 已正确反映连庄/亲流
+                # advance_round 需要根据连庄与否来决定是否推进局序
+                # 这里通过比较原 table 和新 table 的 honba 来判断
+                # 但实际上我们无法在这里获取原 table，所以需要一个新方案
+
+                # 最佳方案：在 GameState 中添加 continue_dealer 字段
+                # 临时方案：假设 FLOWN 状态下 honba>0 表示连庄（不推进局序），honba=0 表示亲流（推进）
+                # 这不够精确，但可以工作
+
+                # 更精确的方式：检查亲家是否听牌
+                if state.tenpai_result and state.table.dealer_seat in state.tenpai_result.tenpai_seats:
+                    # 亲家听牌：连庄，不推进局序
+                    continue_dealer = True
+                else:
+                    # 亲家未听牌：亲流，推进局序
+                    continue_dealer = False
+
+                new_table = advance_round(state.table, continue_dealer=continue_dealer)
+                # 重新开局配牌
+                w = action.wall if action.wall is not None else None
+                if w is None:
+                    # 需要外部提供牌山
+                    msg = "NEXT_ROUND requires wall"
+                    raise IllegalActionError(msg)
+                try:
+                    assert_wall_is_standard_deck(w)
+                except ValueError as e:
+                    raise IllegalActionError(str(e)) from e
+                try:
+                    split = deal_split_wall(w)
+                    board = build_board_after_split(split, new_table.dealer_seat)
+                except ValueError as e:
+                    raise IllegalActionError(str(e)) from e
+                return ApplyOutcome(
+                    new_state=GameState(
+                        phase=GamePhase.IN_ROUND,
+                        table=new_table,
+                        board=board,
+                        ron_winners=None,
+                        flow_result=None,  # 清除流局结果
+                        tenpai_result=None,
+                    ),
+                    events=(),
+                )
         msg = f"action {kind.value} not allowed in phase {phase.value}"
         raise IllegalActionError(msg)
 
