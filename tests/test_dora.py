@@ -13,6 +13,7 @@ from kernel.scoring.dora import (
     count_ura_dora_total,
     dora_from_indicators,
     successor_tile,
+    ura_indicators_for_settlement,
     _is_red_five_match,
 )
 from kernel.tiles.model import Suit, Tile
@@ -247,3 +248,29 @@ class TestBuildDeckWithRedFives:
 
         red_count = sum(1 for t in deck if t.is_red)
         assert red_count == 0
+
+
+class TestKanUraDora:
+    """杠里宝牌测试。"""
+
+    def test_ura_indicators_increase_with_kan(self) -> None:
+        """开杠后里宝指示牌数量增加。"""
+        from kernel import build_board_after_split, split_wall
+
+        # 构建牌山
+        wall = shuffle_deck(build_deck(), seed=42)
+        split = split_wall(wall)
+        board = build_board_after_split(split, dealer_seat=0)
+
+        # 初始：1 张表宝指示牌，1 张里宝指示牌可用
+        assert len(board.revealed_indicators) == 1
+
+        # 里宝指示牌数量应与表宝指示牌数量相同
+        ura = ura_indicators_for_settlement(board.dead_wall, len(board.revealed_indicators))
+        assert len(ura) == 1
+
+        # 模拟开杠后翻开第 2 张表宝指示牌
+        # （实际开杠逻辑在 apply.py 中，这里直接测试里宝数量）
+        # 开杠后 revealed_indicators 会增加到 2 张
+        ura_after_kan = ura_indicators_for_settlement(board.dead_wall, 2)
+        assert len(ura_after_kan) == 2
