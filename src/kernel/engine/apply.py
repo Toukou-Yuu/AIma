@@ -10,7 +10,7 @@ from kernel.deal import assert_wall_is_standard_deck, build_board_after_split
 from kernel.engine.actions import Action, ActionKind
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState
-from kernel.flow import check_flow_kind, settle_flow
+from kernel.flow import FlowKind, check_flow_kind, settle_flow
 from kernel.hand.multiset import remove_tile
 from kernel.kan import apply_ankan, apply_shankuminkan
 from kernel.play import apply_discard, apply_draw, board_after_tsumo_win
@@ -19,9 +19,9 @@ from kernel.riichi.tenpai import is_tenpai_default
 from kernel.scoring.dora import ura_indicators_for_settlement
 from kernel.scoring.settle import settle_ron_table, settle_tsumo_table
 from kernel.table.model import RIICHI_STICK_POINTS
-from kernel.table.transitions import advance_round, should_match_end, compute_match_ranking
-from kernel.wall.split import split_wall as deal_split_wall
+from kernel.table.transitions import advance_round, compute_match_ranking, should_match_end
 from kernel.wall import split_wall
+from kernel.wall.split import split_wall as deal_split_wall
 
 
 class EngineError(ValueError):
@@ -368,7 +368,7 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 len(board.revealed_indicators),
             )
             # 连庄判定：亲家自摸则连庄
-            continue_dealer = (seat == state.table.dealer_seat)
+            continue_dealer = seat == state.table.dealer_seat
             new_table = settle_tsumo_table(
                 state.table,
                 board,
@@ -497,7 +497,9 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
             else:
                 # 未终局：判断是否连庄
                 # 连庄条件：亲家和了（ron_winners 中包含 dealer_seat）
-                continue_dealer = (state.ron_winners is not None and state.table.dealer_seat in state.ron_winners)
+                continue_dealer = (
+                    state.ron_winners is not None and state.table.dealer_seat in state.ron_winners
+                )
                 new_table = advance_round(state.table, continue_dealer=continue_dealer)
                 # 重新开局配牌
                 w = action.wall if action.wall is not None else None
@@ -577,7 +579,10 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 # 这不够精确，但可以工作
 
                 # 更精确的方式：检查亲家是否听牌
-                if state.tenpai_result and state.table.dealer_seat in state.tenpai_result.tenpai_seats:
+                if (
+                    state.tenpai_result
+                    and state.table.dealer_seat in state.tenpai_result.tenpai_seats
+                ):
                     # 亲家听牌：连庄，不推进局序
                     continue_dealer = True
                 else:

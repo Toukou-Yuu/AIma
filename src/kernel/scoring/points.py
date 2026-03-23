@@ -2,17 +2,33 @@
 
 from __future__ import annotations
 
+from kernel.config import DEFAULT_CONFIG, MahjongConfig
+
 
 def round_up_100(x: int) -> int:
     return (x + 99) // 100 * 100
 
 
-def apply_kiriage_mangan(base: int, fu: int, han: int) -> int:
+def apply_kiriage_mangan(
+    base: int,
+    fu: int,
+    han: int,
+    config: MahjongConfig = DEFAULT_CONFIG,
+) -> int:
     """
     切上满贯适用：3 番 110 符或 4 番 70 符以上按满贯处理。
 
-    注意：雀魂规则中切上满贯默认有效。
+    Args:
+        base: 基础点数
+        fu: 符数
+        han: 番数
+        config: 规则配置（默认使用雀魂标准配置）
+
+    Returns:
+        适用切上满贯后的点数
     """
+    if not config.kiriage_mangan_enabled:
+        return base
     # 3 番 110 符：110 * 4 * 2^(2+3) = 110 * 4 * 32 = 14080 → 满贯 8000
     # 4 番 70 符：70 * 4 * 2^(2+4) = 70 * 4 * 64 = 17920 → 满贯 12000
     # 5 番：8000/12000（满贯）
@@ -23,7 +39,7 @@ def apply_kiriage_mangan(base: int, fu: int, han: int) -> int:
     return base
 
 
-def child_ron_base_points(fu: int, han: int) -> int:
+def child_ron_base_points(fu: int, han: int, config: MahjongConfig = DEFAULT_CONFIG) -> int:
     """子荣和：点棒公式 ``fu * 4 * 2^(2+han)`` 再切上，受满贯阶梯限制。"""
     if han >= 13:
         return 32_000
@@ -37,10 +53,10 @@ def child_ron_base_points(fu: int, han: int) -> int:
         return 8_000
     raw = fu * 4 * (2 ** (2 + han))
     base = round_up_100(raw)
-    return apply_kiriage_mangan(base, fu, han)
+    return apply_kiriage_mangan(base, fu, han, config)
 
 
-def dealer_ron_base_points(fu: int, han: int) -> int:
+def dealer_ron_base_points(fu: int, han: int, config: MahjongConfig = DEFAULT_CONFIG) -> int:
     """亲荣和（子点亲）：``fu * 6 * 2^(2+han)`` 系，阶梯同量级按常见表取整。"""
     if han >= 13:
         return 48_000
@@ -54,7 +70,7 @@ def dealer_ron_base_points(fu: int, han: int) -> int:
         return 12_000
     raw = fu * 6 * (2 ** (2 + han))
     base = round_up_100(raw)
-    return apply_kiriage_mangan(base, fu, han)
+    return apply_kiriage_mangan(base, fu, han, config)
 
 
 def child_ron_payment_from_discarder(
@@ -64,14 +80,15 @@ def child_ron_payment_from_discarder(
     fu: int,
     han: int,
     honba: int,
+    config: MahjongConfig = DEFAULT_CONFIG,
 ) -> int:
     """单家和了者从放铳家应收点数（含本场 300/本）。"""
     is_dealer_win = winner == dealer
     if is_dealer_win:
-        base = dealer_ron_base_points(fu, han)
+        base = dealer_ron_base_points(fu, han, config)
     else:
-        base = child_ron_base_points(fu, han)
-    return base + 300 * honba
+        base = child_ron_base_points(fu, han, config)
+    return base + config.honba_value * honba
 
 
 def _tsumo_from_child_non_dealer(fu: int, han: int) -> int:

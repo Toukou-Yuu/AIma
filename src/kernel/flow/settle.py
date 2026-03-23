@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from kernel.call.win import can_ron_default, can_ron_seven_pairs
+from kernel.config import DEFAULT_CONFIG, MahjongConfig
 from kernel.deal.model import BoardState
 from kernel.flow.model import TenpaiResult
-from kernel.hand.melds import Meld
 from kernel.riichi.tenpai import _iter_ron_candidate_tiles, is_tenpai_default
 from kernel.scoring.yaku import count_yaku_han
 from kernel.table.model import PrevailingWind, TableSnapshot, seat_wind_rank
@@ -44,7 +43,9 @@ def _has_yaku_with_win_tile(
     # 检查七对子
     if can_ron_seven_pairs(concealed, melds, win_tile):
         han = count_yaku_han(
-            board, table, seat,
+            board,
+            table,
+            seat,
             for_ron=True,
             win_tile=win_tile,
             concealed=concealed,
@@ -56,7 +57,9 @@ def _has_yaku_with_win_tile(
     # 检查标准形
     if can_ron_default(concealed, melds, win_tile):
         han = count_yaku_han(
-            board, table, seat,
+            board,
+            table,
+            seat,
             for_ron=True,
             win_tile=win_tile,
             concealed=concealed,
@@ -158,6 +161,7 @@ def settle_flow_mangan(
     table: TableSnapshot,
     board: BoardState,
     tenpai_result: TenpaiResult,
+    config: MahjongConfig = DEFAULT_CONFIG,
 ) -> TableSnapshot:
     """
     流局满贯结算：听牌者中满足流局满贯条件者按满贯收取点数。
@@ -171,8 +175,17 @@ def settle_flow_mangan(
     - 子家：8000 点
     - 亲家：12000 点
 
+    Args:
+        table: 牌桌快照
+        board: 牌局状态
+        tenpai_result: 听牌结果
+        config: 规则配置（默认使用雀魂标准配置）
+
     返回：结算后的 TableSnapshot。
     """
+    if not config.flow_mangan_enabled:
+        return table
+
     # 找出流局满贯者
     flow_mangan_seats = set()
     for s in tenpai_result.tenpai_seats:
@@ -252,6 +265,7 @@ def settle_flow(
     table: TableSnapshot,
     board: "BoardState",
     winner_seat: int | None = None,
+    config: MahjongConfig = DEFAULT_CONFIG,
 ) -> tuple[TableSnapshot, TenpaiResult]:
     """
     流局综合结算。
@@ -265,6 +279,12 @@ def settle_flow(
     返回： ``(new_table, tenpai_result)``
 
     注意：供托 ``kyoutaku`` 保留至下一局（不结算）。
+
+    Args:
+        table: 牌桌快照
+        board: 牌局状态
+        winner_seat: 和了者（若本局有和了）
+        config: 规则配置（默认使用雀魂标准配置）
     """
     # 1. 计算听牌结果
     tenpai_result = compute_tenpai_result(board)
@@ -273,7 +293,7 @@ def settle_flow(
     new_table = settle_tenpai(table, tenpai_result)
 
     # 3. 流局满贯结算
-    new_table = settle_flow_mangan(new_table, board, tenpai_result)
+    new_table = settle_flow_mangan(new_table, board, tenpai_result, config)
 
     # 4. 连庄/亲流判定
     continue_dealer = should_continue_dealer(

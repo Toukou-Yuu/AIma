@@ -10,10 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from kernel.config import DEFAULT_CONFIG
+
 # 四麻默认起配（§11）；三麻等变体由上层传入 ``starting_points``。
-DEFAULT_STARTING_POINTS = 25_000
+DEFAULT_STARTING_POINTS = DEFAULT_CONFIG.starting_points
 # 立直棒单根点数（§7）；供托增减可与根数相乘后写入 ``kyoutaku``。
-RIICHI_STICK_POINTS = 1000
+RIICHI_STICK_POINTS = DEFAULT_CONFIG.riichi_stick_value
 
 
 class PrevailingWind(Enum):
