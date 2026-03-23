@@ -113,6 +113,7 @@ def settle_ron_table(
             is_haitei=False,  # 荣和不是海底
             is_hotei=is_hotei,
             is_chankan=is_chankan,
+            is_tsumo=False,  # 荣和
         )
         han += count_dora_total(
             board.hands[w],
@@ -222,6 +223,7 @@ def settle_tsumo_table(
         is_haitei=is_haitei,
         is_hotei=False,  # 自摸不是河底
         is_chankan=False,  # 自摸不是抢杠
+        is_tsumo=True,  # 自摸
     )
     han += count_dora_total(
         board.hands[winner],

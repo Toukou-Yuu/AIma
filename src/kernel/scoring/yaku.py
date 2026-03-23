@@ -307,6 +307,382 @@ def _count_yakuhai_triplets(
     return count
 
 
+def _is_daisangen(full: Counter[Tile]) -> bool:
+    """
+    大三元：三元牌（白・发・中）三组刻子。
+    役满。
+    """
+    keys = _triplet_key_counts(full)
+    for rank in (5, 6, 7):
+        if keys[(Suit.HONOR, rank)] < 3:
+            return False
+    return True
+
+
+def _is_suuankou(concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile, for_ron: bool) -> bool:
+    """
+    四暗刻：门前清四组暗刻 + 对子。
+    荣和时不算四暗刻（荣和破坏门清），但四暗刻单骑除外。
+    役满。
+    """
+    if melds:
+        return False  # 有副露则不是四暗刻
+
+    # 统计暗刻数量
+    anko_count = 0
+    pair_count = 0
+
+    full = concealed.copy()
+    if for_ron:
+        full[win_tile] += 1
+
+    for key, count in full.items():
+        if count == 3:
+            anko_count += 1
+        elif count == 4:
+            anko_count += 1  # 暗杠也算暗刻
+        elif count == 2:
+            pair_count += 1
+
+    # 四暗刻：四暗刻 + 一对
+    # 四暗刻单骑：五组对子（听牌时为单骑）
+    if anko_count == 4 and pair_count == 1:
+        return True
+    # 四暗刻单骑：荣和时为五对子（实际是四暗刻 + 单骑待牌）
+    if for_ron and anko_count == 3 and pair_count == 2:
+        # 荣和的牌必须形成第四个刻子
+        if full[win_tile] == 3:
+            return True
+    return False
+
+
+def _is_suuankou_tanki(concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile, for_ron: bool) -> bool:
+    """
+    四暗刻单骑：门前清四暗刻 + 单骑待牌。
+    双倍役满。
+    仅荣和时成立（自摸时是普通四暗刻）。
+    """
+    if melds:
+        return False
+    if not for_ron:
+        return False  # 自摸时不是单骑
+
+    # 荣和时：手牌 3 刻子 +2 对子，荣和的牌使其中一对变成刻子
+    anko_count = 0
+    pair_count = 0
+    for key, count in concealed.items():
+        if count == 3:
+            anko_count += 1
+        elif count == 4:
+            anko_count += 1
+        elif count == 2:
+            pair_count += 1
+
+    if anko_count == 3 and pair_count == 2 and concealed[win_tile] == 2:
+        return True
+    return False
+
+
+def _is_kokushi_musou(concealed: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
+    """
+    国士无理（十三幺）：十三种幺九牌各至少一枚 + 一对。
+    门前清限定。
+    役满。
+    """
+    if melds:
+        return False  # 有副露则不是国士
+
+    # 十三种幺九牌
+    terminals = [
+        Tile(Suit.MAN, 1), Tile(Suit.MAN, 9),
+        Tile(Suit.PIN, 1), Tile(Suit.PIN, 9),
+        Tile(Suit.SOU, 1), Tile(Suit.SOU, 9),
+        Tile(Suit.HONOR, 1), Tile(Suit.HONOR, 2), Tile(Suit.HONOR, 3),
+        Tile(Suit.HONOR, 4), Tile(Suit.HONOR, 5), Tile(Suit.HONOR, 6),
+        Tile(Suit.HONOR, 7),
+    ]
+
+    # 必须有恰好 14 张牌
+    if sum(concealed.values()) != 14:
+        return False
+
+    # 必须有恰好 13 种幺九牌
+    if len(concealed) != 13:
+        return False
+
+    # 检查是否包含所有十三种幺九牌
+    for t in terminals:
+        if concealed[t] < 1:
+            return False
+
+    # 检查是否有一对（某一种幺九牌有 2 张）
+    pair_count = sum(1 for count in concealed.values() if count == 2)
+    return pair_count == 1
+
+
+def _is_kokushi_thirteen_waits(concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile) -> bool:
+    """
+    国士无理十三面：十三面待牌的国士。
+    双倍役满。
+    """
+    if melds:
+        return False
+
+    # 十三面待牌：手牌 13 种幺九牌各 1 张，待第 14 张成对
+    if sum(concealed.values()) != 13:
+        return False
+
+    if len(concealed) != 13:
+        return False
+
+    # 检查是否所有牌都是幺九牌且各 1 张
+    for count in concealed.values():
+        if count != 1:
+            return False
+
+    # 检查是否包含所有十三种幺九牌
+    terminals = [
+        Tile(Suit.MAN, 1), Tile(Suit.MAN, 9),
+        Tile(Suit.PIN, 1), Tile(Suit.PIN, 9),
+        Tile(Suit.SOU, 1), Tile(Suit.SOU, 9),
+        Tile(Suit.HONOR, 1), Tile(Suit.HONOR, 2), Tile(Suit.HONOR, 3),
+        Tile(Suit.HONOR, 4), Tile(Suit.HONOR, 5), Tile(Suit.HONOR, 6),
+        Tile(Suit.HONOR, 7),
+    ]
+    for t in terminals:
+        if concealed[t] != 1:
+            return False
+
+    # 荣和的牌必须是十三种幺九牌之一
+    return win_tile in terminals
+
+
+def _is_chinroutou(full: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
+    """
+    清老头：仅 19 数牌（四组刻子/杠子 + 对子）。
+    役满。
+    """
+    if melds:
+        # 有副露时，检查副露是否都是 19 数牌
+        for m in melds:
+            for t in m.tiles:
+                if t.suit == Suit.HONOR:
+                    return False
+                if t.rank not in (1, 9):
+                    return False
+
+    # 检查所有牌是否都是 19 数牌
+    for t, count in full.items():
+        if t.suit == Suit.HONOR:
+            return False
+        if t.rank not in (1, 9):
+            return False
+
+    # 必须有恰好 7 种牌（4 种刻子 +1 种对子，或对对和形）
+    # 清老头只能是对对和形（因为顺子需要中间牌）
+    return True
+
+
+def _is_tsuuiisou(full: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
+    """
+    字一色：仅字牌。
+    役满。
+    """
+    if melds:
+        # 有副露时，检查副露是否都是字牌
+        for m in melds:
+            for t in m.tiles:
+                if t.suit != Suit.HONOR:
+                    return False
+
+    # 检查所有牌是否都是字牌
+    for t in full.keys():
+        if t.suit != Suit.HONOR:
+            return False
+    return True
+
+
+def _is_ryuuiisou(full: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
+    """
+    绿一色：仅 23468 索 + 发。
+    役满。
+    """
+    # 绿一色允许的牌
+    allowed_tiles = {
+        Tile(Suit.SOU, 2), Tile(Suit.SOU, 3), Tile(Suit.SOU, 4),
+        Tile(Suit.SOU, 6), Tile(Suit.SOU, 8),
+        Tile(Suit.HONOR, 6),  # 发
+    }
+
+    if melds:
+        # 有副露时，检查副露是否都是绿一色牌
+        for m in melds:
+            for t in m.tiles:
+                if t not in allowed_tiles:
+                    return False
+
+    # 检查所有牌是否都是绿一色牌
+    for t in full.keys():
+        if t not in allowed_tiles:
+            return False
+    return True
+
+
+def _is_chuuren_poutou(concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile) -> bool:
+    """
+    九莲宝灯：同花色 1112345678999 + 任意同花色牌。
+    门前清限定。
+    役满。
+    """
+    if melds:
+        return False
+
+    if sum(concealed.values()) != 14:
+        return False
+
+    # 找出唯一的非字牌花色
+    suits = {t.suit for t in concealed.keys() if t.suit != Suit.HONOR}
+    if len(suits) != 1:
+        return False
+
+    suit = list(suits)[0]
+
+    # 九莲宝灯基础形：1112345678999
+    base_pattern = {1: 3, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 3}
+
+    # 检查是否符合九莲宝灯形
+    # 允许任意一张牌多一张（形成 14 张）
+    ranks_present = {t.rank for t in concealed.keys()}
+    if not {1, 2, 3, 4, 5, 6, 7, 8, 9}.issubset(ranks_present):
+        return False
+
+    # 检查是否符合 1112345678999 + 1 张的形式
+    total = 0
+    for rank in range(1, 10):
+        t = Tile(suit, rank)
+        count = concealed.get(t, 0)
+        if count < base_pattern[rank]:
+            return False
+        total += count
+
+    if total != 14:
+        return False
+
+    # 检查额外牌是否在 1-9 范围内（已经是同花色）
+    extra_count = sum(concealed.values()) - 13
+    return extra_count == 1
+
+
+def _is_junsei_chuuren_poutou(concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile) -> bool:
+    """
+    纯正九莲宝灯：九面待牌的九莲宝灯。
+    双倍役满。
+    条件：手牌 1112345678999 待任意同花色牌（1-9 任意）。
+    """
+    if melds:
+        return False
+
+    # 手牌必须是 13 张
+    if sum(concealed.values()) != 13:
+        return False
+
+    # 找出唯一的非字牌花色
+    suits = {t.suit for t in concealed.keys() if t.suit != Suit.HONOR}
+    if len(suits) != 1:
+        return False
+
+    suit = list(suits)[0]
+
+    # 纯正九莲：1112345678999（13 张）
+    base_pattern = {1: 3, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 3}
+
+    # 检查手牌是否完全符合基础形
+    for rank in range(1, 10):
+        t = Tile(suit, rank)
+        if concealed.get(t, 0) != base_pattern[rank]:
+            return False
+
+    return True
+
+
+def _is_suu_kantsu(melds: tuple[Meld, ...]) -> bool:
+    """
+    四杠子：四组杠子。
+    役满。
+    """
+    kan_count = sum(1 for m in melds if m.kind in (MeldKind.DAIMINKAN, MeldKind.ANKAN, MeldKind.SHANKUMINKAN))
+    return kan_count == 4
+
+
+def _is_daisuushii(full: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
+    """
+    大四喜：四风四组刻子。
+    役满。
+    """
+    if melds:
+        # 检查副露中的四风刻子
+        wind_kan_count = sum(1 for m in melds if m.kind in (MeldKind.KAN, MeldKind.ANKAN, MeldKind.PON)
+                            and m.tiles[0].suit == Suit.HONOR and m.tiles[0].rank in (1, 2, 3, 4))
+
+    # 统计四风刻子数量
+    keys = _triplet_key_counts(full)
+    wind_kan_count = 0
+    for rank in (1, 2, 3, 4):
+        if keys[(Suit.HONOR, rank)] >= 3:
+            wind_kan_count += 1
+
+    return wind_kan_count == 4
+
+
+def _is_shou_suushii(full: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
+    """
+    小四喜：四风三组刻子 + 一对风牌。
+    役满。
+    """
+    keys = _triplet_key_counts(full)
+
+    # 统计四风刻子数量
+    wind_triplet_count = 0
+    for rank in (1, 2, 3, 4):
+        if keys[(Suit.HONOR, rank)] >= 3:
+            wind_triplet_count += 1
+
+    # 统计四风对子数量（除去已算作刻子的）
+    wind_pair_count = 0
+    for rank in (1, 2, 3, 4):
+        count = keys[(Suit.HONOR, rank)]
+        if count == 2:
+            wind_pair_count += 1
+
+    return wind_triplet_count == 3 and wind_pair_count >= 1
+
+
+def _is_tenhou(board: BoardState, winner: int, is_tsumo: bool) -> bool:
+    """
+    天和：亲家第一巡自摸。
+    役满。
+    """
+    if not is_tsumo:
+        return False
+    if board.current_seat != 0:  # 亲家必须是席次 0
+        return False
+    # 第一巡：无人打牌
+    return len(board.river) == 0
+
+
+def _is_chihou(board: BoardState, winner: int, for_ron: bool) -> bool:
+    """
+    地和：子家第一巡荣和。
+    役满。
+    """
+    if not for_ron:
+        return False
+    if board.current_seat == 0:  # 亲家不算地和
+        return False
+    # 第一巡：亲家刚打第一张牌
+    return len(board.river) == 1
+
+
 def count_yaku_han(
     board: BoardState,
     table: TableSnapshot,
@@ -321,6 +697,7 @@ def count_yaku_han(
     is_haitei: bool = False,
     is_hotei: bool = False,
     is_chankan: bool = False,
+    is_tsumo: bool = False,
 ) -> int:
     """
     役与翻数（扩展子集）：
@@ -340,10 +717,74 @@ def count_yaku_han(
     - 混老头（2 番）
     - 三暗刻（2 番）
     - 小三元（2 番）
+    - 役满：大三元、四暗刻、国士无理、清老头、字一色、绿一色、九莲宝灯、四杠子、大小四喜、天和/地和
 
     不含ドラ、不含本场。
     """
     full = _full_tile_counter(concealed, melds, win_tile, for_ron=for_ron)
+
+    # ========== 役满判定（优先） ==========
+    # 大三元
+    if _is_daisangen(full):
+        return 13
+
+    # 四暗刻单骑（双倍役满，按 13 番返回）
+    if _is_suuankou_tanki(concealed, melds, win_tile, for_ron=for_ron):
+        return 13
+
+    # 四暗刻
+    if _is_suuankou(concealed, melds, win_tile, for_ron=for_ron):
+        return 13
+
+    # 国士无理十三面（双倍役满，按 13 番返回）
+    if _is_kokushi_thirteen_waits(concealed, melds, win_tile):
+        return 13
+
+    # 国士无理
+    if _is_kokushi_musou(concealed, melds):
+        return 13
+
+    # 清老头
+    if _is_chinroutou(full, melds):
+        return 13
+
+    # 字一色
+    if _is_tsuuiisou(full, melds):
+        return 13
+
+    # 绿一色
+    if _is_ryuuiisou(full, melds):
+        return 13
+
+    # 纯正九莲宝灯（双倍役满，按 13 番返回）
+    if _is_junsei_chuuren_poutou(concealed, melds, win_tile):
+        return 13
+
+    # 九莲宝灯
+    if _is_chuuren_poutou(concealed, melds, win_tile):
+        return 13
+
+    # 四杠子
+    if _is_suu_kantsu(melds):
+        return 13
+
+    # 大四喜
+    if _is_daisuushii(full, melds):
+        return 13
+
+    # 小四喜
+    if _is_shou_suushii(full, melds):
+        return 13
+
+    # 天和
+    if _is_tenhou(board, winner, is_tsumo=is_tsumo):
+        return 13
+
+    # 地和
+    if _is_chihou(board, winner, for_ron=for_ron):
+        return 13
+    # ========== 役满判定结束 ==========
+
     han = 0
 
     # 立直相关

@@ -7,6 +7,22 @@ def round_up_100(x: int) -> int:
     return (x + 99) // 100 * 100
 
 
+def apply_kiriage_mangan(base: int, fu: int, han: int) -> int:
+    """
+    切上满贯适用：3 番 110 符或 4 番 70 符以上按满贯处理。
+
+    注意：雀魂规则中切上满贯默认有效。
+    """
+    # 3 番 110 符：110 * 4 * 2^(2+3) = 110 * 4 * 32 = 14080 → 满贯 8000
+    # 4 番 70 符：70 * 4 * 2^(2+4) = 70 * 4 * 64 = 17920 → 满贯 12000
+    # 5 番：8000/12000（满贯）
+    if han == 3 and fu >= 110:
+        return 8000
+    if han == 4 and fu >= 70:
+        return 12000
+    return base
+
+
 def child_ron_base_points(fu: int, han: int) -> int:
     """子荣和：点棒公式 ``fu * 4 * 2^(2+han)`` 再切上，受满贯阶梯限制。"""
     if han >= 13:
@@ -20,7 +36,8 @@ def child_ron_base_points(fu: int, han: int) -> int:
     if han >= 5:
         return 8_000
     raw = fu * 4 * (2 ** (2 + han))
-    return round_up_100(raw)
+    base = round_up_100(raw)
+    return apply_kiriage_mangan(base, fu, han)
 
 
 def dealer_ron_base_points(fu: int, han: int) -> int:
@@ -36,7 +53,8 @@ def dealer_ron_base_points(fu: int, han: int) -> int:
     if han >= 5:
         return 12_000
     raw = fu * 6 * (2 ** (2 + han))
-    return round_up_100(raw)
+    base = round_up_100(raw)
+    return apply_kiriage_mangan(base, fu, han)
 
 
 def child_ron_payment_from_discarder(

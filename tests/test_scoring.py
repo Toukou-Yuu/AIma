@@ -10,7 +10,12 @@ from kernel import BoardState, Tile, build_board_after_split, build_deck, split_
 from kernel.deal.model import BoardState as BS
 from kernel.play.model import CallResolution, RiverEntry, TurnPhase
 from kernel.scoring.furiten import is_furiten_for_tile
-from kernel.scoring.points import child_ron_payment_from_discarder, round_up_100
+from kernel.scoring.points import (
+    child_ron_payment_from_discarder,
+    child_ron_base_points,
+    dealer_ron_base_points,
+    round_up_100,
+)
 from kernel.scoring.dora import ura_indicators_for_settlement
 from kernel.scoring.settle import settle_ron_table
 from kernel.table.model import initial_table_snapshot
@@ -215,3 +220,31 @@ def test_is_furiten_when_own_river_contains_win_tile() -> None:
     b = _board_need_draw_with_river(2, t5)
     assert is_furiten_for_tile(b, 2, t5) is True
     assert is_furiten_for_tile(b, 1, t5) is False
+
+
+class TestKiriageMangan:
+    """切上满贯测试。"""
+
+    def test_kiriage_mangan_3han_110fu(self) -> None:
+        """3 番 110 符：切上满贯 8000 点。"""
+        # 110 符：罕见情况（例：字一色副露 + 单骑 + 役牌）
+        base = child_ron_base_points(fu=110, han=3)
+        assert base == 8_000  # 切上满贯
+
+    def test_kiriage_mangan_4han_70fu(self) -> None:
+        """4 番 70 符：切上满贯 12000 点。"""
+        # 70 符：罕见情况（例：对对和 + 高符）
+        base = child_ron_base_points(fu=70, han=4)
+        assert base == 12_000  # 切上满贯
+
+    def test_no_kiriage_mangan_3han_100fu(self) -> None:
+        """3 番 100 符：不满贯（12800 点）。"""
+        base = child_ron_base_points(fu=100, han=3)
+        # 100 * 4 * 2^(2+3) = 100 * 4 * 32 = 12800
+        assert base == 12800
+
+    def test_no_kiriage_mangan_4han_60fu(self) -> None:
+        """4 番 60 符：不满贯（15400 点）。"""
+        base = child_ron_base_points(fu=60, han=4)
+        # 60 * 4 * 2^(2+4) = 60 * 4 * 64 = 15360 → 15400
+        assert base == 15400
