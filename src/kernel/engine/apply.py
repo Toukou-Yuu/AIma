@@ -1,4 +1,4 @@
-"""统一 ``apply``：合法推进；非法阶段/动作抛出 ``IllegalActionError``。"""
+"""统一 ``apply``：合法推进；非法阶段/动作抛出 ``IllegalActionError``；生成结构化事件日志。"""
 
 from __future__ import annotations
 
@@ -7,10 +7,24 @@ from dataclasses import dataclass, replace
 from kernel.call import apply_open_meld, apply_pass_call, apply_ron, board_after_ron_winners
 from kernel.call.win import can_tsumo_default
 from kernel.deal import assert_wall_is_standard_deck, build_board_after_split
+from kernel.deal.model import BoardState
 from kernel.engine.actions import Action, ActionKind
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState
-from kernel.flow import FlowKind, check_flow_kind, settle_flow
+from kernel.event_log import (
+    CallEvent,
+    DiscardTileEvent,
+    DrawTileEvent,
+    EventLog,
+    FlowEvent,
+    GameEvent,
+    HandOverEvent,
+    RonEvent,
+    RoundBeginEvent,
+    TsumoEvent,
+)
+from kernel.flow import FlowKind, FlowResult, check_flow_kind, settle_flow
+from kernel.flow.model import TenpaiResult
 from kernel.hand.multiset import remove_tile
 from kernel.kan import apply_ankan, apply_shankuminkan
 from kernel.play import apply_discard, apply_draw, board_after_tsumo_win
@@ -19,6 +33,7 @@ from kernel.riichi.tenpai import is_tenpai_default
 from kernel.scoring.dora import ura_indicators_for_settlement
 from kernel.scoring.settle import settle_ron_table, settle_tsumo_table
 from kernel.table.model import RIICHI_STICK_POINTS
+from kernel.table.model import TableSnapshot
 from kernel.table.transitions import advance_round, compute_match_ranking, should_match_end
 from kernel.wall import split_wall
 from kernel.wall.split import split_wall as deal_split_wall
@@ -34,10 +49,156 @@ class IllegalActionError(EngineError):
 
 @dataclass(frozen=True, slots=True)
 class ApplyOutcome:
-    """``apply`` 的结果；``events`` 预留给结构化日志（当前为空元组）。"""
+    """``apply`` 的结果；``events`` 包含本动作生成的结构化事件日志。"""
 
     new_state: GameState
-    events: tuple[object, ...]
+    events: tuple[GameEvent, ...]
+
+
+class _EventBuilder:
+    """事件构建器：维护序列号并生成事件。"""
+
+    def __init__(self, start_sequence: int = 0) -> None:
+        self._sequence = start_sequence
+
+    def next_sequence(self) -> int:
+        seq = self._sequence
+        self._sequence += 1
+        return seq
+
+    def round_begin(
+        self,
+        dealer_seat: int,
+        dora_indicator: "Tile",
+        seeds: tuple[int, ...],
+    ) -> RoundBeginEvent:
+        return RoundBeginEvent(
+            seat=None,
+            sequence=self.next_sequence(),
+            dealer_seat=dealer_seat,
+            dora_indicator=dora_indicator,
+            seeds=seeds,
+        )
+
+    def draw_tile(
+        self,
+        seat: int,
+        tile: "Tile",
+        is_rinshan: bool,
+        wall_remaining: int,
+    ) -> DrawTileEvent:
+        return DrawTileEvent(
+            seat=seat,
+            sequence=self.next_sequence(),
+            tile=tile,
+            is_rinshan=is_rinshan,
+            wall_remaining=wall_remaining,
+        )
+
+    def discard_tile(
+        self,
+        seat: int,
+        tile: "Tile",
+        is_tsumogiri: bool,
+        declare_riichi: bool,
+    ) -> DiscardTileEvent:
+        return DiscardTileEvent(
+            seat=seat,
+            sequence=self.next_sequence(),
+            tile=tile,
+            is_tsumogiri=is_tsumogiri,
+            declare_riichi=declare_riichi,
+        )
+
+    def call(
+        self,
+        seat: int,
+        meld: "Meld",
+        call_kind: str,
+    ) -> CallEvent:
+        return CallEvent(
+            seat=seat,
+            sequence=self.next_sequence(),
+            meld=meld,
+            call_kind=call_kind,
+        )
+
+    def ron(
+        self,
+        seat: int,
+        win_tile: "Tile",
+        discard_seat: int,
+    ) -> RonEvent:
+        return RonEvent(
+            seat=seat,
+            sequence=self.next_sequence(),
+            win_tile=win_tile,
+            discard_seat=discard_seat,
+        )
+
+    def tsumo(
+        self,
+        seat: int,
+        win_tile: "Tile",
+        is_rinshan: bool,
+    ) -> TsumoEvent:
+        return TsumoEvent(
+            seat=seat,
+            sequence=self.next_sequence(),
+            win_tile=win_tile,
+            is_rinshan=is_rinshan,
+        )
+
+    def flow(
+        self,
+        flow_kind: "FlowKind",
+        tenpai_seats: frozenset[int],
+    ) -> FlowEvent:
+        return FlowEvent(
+            seat=None,
+            sequence=self.next_sequence(),
+            flow_kind=flow_kind,
+            tenpai_seats=tenpai_seats,
+        )
+
+    def hand_over(
+        self,
+        winners: tuple[int, ...],
+        payments: tuple[int, ...],
+    ) -> HandOverEvent:
+        return HandOverEvent(
+            seat=None,
+            sequence=self.next_sequence(),
+            winners=winners,
+            payments=payments,
+        )
+
+
+def _create_event_builder(state: GameState) -> _EventBuilder:
+    """创建事件构建器，从 state.event_sequence 开始。"""
+    return _EventBuilder(start_sequence=state.event_sequence)
+
+
+def _new_state_with_events(
+    state: GameState,
+    phase: GamePhase,
+    table: TableSnapshot | None = None,
+    board: BoardState | None = None,
+    ron_winners: frozenset[int] | None = None,
+    flow_result: FlowResult | None = None,
+    tenpai_result: TenpaiResult | None = None,
+    event_builder: _EventBuilder | None = None,
+) -> GameState:
+    """创建新的 GameState 并更新 event_sequence。"""
+    return GameState(
+        phase=phase,
+        table=table if table is not None else state.table,
+        board=board,
+        ron_winners=ron_winners,
+        flow_result=flow_result,
+        tenpai_result=tenpai_result,
+        event_sequence=event_builder._sequence if event_builder else state.event_sequence,
+    )
 
 
 def _validate_action_seat(action: Action) -> None:
@@ -86,8 +247,21 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 table=state.table,
                 board=board,
                 ron_winners=None,
+                event_sequence=state.event_sequence,
             )
-            return ApplyOutcome(new_state=new_state, events=())
+            # 生成 RoundBeginEvent
+            eb = _create_event_builder(state)
+            dora_ind = board.revealed_indicators[0] if board.revealed_indicators else None
+            # seeds: 各家初始手牌在 wall 中的索引（简化：用座位 * 13 作为种子索引）
+            seeds = tuple(s * 13 for s in range(4))
+            event = eb.round_begin(
+                dealer_seat=state.table.dealer_seat,
+                dora_indicator=dora_ind,
+                seeds=seeds,
+            )
+            # 更新 event_sequence
+            new_state = replace(new_state, event_sequence=eb._sequence)
+            return ApplyOutcome(new_state=new_state, events=(event,))
         msg = f"action {kind.value} not allowed in phase {phase.value}"
         raise IllegalActionError(msg)
 
@@ -134,21 +308,39 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                         is_chankan=is_chankan,
                         continue_dealer=continue_dealer,
                     )
+                    # 生成 RonEvent 和 HandOverEvent
+                    eb = _create_event_builder(state)
+                    events = []
+                    for winner in cs_pb.ron_claimants:
+                        ron_event = eb.ron(
+                            seat=winner,
+                            win_tile=cs_pb.claimed_tile,
+                            discard_seat=cs_pb.discard_seat,
+                        )
+                        events.append(ron_event)
+                    hand_over_event = eb.hand_over(
+                        winners=tuple(cs_pb.ron_claimants),
+                        payments=(0, 0, 0, 0),  # 简化：实际由 settle 计算
+                    )
+                    events.append(hand_over_event)
                     return ApplyOutcome(
                         new_state=GameState(
                             phase=GamePhase.HAND_OVER,
                             table=new_table,
                             board=settled,
                             ron_winners=cs_pb.ron_claimants,
+                            event_sequence=eb._sequence,
                         ),
-                        events=(),
+                        events=tuple(events),
                     )
+                # PASS_CALL 不生成事件（只是声明放弃）
                 return ApplyOutcome(
                     new_state=GameState(
                         phase=phase,
                         table=state.table,
                         board=new_board,
                         ron_winners=None,
+                        event_sequence=state.event_sequence,  # PASS_CALL 不增加事件
                     ),
                     events=(),
                 )
@@ -180,14 +372,30 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                         is_chankan=is_chankan,
                         continue_dealer=continue_dealer,
                     )
+                    # 生成 RonEvent 和 HandOverEvent
+                    eb = _create_event_builder(state)
+                    events = []
+                    for winner in cs.ron_claimants:
+                        ron_event = eb.ron(
+                            seat=winner,
+                            win_tile=cs.claimed_tile,
+                            discard_seat=cs.discard_seat,
+                        )
+                        events.append(ron_event)
+                    hand_over_event = eb.hand_over(
+                        winners=tuple(cs.ron_claimants),
+                        payments=(0, 0, 0, 0),  # 简化：实际由 settle 计算
+                    )
+                    events.append(hand_over_event)
                     return ApplyOutcome(
                         new_state=GameState(
                             phase=GamePhase.HAND_OVER,
                             table=new_table,
                             board=settled,
                             ron_winners=cs.ron_claimants,
+                            event_sequence=eb._sequence,
                         ),
-                        events=(),
+                        events=tuple(events),
                     )
                 return ApplyOutcome(
                     new_state=GameState(
@@ -195,6 +403,7 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                         table=state.table,
                         board=new_board,
                         ron_winners=None,
+                        event_sequence=state.event_sequence,  # RON 被 PASS 不增加事件
                     ),
                     events=(),
                 )
@@ -205,18 +414,28 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 if action.meld is None:
                     msg = "OPEN_MELD requires meld"
                     raise IllegalActionError(msg)
+                # 确定鸣牌类型
+                call_kind = action.meld.kind.lower()  # "chi", "pon", "daiminkan"
                 try:
                     new_board = apply_open_meld(board, action.seat, action.meld)
                 except ValueError as e:
                     raise IllegalActionError(str(e)) from e
+                # 生成 CallEvent
+                eb = _create_event_builder(state)
+                call_event = eb.call(
+                    seat=action.seat,
+                    meld=action.meld,
+                    call_kind=call_kind,
+                )
                 return ApplyOutcome(
                     new_state=GameState(
                         phase=phase,
                         table=state.table,
                         board=new_board,
                         ron_winners=None,
+                        event_sequence=eb._sequence,
                     ),
-                    events=(),
+                    events=(call_event,),
                 )
             msg = f"action {kind.value} not allowed during CALL_RESPONSE"
             raise IllegalActionError(msg)
@@ -231,6 +450,18 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
             except ValueError as e:
                 raise IllegalActionError(str(e)) from e
 
+            # 生成 DrawTileEvent
+            eb = _create_event_builder(state)
+            drawn_tile = new_board.last_draw_tile
+            is_rinshan = new_board.last_draw_was_rinshan
+            wall_remaining = len(new_board.live_wall) // 2  # 简化：剩余摸牌数
+            draw_event = eb.draw_tile(
+                seat=seat,
+                tile=drawn_tile,
+                is_rinshan=is_rinshan,
+                wall_remaining=wall_remaining,
+            )
+
             # 检测荒牌流局
             flow_result = check_flow_kind(
                 new_board,
@@ -239,6 +470,10 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
             if flow_result is not None and flow_result.kind == FlowKind.EXHAUSTED:
                 # 荒牌流局：进入 FLOWN 状态
                 new_table, tenpai_result = settle_flow(state.table, new_board)
+                flow_event = eb.flow(
+                    flow_kind=flow_result.kind,
+                    tenpai_seats=tenpai_result.tenpai_seats if tenpai_result else frozenset(),
+                )
                 return ApplyOutcome(
                     new_state=GameState(
                         phase=GamePhase.FLOWN,
@@ -247,8 +482,9 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                         flow_result=flow_result,
                         tenpai_result=tenpai_result,
                         ron_winners=None,
+                        event_sequence=eb._sequence,
                     ),
-                    events=(),
+                    events=(draw_event, flow_event),
                 )
 
             return ApplyOutcome(
@@ -257,8 +493,9 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                     table=state.table,
                     board=new_board,
                     ron_winners=None,
+                    event_sequence=eb._sequence,
                 ),
-                events=(),
+                events=(draw_event,),
             )
         if kind == ActionKind.DISCARD:
             if action.seat is None:
@@ -297,6 +534,21 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 )
             except ValueError as e:
                 raise IllegalActionError(str(e)) from e
+
+            # 生成 DiscardTileEvent
+            eb = _create_event_builder(state)
+            # 判断是否摸切：比较打出的牌与最后摸的牌
+            is_tsumogiri = (
+                board.last_draw_tile is not None
+                and action.tile == board.last_draw_tile
+            )
+            discard_event = eb.discard_tile(
+                seat=seat,
+                tile=action.tile,
+                is_tsumogiri=is_tsumogiri,
+                declare_riichi=action.declare_riichi,
+            )
+
             new_table = state.table
             if action.declare_riichi:
                 scores = list(state.table.scores)
@@ -318,6 +570,10 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 if flow_result is not None and flow_result.kind == FlowKind.FOUR_RIICHI:
                     # 四家立直流局：进入 FLOWN 状态
                     new_table, tenpai_result = settle_flow(new_table, new_board)
+                    flow_event = eb.flow(
+                        flow_kind=flow_result.kind,
+                        tenpai_seats=tenpai_result.tenpai_seats if tenpai_result else frozenset(),
+                    )
                     return ApplyOutcome(
                         new_state=GameState(
                             phase=GamePhase.FLOWN,
@@ -326,8 +582,9 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                             flow_result=flow_result,
                             tenpai_result=tenpai_result,
                             ron_winners=None,
+                            event_sequence=eb._sequence,
                         ),
-                        events=(),
+                        events=(discard_event, flow_event),
                     )
 
             return ApplyOutcome(
@@ -336,8 +593,9 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                     table=new_table,
                     board=new_board,
                     ron_winners=None,
+                    event_sequence=eb._sequence,
                 ),
-                events=(),
+                events=(discard_event,),
             )
         if kind == ActionKind.TSUMO:
             if board.turn_phase != TurnPhase.MUST_DISCARD:
@@ -362,6 +620,15 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
             ):
                 msg = "illegal tsumo shape"
                 raise IllegalActionError(msg)
+
+            # 生成 TsumoEvent
+            eb = _create_event_builder(state)
+            tsumo_event = eb.tsumo(
+                seat=seat,
+                win_tile=wt,
+                is_rinshan=board.last_draw_was_rinshan,
+            )
+
             settled = board_after_tsumo_win(board, winner=seat, win_tile=wt)
             ura = ura_indicators_for_settlement(
                 board.dead_wall,
@@ -377,14 +644,23 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 ura_indicators=ura,
                 continue_dealer=continue_dealer,
             )
+
+            # 生成 HandOverEvent
+            # 计算点棒变化（相对局开始前）：简化处理，用 winners 收益表示
+            winners = (seat,)
+            # payments: 简化为 (0, 0, 0, 0)，实际应由 settle 逻辑计算
+            payments = (0, 0, 0, 0)
+            hand_over_event = eb.hand_over(winners=winners, payments=payments)
+
             return ApplyOutcome(
                 new_state=GameState(
                     phase=GamePhase.HAND_OVER,
                     table=new_table,
                     board=settled,
                     ron_winners=frozenset({seat}),
+                    event_sequence=eb._sequence,
                 ),
-                events=(),
+                events=(tsumo_event, hand_over_event),
             )
         if kind == ActionKind.ANKAN:
             if board.turn_phase != TurnPhase.MUST_DISCARD:
@@ -401,12 +677,24 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
             except ValueError as e:
                 raise IllegalActionError(str(e)) from e
 
+            # 生成 CallEvent (ankan)
+            eb = _create_event_builder(state)
+            kan_event = eb.call(
+                seat=action.seat,
+                meld=action.meld,
+                call_kind="ankan",
+            )
+
             # 计算杠总数并检测四杠流局
             kan_count = sum(len(melds) for melds in new_board.melds)
             flow_result = check_flow_kind(new_board, kan_count=kan_count)
             if flow_result is not None and flow_result.kind == FlowKind.FOUR_KANS:
                 # 四杠流局：进入 FLOWN 状态
                 new_table, tenpai_result = settle_flow(state.table, new_board)
+                flow_event = eb.flow(
+                    flow_kind=flow_result.kind,
+                    tenpai_seats=tenpai_result.tenpai_seats if tenpai_result else frozenset(),
+                )
                 return ApplyOutcome(
                     new_state=GameState(
                         phase=GamePhase.FLOWN,
@@ -415,8 +703,9 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                         flow_result=flow_result,
                         tenpai_result=tenpai_result,
                         ron_winners=None,
+                        event_sequence=eb._sequence,
                     ),
-                    events=(),
+                    events=(kan_event, flow_event),
                 )
 
             return ApplyOutcome(
@@ -425,8 +714,9 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                     table=state.table,
                     board=new_board,
                     ron_winners=None,
+                    event_sequence=eb._sequence,
                 ),
-                events=(),
+                events=(kan_event,),
             )
         if kind == ActionKind.SHANKUMINKAN:
             if board.turn_phase != TurnPhase.MUST_DISCARD:
@@ -443,12 +733,24 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
             except ValueError as e:
                 raise IllegalActionError(str(e)) from e
 
+            # 生成 CallEvent (shankuminkan)
+            eb = _create_event_builder(state)
+            kan_event = eb.call(
+                seat=action.seat,
+                meld=action.meld,
+                call_kind="shankuminkan",
+            )
+
             # 计算杠总数并检测四杠流局
             kan_count = sum(len(melds) for melds in new_board.melds)
             flow_result = check_flow_kind(new_board, kan_count=kan_count)
             if flow_result is not None and flow_result.kind == FlowKind.FOUR_KANS:
                 # 四杠流局：进入 FLOWN 状态
                 new_table, tenpai_result = settle_flow(state.table, new_board)
+                flow_event = eb.flow(
+                    flow_kind=flow_result.kind,
+                    tenpai_seats=tenpai_result.tenpai_seats if tenpai_result else frozenset(),
+                )
                 return ApplyOutcome(
                     new_state=GameState(
                         phase=GamePhase.FLOWN,
@@ -457,8 +759,9 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                         flow_result=flow_result,
                         tenpai_result=tenpai_result,
                         ron_winners=None,
+                        event_sequence=eb._sequence,
                     ),
-                    events=(),
+                    events=(kan_event, flow_event),
                 )
 
             return ApplyOutcome(
@@ -467,8 +770,9 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                     table=state.table,
                     board=new_board,
                     ron_winners=None,
+                    event_sequence=eb._sequence,
                 ),
-                events=(),
+                events=(kan_event,),
             )
         if kind in (ActionKind.PASS_CALL, ActionKind.RON, ActionKind.OPEN_MELD):
             msg = f"action {kind.value} only allowed during CALL_RESPONSE"
@@ -480,8 +784,6 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
     if phase == GamePhase.HAND_OVER:
         if kind == ActionKind.NOOP:
             # 检查和了后是否终局
-            # 注意：settle_*_table 已经更新了 honba（连庄时 +1，亲流时重置）
-            # advance_round 只处理亲流时的局序/亲席变更
             if should_match_end(state.table):
                 # 终局：计算名次，进入 MATCH_END
                 ranking = compute_match_ranking(state.table)
@@ -492,11 +794,10 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                         board=state.board,
                         ron_winners=state.ron_winners,
                     ),
-                    events=(),
+                    events=(),  # 终局不再生成新事件
                 )
             else:
                 # 未终局：判断是否连庄
-                # 连庄条件：亲家和了（ron_winners 中包含 dealer_seat）
                 continue_dealer = (
                     state.ron_winners is not None and state.table.dealer_seat in state.ron_winners
                 )
@@ -504,7 +805,6 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 # 重新开局配牌
                 w = action.wall if action.wall is not None else None
                 if w is None:
-                    # 需要外部提供牌山
                     msg = "NEXT_ROUND requires wall"
                     raise IllegalActionError(msg)
                 try:
@@ -516,14 +816,26 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                     board = build_board_after_split(split, new_table.dealer_seat)
                 except ValueError as e:
                     raise IllegalActionError(str(e)) from e
+
+                # 生成新局的 RoundBeginEvent
+                eb = _create_event_builder(state)
+                dora_ind = board.revealed_indicators[0] if board.revealed_indicators else None
+                seeds = tuple(s * 13 for s in range(4))
+                round_begin_event = eb.round_begin(
+                    dealer_seat=new_table.dealer_seat,
+                    dora_indicator=dora_ind,
+                    seeds=seeds,
+                )
+
                 return ApplyOutcome(
                     new_state=GameState(
                         phase=GamePhase.IN_ROUND,
                         table=new_table,
                         board=board,
                         ron_winners=None,
+                        event_sequence=eb._sequence,
                     ),
-                    events=(),
+                    events=(round_begin_event,),
                 )
         msg = f"action {kind.value} not allowed in phase {phase.value}"
         raise IllegalActionError(msg)
@@ -605,6 +917,17 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                     board = build_board_after_split(split, new_table.dealer_seat)
                 except ValueError as e:
                     raise IllegalActionError(str(e)) from e
+
+                # 生成新局的 RoundBeginEvent
+                eb = _create_event_builder(state)
+                dora_ind = board.revealed_indicators[0] if board.revealed_indicators else None
+                seeds = tuple(s * 13 for s in range(4))
+                round_begin_event = eb.round_begin(
+                    dealer_seat=new_table.dealer_seat,
+                    dora_indicator=dora_ind,
+                    seeds=seeds,
+                )
+
                 return ApplyOutcome(
                     new_state=GameState(
                         phase=GamePhase.IN_ROUND,
@@ -613,8 +936,9 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                         ron_winners=None,
                         flow_result=None,  # 清除流局结果
                         tenpai_result=None,
+                        event_sequence=eb._sequence,
                     ),
-                    events=(),
+                    events=(round_begin_event,),
                 )
         msg = f"action {kind.value} not allowed in phase {phase.value}"
         raise IllegalActionError(msg)

@@ -1,5 +1,6 @@
 """日麻对局内核（牌、牌山、状态机等）。大模型调用见 ``llm`` 包。"""
 
+from kernel.api import LegalAction, Observation, legal_actions, observation
 from kernel.deal import (
     FIRST_DORA_INDICATOR_INDEX,
     INITIAL_DEAL_TILES,
@@ -82,9 +83,11 @@ __all__ = [
     "GamePhase",
     "GameState",
     "IllegalActionError",
+    "LegalAction",
     "MatchPreset",
     "Meld",
     "MeldKind",
+    "Observation",
     "PrevailingWind",
     "RIICHI_STICK_POINTS",
     "RINSHAN_COUNT",
@@ -105,7 +108,9 @@ __all__ = [
     "concealed_total",
     "initial_game_state",
     "initial_table_snapshot",
+    "legal_actions",
     "meld_tile_count",
+    "observation",
     "remove_tile",
     "remove_tiles",
     "seat_wind_rank",

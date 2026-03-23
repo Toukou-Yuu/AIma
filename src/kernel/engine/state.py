@@ -27,6 +27,8 @@ class GameState:
     """``FLOWN`` 时流局结果；否则 ``None``。"""
     tenpai_result: TenpaiResult | None = None
     """``FLOWN`` 时听牌结果；否则 ``None``。"""
+    event_sequence: int = 0
+    """事件序列号计数器（用于 K13 事件日志）。"""
 
 
 def initial_game_state(table: TableSnapshot | None = None) -> GameState:

@@ -49,7 +49,12 @@ def test_begin_round_pre_deal_to_in_round_with_board() -> None:
     assert out.new_state.table == g0.table
     assert out.new_state.board is not None
     assert out.new_state.board.hands[g0.table.dealer_seat].total() == 14
-    assert out.events == ()
+    # K13: 验证生成 RoundBeginEvent
+    assert len(out.events) == 1
+    event = out.events[0]
+    assert event.dealer_seat == g0.table.dealer_seat
+    assert event.dora_indicator is not None
+    assert event.seeds == (0, 13, 26, 39)
 
 
 def test_begin_round_requires_wall() -> None:
@@ -76,7 +81,7 @@ def test_noop_in_round_is_identity() -> None:
     g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=_wall136(seed=3))).new_state
     out = apply(g1, Action(ActionKind.NOOP))
     assert out.new_state is g1
-    assert out.events == ()
+    assert out.events == ()  # NOOP 不生成事件
 
 
 def test_noop_in_pre_deal_raises() -> None:

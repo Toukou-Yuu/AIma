@@ -35,4 +35,7 @@ def clear_call_window_state(state: GameState) -> GameState:
         table=state.table,
         board=nb,
         ron_winners=state.ron_winners,
+        flow_result=state.flow_result,
+        tenpai_result=state.tenpai_result,
+        event_sequence=state.event_sequence,
     )
