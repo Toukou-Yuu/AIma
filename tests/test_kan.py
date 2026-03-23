@@ -23,7 +23,7 @@ from kernel import (
     shuffle_deck,
     split_wall,
 )
-from kernel.call.transitions import apply_open_meld
+from kernel.call.transitions import apply_open_meld, apply_ron
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState
 from kernel.kan import (
@@ -131,6 +131,7 @@ def test_tile_conservation_136_through_ankan() -> None:
         acc.update([e.tile])
     acc.update(b1.live_wall[b1.live_draw_index :])
     acc.update(b1.dead_wall.rinshan[b1.rinshan_draw_index :])
+    acc.update(b1.dead_wall.ura_bases)
     acc.update(b1.dead_wall.indicators)
     assert acc == Counter(build_deck())
 
@@ -172,9 +173,82 @@ def test_shankuminkan_then_rinshan() -> None:
     four = tuple(sorted((t, t, t, t), key=lambda x: (x.rank, 1 if x.is_red else 0)))
     sk = Meld(MeldKind.SHANKUMINKAN, four, called_tile=None)
     b1 = apply_shankuminkan(b0, d, sk)
-    assert b1.rinshan_draw_index == 1
-    assert b1.last_draw_was_rinshan is True
-    assert any(m.kind == MeldKind.SHANKUMINKAN for m in b1.melds[d])
+    assert b1.turn_phase == TurnPhase.CALL_RESPONSE
+    assert b1.call_state is not None
+    assert b1.call_state.chankan_rinshan_pending is True
+    assert b1.rinshan_draw_index == b0.rinshan_draw_index
+    b2 = clear_call_window(b1)
+    assert b2.rinshan_draw_index == b0.rinshan_draw_index + 1
+    assert b2.last_draw_was_rinshan is True
+    assert any(m.kind == MeldKind.SHANKUMINKAN for m in b2.melds[d])
+
+
+def _seven_pairs_tenpai_13(t: Tile) -> Counter[Tile]:
+    """门清七对听：6 对与单骑 ``t``（``t`` 为数牌）。"""
+    assert t.suit != Suit.HONOR
+    ranks = [r for r in range(1, 10) if r != t.rank][:6]
+    assert len(ranks) == 6
+    c: Counter[Tile] = Counter()
+    for r in ranks:
+        tt = Tile(t.suit, r, False)
+        c[tt] = 2
+    c[t] = 1
+    return c
+
+
+def test_chankan_ron_after_shankuminkan() -> None:
+    b0, t = _board_with_pon_for_shankan()
+    d = b0.current_seat
+    opp = (d + 1) % 4
+    donor = (d + 2) % 4
+    old_opp = Counter(b0.hands[opp])
+    h_new = _seven_pairs_tenpai_13(t)
+    new_donor = Counter(b0.hands[donor])
+    for tile, n in h_new.items():
+        new_donor[tile] -= n
+        if new_donor[tile] < 0:
+            pytest.skip("对家牌型无法从 donor 置换出七对听")
+    for tile, n in old_opp.items():
+        new_donor[tile] += n
+    rest_hands = [Counter(b0.hands[s]) for s in range(4)]
+    rest_hands[opp] = h_new
+    rest_hands[donor] = new_donor
+    b_adj = BoardState(
+        hands=tuple(rest_hands),
+        live_wall=b0.live_wall,
+        live_draw_index=b0.live_draw_index,
+        dead_wall=b0.dead_wall,
+        revealed_indicators=b0.revealed_indicators,
+        current_seat=b0.current_seat,
+        turn_phase=b0.turn_phase,
+        river=b0.river,
+        melds=b0.melds,
+        last_draw_tile=b0.last_draw_tile,
+        last_draw_was_rinshan=b0.last_draw_was_rinshan,
+        rinshan_draw_index=b0.rinshan_draw_index,
+        call_state=b0.call_state,
+    )
+    four = tuple(sorted((t, t, t, t), key=lambda x: (x.rank, 1 if x.is_red else 0)))
+    sk = Meld(MeldKind.SHANKUMINKAN, four, called_tile=None)
+    b1 = apply_shankuminkan(b_adj, d, sk)
+    b2 = apply_ron(b1, opp)
+    assert opp in b2.call_state.ron_claimants
+    assert b2.call_state.finished is True
+
+
+def test_chankan_rejects_open_meld() -> None:
+    b0, t = _board_with_pon_for_shankan()
+    d = b0.current_seat
+    four = tuple(sorted((t, t, t, t), key=lambda x: (x.rank, 1 if x.is_red else 0)))
+    sk = Meld(MeldKind.SHANKUMINKAN, four, called_tile=None)
+    b1 = apply_shankuminkan(b0, d, sk)
+    if t.suit == Suit.HONOR or not (2 <= t.rank <= 8):
+        pytest.skip("需中间数牌才能构造吃")
+    t_lo = Tile(t.suit, t.rank - 1, False)
+    t_hi = Tile(t.suit, t.rank + 1, False)
+    chi = Meld(MeldKind.CHI, (t_lo, t, t_hi), called_tile=t)
+    with pytest.raises(ValueError, match="抢杠"):
+        apply_open_meld(b1, (d + 3) % 4, chi)
 
 
 def test_engine_ankan_and_discard_clears_rinshan_flag() -> None:

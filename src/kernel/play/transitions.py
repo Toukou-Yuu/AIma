@@ -48,6 +48,38 @@ def apply_draw(board: BoardState, seat: int) -> BoardState:
     )
 
 
+def board_after_tsumo_win(board: BoardState, *, winner: int, win_tile: Tile) -> BoardState:
+    """
+    自摸进入结算占位：转 ``NEED_DRAW``，清摸打标记。
+    门内减一枚和了牌并写入河（摸切标记），保持 136 张守恒与各家 13 张（结算谱面占位）。
+    """
+    from kernel.deal.model import BoardState
+
+    new_hands = list(board.hands)
+    new_hands[winner] = remove_tile(new_hands[winner], win_tile)
+    new_river = board.river + (
+        RiverEntry(seat=winner, tile=win_tile, tsumogiri=True, riichi=False),
+    )
+    return BoardState(
+        hands=tuple(new_hands),
+        live_wall=board.live_wall,
+        live_draw_index=board.live_draw_index,
+        dead_wall=board.dead_wall,
+        revealed_indicators=board.revealed_indicators,
+        current_seat=board.current_seat,
+        turn_phase=TurnPhase.NEED_DRAW,
+        river=new_river,
+        melds=board.melds,
+        last_draw_tile=None,
+        last_draw_was_rinshan=False,
+        rinshan_draw_index=board.rinshan_draw_index,
+        call_state=None,
+        riichi=board.riichi,
+        ippatsu_eligible=frozenset(),
+        double_riichi=board.double_riichi,
+    )
+
+
 def apply_discard(
     board: BoardState,
     seat: int,

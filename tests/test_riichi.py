@@ -28,7 +28,7 @@ from kernel import (
 )
 from kernel.engine.state import GameState
 from kernel.play import apply_discard
-from kernel.riichi.tenpai import is_tenpai_seven_pairs
+from kernel.riichi.tenpai import is_tenpai_default, is_tenpai_seven_pairs
 from kernel.table import TableSnapshot
 from tests.call_helpers import clear_call_window_state
 
@@ -87,6 +87,72 @@ def _board_chiitoitsu_dealer() -> tuple[BoardState, Tile]:
     return b, t7
 
 
+def _board_standard_tenpai_dealer() -> tuple[BoardState, Tile]:
+    """
+    亲 0：14 张门清；打掉 9m 后为与 ``can_ron_default`` 对齐的标准形听牌。
+    """
+    b0 = _board(seed=0, dealer=0)
+    merged: Counter[Tile] = Counter()
+    for h in b0.hands:
+        merged.update(h)
+    d = 0
+    hand_d: Counter[Tile] = Counter()
+    for rank in range(1, 7):
+        t = Tile(Suit.MAN, rank)
+        merged[t] -= 1
+        hand_d[t] += 1
+    for rank in range(1, 6):
+        t = Tile(Suit.PIN, rank)
+        merged[t] -= 1
+        hand_d[t] += 1
+    t8 = Tile(Suit.SOU, 8)
+    for _ in range(2):
+        merged[t8] -= 1
+        hand_d[t8] += 1
+    t9 = Tile(Suit.MAN, 9)
+    merged[t9] -= 1
+    hand_d[t9] += 1
+    new_hands: list[Counter[Tile]] = []
+    for s in range(4):
+        if s == d:
+            new_hands.append(hand_d)
+        else:
+            take: Counter[Tile] = Counter()
+            for _ in range(13):
+                x = next(iter(merged.elements()))
+                take[x] += 1
+                merged[x] -= 1
+            new_hands.append(take)
+    assert sum(merged.values()) == 0
+    b = BoardState(
+        hands=tuple(new_hands),
+        live_wall=b0.live_wall,
+        live_draw_index=b0.live_draw_index,
+        dead_wall=b0.dead_wall,
+        revealed_indicators=b0.revealed_indicators,
+        current_seat=d,
+        turn_phase=TurnPhase.MUST_DISCARD,
+        river=b0.river,
+        melds=b0.melds,
+        last_draw_tile=None,
+        last_draw_was_rinshan=False,
+        rinshan_draw_index=b0.rinshan_draw_index,
+        call_state=None,
+    )
+    return b, t9
+
+
+def test_is_tenpai_default_standard_form() -> None:
+    c = Counter()
+    for r in range(1, 7):
+        c[Tile(Suit.MAN, r)] = 1
+    for r in range(1, 6):
+        c[Tile(Suit.PIN, r)] = 1
+    c[Tile(Suit.SOU, 8)] = 2
+    assert sum(c.values()) == 13
+    assert is_tenpai_default(c, ()) is True
+
+
 @pytest.mark.parametrize(
     ("tenpai", "ranks"),
     [
@@ -98,6 +164,18 @@ def _board_chiitoitsu_dealer() -> tuple[BoardState, Tile]:
 def test_is_tenpai_seven_pairs(tenpai: bool, ranks: tuple[int, ...]) -> None:
     c = Counter(Tile(Suit.MAN, r) for r in ranks)
     assert is_tenpai_seven_pairs(c, ()) is tenpai
+
+
+def test_apply_riichi_standard_form_tenpai() -> None:
+    b, t9 = _board_standard_tenpai_dealer()
+    st = initial_table_snapshot()
+    gs = GameState(phase=GamePhase.IN_ROUND, table=st, board=b)
+    out = apply(
+        gs,
+        Action(ActionKind.DISCARD, seat=0, tile=t9, declare_riichi=True),
+    )
+    assert out.new_state.board is not None
+    assert out.new_state.board.riichi[0] is True
 
 
 def test_apply_riichi_updates_table_and_river() -> None:
@@ -243,8 +321,8 @@ def test_board_after_ron_clears_ippatsu() -> None:
     s = next(iter(cs.ron_remaining))
     c13 = Counter(b2.hands[s])
     c13[cs.claimed_tile] -= 1
-    if not is_tenpai_seven_pairs(c13, b2.melds[s]):
-        pytest.skip("该种子无上家七对荣和")
+    if not is_tenpai_default(c13, b2.melds[s]):
+        pytest.skip("该种子无上家可荣和听牌")
     b3 = apply_ron(b2, s)
     cs3 = b3.call_state
     assert cs3 is not None and cs3.finished

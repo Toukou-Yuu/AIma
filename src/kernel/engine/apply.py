@@ -5,15 +5,19 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from kernel.call import apply_open_meld, apply_pass_call, apply_ron, board_after_ron_winners
+from kernel.call.win import can_tsumo_default
 from kernel.deal import assert_wall_is_standard_deck, build_board_after_split
 from kernel.engine.actions import Action, ActionKind
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState
+from kernel.flow import check_flow_kind, settle_flow
 from kernel.hand.multiset import remove_tile
 from kernel.kan import apply_ankan, apply_shankuminkan
-from kernel.play import apply_discard, apply_draw
+from kernel.play import apply_discard, apply_draw, board_after_tsumo_win
 from kernel.play.model import TurnPhase
-from kernel.riichi.tenpai import is_tenpai_seven_pairs
+from kernel.riichi.tenpai import is_tenpai_default
+from kernel.scoring.dora import ura_indicators_for_settlement
+from kernel.scoring.settle import settle_ron_table, settle_tsumo_table
 from kernel.table.model import RIICHI_STICK_POINTS
 from kernel.wall import split_wall
 
@@ -53,6 +57,7 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
     - ``IN_ROUND`` + ``MUST_DISCARD`` + ``ANKAN`` / ``SHANKUMINKAN`` → ``kernel.kan``
     - ``IN_ROUND`` 且 ``board.turn_phase == CALL_RESPONSE``：
       ``PASS_CALL`` / ``RON`` / ``OPEN_MELD``（``kernel.call``）；荣和成立时转 ``HAND_OVER``。
+        - ``IN_ROUND`` 且 ``MUST_DISCARD`` + ``TSUMO``：自摸和了（须 ``last_draw_tile``；岭上则 ``can_tsumo_default`` 按 15 张路径）→ ``HAND_OVER`` 并结算点棒。
     其余组合抛 ``IllegalActionError``。
     """
     _validate_action_seat(action)
@@ -107,6 +112,32 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                     new_board = apply_pass_call(board, action.seat)
                 except ValueError as e:
                     raise IllegalActionError(str(e)) from e
+                cs_pb = new_board.call_state
+                if cs_pb is not None and cs_pb.finished and cs_pb.ron_claimants:
+                    settled = board_after_ron_winners(new_board)
+                    ura = ura_indicators_for_settlement(
+                        new_board.dead_wall,
+                        len(new_board.revealed_indicators),
+                    )
+                    is_chankan = cs_pb.chankan_rinshan_pending
+                    new_table = settle_ron_table(
+                        state.table,
+                        new_board,
+                        ron_winners=cs_pb.ron_claimants,
+                        discard_seat=cs_pb.discard_seat,
+                        win_tile=cs_pb.claimed_tile,
+                        ura_indicators=ura,
+                        is_chankan=is_chankan,
+                    )
+                    return ApplyOutcome(
+                        new_state=GameState(
+                            phase=GamePhase.HAND_OVER,
+                            table=new_table,
+                            board=settled,
+                            ron_winners=cs_pb.ron_claimants,
+                        ),
+                        events=(),
+                    )
                 return ApplyOutcome(
                     new_state=GameState(
                         phase=phase,
@@ -127,10 +158,24 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 cs = new_board.call_state
                 if cs is not None and cs.finished and cs.ron_claimants:
                     settled = board_after_ron_winners(new_board)
+                    ura = ura_indicators_for_settlement(
+                        new_board.dead_wall,
+                        len(new_board.revealed_indicators),
+                    )
+                    is_chankan = cs.chankan_rinshan_pending
+                    new_table = settle_ron_table(
+                        state.table,
+                        new_board,
+                        ron_winners=cs.ron_claimants,
+                        discard_seat=cs.discard_seat,
+                        win_tile=cs.claimed_tile,
+                        ura_indicators=ura,
+                        is_chankan=is_chankan,
+                    )
                     return ApplyOutcome(
                         new_state=GameState(
                             phase=GamePhase.HAND_OVER,
-                            table=state.table,
+                            table=new_table,
                             board=settled,
                             ron_winners=cs.ron_claimants,
                         ),
@@ -177,6 +222,27 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 new_board = apply_draw(board, seat)
             except ValueError as e:
                 raise IllegalActionError(str(e)) from e
+
+            # 检测荒牌流局
+            flow_result = check_flow_kind(
+                new_board,
+                riichi_state=tuple(board.riichi),
+            )
+            if flow_result is not None and flow_result.kind == FlowKind.EXHAUSTED:
+                # 荒牌流局：进入 FLOWN 状态
+                new_table, tenpai_result = settle_flow(state.table, new_board)
+                return ApplyOutcome(
+                    new_state=GameState(
+                        phase=GamePhase.FLOWN,
+                        table=new_table,
+                        board=new_board,
+                        flow_result=flow_result,
+                        tenpai_result=tenpai_result,
+                        ron_winners=None,
+                    ),
+                    events=(),
+                )
+
             return ApplyOutcome(
                 new_state=GameState(
                     phase=phase,
@@ -211,8 +277,8 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                     hand_after = remove_tile(board.hands[seat], action.tile)
                 except ValueError as e:
                     raise IllegalActionError(str(e)) from e
-                if not is_tenpai_seven_pairs(hand_after, ()):
-                    msg = "not tenpai (seven-pairs subset)"
+                if not is_tenpai_default(hand_after, board.melds[seat]):
+                    msg = "not tenpai"
                     raise IllegalActionError(msg)
             try:
                 new_board = apply_discard(
@@ -232,12 +298,80 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                     scores=tuple(scores),
                     kyoutaku=state.table.kyoutaku + RIICHI_STICK_POINTS,
                 )
+
+            # 检测四家立直流局
+            if action.declare_riichi:
+                new_riichi_state = list(board.riichi)
+                new_riichi_state[seat] = True
+                flow_result = check_flow_kind(
+                    new_board,
+                    riichi_state=tuple(new_riichi_state),
+                )
+                if flow_result is not None and flow_result.kind == FlowKind.FOUR_RIICHI:
+                    # 四家立直流局：进入 FLOWN 状态
+                    new_table, tenpai_result = settle_flow(new_table, new_board)
+                    return ApplyOutcome(
+                        new_state=GameState(
+                            phase=GamePhase.FLOWN,
+                            table=new_table,
+                            board=new_board,
+                            flow_result=flow_result,
+                            tenpai_result=tenpai_result,
+                            ron_winners=None,
+                        ),
+                        events=(),
+                    )
+
             return ApplyOutcome(
                 new_state=GameState(
                     phase=phase,
                     table=new_table,
                     board=new_board,
                     ron_winners=None,
+                ),
+                events=(),
+            )
+        if kind == ActionKind.TSUMO:
+            if board.turn_phase != TurnPhase.MUST_DISCARD:
+                msg = "TSUMO requires MUST_DISCARD"
+                raise IllegalActionError(msg)
+            if action.seat is None:
+                msg = "TSUMO requires seat"
+                raise IllegalActionError(msg)
+            if action.seat != board.current_seat:
+                msg = "TSUMO seat must equal current_seat"
+                raise IllegalActionError(msg)
+            if board.last_draw_tile is None:
+                msg = "TSUMO requires last_draw_tile (e.g. 天和未接线)"
+                raise IllegalActionError(msg)
+            seat = action.seat
+            wt = board.last_draw_tile
+            if not can_tsumo_default(
+                board.hands[seat],
+                board.melds[seat],
+                wt,
+                last_draw_was_rinshan=board.last_draw_was_rinshan,
+            ):
+                msg = "illegal tsumo shape"
+                raise IllegalActionError(msg)
+            settled = board_after_tsumo_win(board, winner=seat, win_tile=wt)
+            ura = ura_indicators_for_settlement(
+                board.dead_wall,
+                len(board.revealed_indicators),
+            )
+            new_table = settle_tsumo_table(
+                state.table,
+                board,
+                winner=seat,
+                win_tile=wt,
+                ura_indicators=ura,
+            )
+            return ApplyOutcome(
+                new_state=GameState(
+                    phase=GamePhase.HAND_OVER,
+                    table=new_table,
+                    board=settled,
+                    ron_winners=frozenset({seat}),
                 ),
                 events=(),
             )
@@ -255,6 +389,25 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 new_board = apply_ankan(board, action.seat, action.meld)
             except ValueError as e:
                 raise IllegalActionError(str(e)) from e
+
+            # 计算杠总数并检测四杠流局
+            kan_count = sum(len(melds) for melds in new_board.melds)
+            flow_result = check_flow_kind(new_board, kan_count=kan_count)
+            if flow_result is not None and flow_result.kind == FlowKind.FOUR_KANS:
+                # 四杠流局：进入 FLOWN 状态
+                new_table, tenpai_result = settle_flow(state.table, new_board)
+                return ApplyOutcome(
+                    new_state=GameState(
+                        phase=GamePhase.FLOWN,
+                        table=new_table,
+                        board=new_board,
+                        flow_result=flow_result,
+                        tenpai_result=tenpai_result,
+                        ron_winners=None,
+                    ),
+                    events=(),
+                )
+
             return ApplyOutcome(
                 new_state=GameState(
                     phase=phase,
@@ -278,6 +431,25 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 new_board = apply_shankuminkan(board, action.seat, action.meld)
             except ValueError as e:
                 raise IllegalActionError(str(e)) from e
+
+            # 计算杠总数并检测四杠流局
+            kan_count = sum(len(melds) for melds in new_board.melds)
+            flow_result = check_flow_kind(new_board, kan_count=kan_count)
+            if flow_result is not None and flow_result.kind == FlowKind.FOUR_KANS:
+                # 四杠流局：进入 FLOWN 状态
+                new_table, tenpai_result = settle_flow(state.table, new_board)
+                return ApplyOutcome(
+                    new_state=GameState(
+                        phase=GamePhase.FLOWN,
+                        table=new_table,
+                        board=new_board,
+                        flow_result=flow_result,
+                        tenpai_result=tenpai_result,
+                        ron_winners=None,
+                    ),
+                    events=(),
+                )
+
             return ApplyOutcome(
                 new_state=GameState(
                     phase=phase,

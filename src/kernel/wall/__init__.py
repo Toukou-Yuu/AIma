@@ -1,6 +1,7 @@
 """牌山切分导出。"""
 
 from kernel.wall.split import (
+    DEAD_INDICATOR_STOCK,
     DEAD_WALL_SIZE,
     INDICATOR_COUNT,
     LIVE_WALL_SIZE,
@@ -12,6 +13,7 @@ from kernel.wall.split import (
 )
 
 __all__ = [
+    "DEAD_INDICATOR_STOCK",
     "DEAD_WALL_SIZE",
     "DeadWall",
     "INDICATOR_COUNT",

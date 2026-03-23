@@ -61,6 +61,7 @@ def test_multiset_conservation() -> None:
         acc.update(h)
     acc.update(b.live_wall)
     acc.update(b.dead_wall.rinshan)
+    acc.update(b.dead_wall.ura_bases)
     acc.update(b.dead_wall.indicators)
     assert acc == Counter(build_deck())
 

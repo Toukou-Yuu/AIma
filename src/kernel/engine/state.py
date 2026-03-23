@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from kernel.deal import BoardState
 from kernel.engine.phase import GamePhase
+from kernel.flow import FlowResult, TenpaiResult
 from kernel.table import TableSnapshot, initial_table_snapshot
 
 
@@ -21,7 +22,11 @@ class GameState:
     table: TableSnapshot
     board: BoardState | None = None
     ron_winners: frozenset[int] | None = None
-    """``HAND_OVER`` 且为荣和结束时，和了座位集合（一炮多响）；否则 ``None``。"""
+    """``HAND_OVER`` 时和了席集合：荣和（一炮多响）或自摸（单席）；否则 ``None``。"""
+    flow_result: FlowResult | None = None
+    """``FLOWN`` 时流局结果；否则 ``None``。"""
+    tenpai_result: TenpaiResult | None = None
+    """``FLOWN`` 时听牌结果；否则 ``None``。"""
 
 
 def initial_game_state(table: TableSnapshot | None = None) -> GameState:

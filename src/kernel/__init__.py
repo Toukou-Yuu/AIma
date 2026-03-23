@@ -51,6 +51,7 @@ from kernel.table import (
 )
 from kernel.tiles import Suit, Tile, build_deck, shuffle_deck
 from kernel.wall import (
+    DEAD_INDICATOR_STOCK,
     DEAD_WALL_SIZE,
     INDICATOR_COUNT,
     LIVE_WALL_SIZE,
@@ -69,6 +70,7 @@ __all__ = [
     "RiverEntry",
     "TurnPhase",
     "DEFAULT_STARTING_POINTS",
+    "DEAD_INDICATOR_STOCK",
     "DEAD_WALL_SIZE",
     "DeadWall",
     "EngineError",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
 
@@ -55,6 +55,10 @@ class CallResolution:
     """当前轮到 ``pon_kan_order[idx]`` 答复碰/杠/pass；仅在 ``stage==pon_kan`` 使用。"""
     finished: bool = False
     """荣和阶段已结束且至少一家荣和；由引擎转入 ``HAND_OVER``。"""
+    ron_passed_seats: frozenset[int] = field(default_factory=frozenset)
+    """本巡荣和阶段已对当前 ``claimed_tile`` 选择 pass 的席（同巡振听门禁）。"""
+    chankan_rinshan_pending: bool = False
+    """加杠后抢杠窗口：荣和阶段结束且无人荣和时须接 ``apply_after_kan_rinshan_draw``（非碰吃）。"""
 
     @staticmethod
     def initial_after_discard(discard_seat: int, river_index: int, tile: Tile) -> CallResolution:
@@ -71,6 +75,25 @@ class CallResolution:
             pon_kan_order=(o1, o2, o3),
             pon_kan_idx=0,
             finished=False,
+        )
+
+    @staticmethod
+    def initial_chankan(kan_seat: int, added_tile: Tile) -> CallResolution:
+        """加杠抢杠：``claimed_tile`` 为从手牌补入明刻的那一张；``river_index=-1`` 表示非河底舍牌。"""
+        o1 = (kan_seat + 1) % 4
+        o2 = (kan_seat + 2) % 4
+        o3 = (kan_seat + 3) % 4
+        return CallResolution(
+            discard_seat=kan_seat,
+            claimed_tile=added_tile,
+            river_index=-1,
+            stage="ron",
+            ron_remaining=frozenset((o1, o2, o3)),
+            ron_claimants=frozenset(),
+            pon_kan_order=(o1, o2, o3),
+            pon_kan_idx=0,
+            finished=False,
+            chankan_rinshan_pending=True,
         )
 
 

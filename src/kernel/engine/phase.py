@@ -16,5 +16,7 @@ class GamePhase(Enum):
     """对他家舍牌的应答窗口占位。"""
     HAND_OVER = "hand_over"
     """一局结束（结算前/后细分由后续实现）。"""
+    FLOWN = "flown"
+    """流局（听牌结算、连庄/亲流判定）。"""
     MATCH_END = "match_end"
     """整场比赛结束。"""

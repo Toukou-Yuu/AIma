@@ -6,6 +6,7 @@ from collections import Counter
 from typing import TYPE_CHECKING
 
 from kernel.hand.melds import Meld, MeldKind, triplet_key, validate_meld_shape
+from kernel.scoring.furiten import is_furiten_for_tile
 from kernel.hand.multiset import remove_tiles
 from kernel.kan.rinshan import apply_after_kan_rinshan_draw
 from kernel.play.model import CallResolution, TurnPhase, kamicha_seat
@@ -78,6 +79,8 @@ def _after_ron_collection(board: BoardState) -> BoardState:
         pon_kan_order=cs.pon_kan_order,
         pon_kan_idx=0,
         finished=False,
+        ron_passed_seats=frozenset(),
+        chankan_rinshan_pending=False,
     )
     return _replace_board(board, call_state=new_cs)
 
@@ -98,6 +101,8 @@ def apply_pass_call(board: BoardState, seat: int) -> BoardState:
             msg = "not in ron_remaining for this seat"
             raise ValueError(msg)
         rem = frozenset(cs.ron_remaining - {seat})
+        passed = frozenset(cs.ron_passed_seats | {seat})
+        ron_round_done = not rem
         new_cs = CallResolution(
             discard_seat=cs.discard_seat,
             claimed_tile=cs.claimed_tile,
@@ -107,11 +112,18 @@ def apply_pass_call(board: BoardState, seat: int) -> BoardState:
             ron_claimants=cs.ron_claimants,
             pon_kan_order=cs.pon_kan_order,
             pon_kan_idx=cs.pon_kan_idx,
-            finished=False,
+            finished=ron_round_done and bool(cs.ron_claimants),
+            ron_passed_seats=passed,
+            chankan_rinshan_pending=cs.chankan_rinshan_pending,
         )
         b2 = _replace_board(board, call_state=new_cs)
         if rem:
             return b2
+        if new_cs.ron_claimants:
+            return b2
+        if new_cs.chankan_rinshan_pending:
+            b_must = _replace_board(b2, turn_phase=TurnPhase.MUST_DISCARD, call_state=None)
+            return apply_after_kan_rinshan_draw(b_must, new_cs.discard_seat)
         return _after_ron_collection(b2)
     if cs.stage == "pon_kan":
         active = cs.pon_kan_order[cs.pon_kan_idx]
@@ -130,6 +142,8 @@ def apply_pass_call(board: BoardState, seat: int) -> BoardState:
                 pon_kan_order=cs.pon_kan_order,
                 pon_kan_idx=nxt,
                 finished=False,
+                ron_passed_seats=cs.ron_passed_seats,
+                chankan_rinshan_pending=cs.chankan_rinshan_pending,
             )
             return _replace_board(board, call_state=new_cs)
         new_cs = CallResolution(
@@ -142,6 +156,8 @@ def apply_pass_call(board: BoardState, seat: int) -> BoardState:
             pon_kan_order=cs.pon_kan_order,
             pon_kan_idx=3,
             finished=False,
+            ron_passed_seats=cs.ron_passed_seats,
+            chankan_rinshan_pending=cs.chankan_rinshan_pending,
         )
         return _replace_board(board, call_state=new_cs)
     if cs.stage == "chi":
@@ -165,7 +181,7 @@ def apply_ron(
     """
     from collections.abc import Callable
 
-    from kernel.call.win import can_ron_seven_pairs
+    from kernel.call.win import can_ron_default
 
     if board.turn_phase != TurnPhase.CALL_RESPONSE:
         msg = "RON requires CALL_RESPONSE"
@@ -175,12 +191,25 @@ def apply_ron(
     if cs.stage != "ron":
         msg = "RON only in ron stage"
         raise ValueError(msg)
+    op = frozenset(((cs.discard_seat + i) % 4) for i in (1, 2, 3))
+    if seat not in op:
+        msg = "RON seat must be opponent of discarder"
+        raise ValueError(msg)
+    if seat in cs.ron_claimants:
+        msg = "already declared ron"
+        raise ValueError(msg)
+    if seat in cs.ron_passed_seats:
+        msg = "同巡振听"
+        raise ValueError(msg)
     if seat not in cs.ron_remaining:
         msg = "seat cannot declare RON now"
         raise ValueError(msg)
-    checker: Callable[..., bool] = can_ron if can_ron is not None else can_ron_seven_pairs
+    checker: Callable[..., bool] = can_ron if can_ron is not None else can_ron_default
     if not checker(board.hands[seat], board.melds[seat], cs.claimed_tile):
         msg = "illegal ron shape"
+        raise ValueError(msg)
+    if is_furiten_for_tile(board, seat, cs.claimed_tile):
+        msg = "furiten: cannot ron"
         raise ValueError(msg)
     rem = frozenset(cs.ron_remaining - {seat})
     cl = frozenset(cs.ron_claimants | {seat})
@@ -195,6 +224,8 @@ def apply_ron(
         pon_kan_order=cs.pon_kan_order,
         pon_kan_idx=cs.pon_kan_idx,
         finished=done_ron and bool(cl),
+        ron_passed_seats=cs.ron_passed_seats,
+        chankan_rinshan_pending=cs.chankan_rinshan_pending,
     )
     b2 = _replace_board(board, call_state=new_cs)
     if done_ron:
@@ -233,6 +264,9 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
         raise ValueError(msg)
     cs = board.call_state
     assert cs is not None
+    if cs.chankan_rinshan_pending:
+        msg = "抢杠窗口仅允许荣和，不可开副露"
+        raise ValueError(msg)
     tile = cs.claimed_tile
     ds = cs.discard_seat
     if meld.called_tile != tile:

@@ -24,6 +24,8 @@ class ActionKind(Enum):
     """放弃当前鸣牌/荣和机会；须在 ``CALL_RESPONSE``，``seat`` 须为当前阶段有权表态者。"""
     RON = "ron"
     """荣和；须在应答窗口的荣和阶段且形成立（当前默认可判七对子）。"""
+    TSUMO = "tsumo"
+    """自摸和了；须在 ``MUST_DISCARD``、上一张自摸牌非空且形成立（岭上 15 张待扩展）。"""
     OPEN_MELD = "open_meld"
     """吃 / 碰 / 大明杠；须配合 ``meld`` 字段。"""
     ANKAN = "ankan"

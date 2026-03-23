@@ -36,7 +36,11 @@ def test_conservation_after_discard_and_draw() -> None:
     assert b2.turn_phase == TurnPhase.MUST_DISCARD
     in_hand = sum(sum(h.values()) for h in b2.hands)
     live_left = len(b2.live_wall) - b2.live_draw_index
-    dead_n = len(b2.dead_wall.rinshan) + len(b2.dead_wall.indicators)
+    dead_n = (
+        len(b2.dead_wall.rinshan)
+        + len(b2.dead_wall.ura_bases)
+        + len(b2.dead_wall.indicators)
+    )
     assert in_hand + len(b2.river) + live_left + dead_n == 136
 
 

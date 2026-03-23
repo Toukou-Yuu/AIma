@@ -1,10 +1,15 @@
 # wall 包约定
 
-## 岭上摸取顺序
+## 王牌 14 张切分
 
 `split_wall` 将王牌区 `wall[122:136]` 切为：
 
-- `DeadWall.rinshan`：前 10 张，下标 `0..9`。
-- `DeadWall.indicators`：后 4 张，为表宝指示牌槽位。
+- `DeadWall.rinshan`：前 **6** 张，岭上摸取顺序 `rinshan[0..5]`。
+- 后 **8** 张：4 槽，每槽交错为 **（里宝指示牌、表宝指示牌）**，即  
+  `ura_bases[0], indicators[0], ura_bases[1], indicators[1], …`  
+  开局翻开 `indicators[0]` 为第一张表宝指示；开杠后依次翻开 `indicators[k]`。  
+  **立直和了**结算时，与已翻开表指示同数目的里指示为 `ura_bases[0..k-1]`（见 `kernel.scoring.dora.ura_indicators_for_settlement`）。
 
-开杠后的岭上摸牌顺序为：依次使用 `rinshan[0]`、`rinshan[1]`、…，由 `BoardState.rinshan_draw_index` 指向下一张待摸张。该游标与 `live_draw_index` 独立。
+## 岭上摸取顺序
+
+由 `BoardState.rinshan_draw_index` 指向下一张待摸张，与 `live_draw_index` 独立。

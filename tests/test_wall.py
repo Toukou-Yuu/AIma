@@ -1,6 +1,7 @@
 """Tests for wall split."""
 
 from kernel import (
+    DEAD_INDICATOR_STOCK,
     DEAD_WALL_SIZE,
     INDICATOR_COUNT,
     LIVE_WALL_SIZE,
@@ -17,15 +18,21 @@ def test_split_wall_sizes() -> None:
     s = split_wall(wall)
     assert len(s.live) == LIVE_WALL_SIZE
     assert len(s.dead.rinshan) == RINSHAN_COUNT
+    assert len(s.dead.ura_bases) == INDICATOR_COUNT
     assert len(s.dead.indicators) == INDICATOR_COUNT
-    assert RINSHAN_COUNT + INDICATOR_COUNT == DEAD_WALL_SIZE
+    assert RINSHAN_COUNT + DEAD_INDICATOR_STOCK == DEAD_WALL_SIZE
     assert LIVE_WALL_SIZE + DEAD_WALL_SIZE == WALL_SIZE
 
 
 def test_split_wall_concat_roundtrip() -> None:
     wall = tuple(shuffle_deck(build_deck(), seed=7))
     s = split_wall(wall)
-    back = s.live + s.dead.rinshan + s.dead.indicators
+    dead_pairs = tuple(
+        t
+        for i in range(INDICATOR_COUNT)
+        for t in (s.dead.ura_bases[i], s.dead.indicators[i])
+    )
+    back = s.live + s.dead.rinshan + dead_pairs
     assert back == wall
 
 

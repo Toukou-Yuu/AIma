@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from kernel.hand.melds import Meld, MeldKind, triplet_key, validate_meld_shape
 from kernel.hand.multiset import remove_tile, remove_tiles
 from kernel.kan.rinshan import apply_after_kan_rinshan_draw
-from kernel.play.model import TurnPhase
+from kernel.play.model import CallResolution, TurnPhase
 
 if TYPE_CHECKING:
     from kernel.deal.model import BoardState
@@ -122,4 +122,22 @@ def apply_shankuminkan(board: BoardState, seat: int, meld: Meld) -> BoardState:
         ippatsu_eligible=board.ippatsu_eligible,
         double_riichi=board.double_riichi,
     )
-    return apply_after_kan_rinshan_draw(intermediate, seat)
+    cs = CallResolution.initial_chankan(seat, extra)
+    return BoardState(
+        hands=intermediate.hands,
+        live_wall=intermediate.live_wall,
+        live_draw_index=intermediate.live_draw_index,
+        dead_wall=intermediate.dead_wall,
+        revealed_indicators=intermediate.revealed_indicators,
+        current_seat=seat,
+        turn_phase=TurnPhase.CALL_RESPONSE,
+        river=intermediate.river,
+        melds=intermediate.melds,
+        last_draw_tile=None,
+        last_draw_was_rinshan=False,
+        rinshan_draw_index=intermediate.rinshan_draw_index,
+        call_state=cs,
+        riichi=intermediate.riichi,
+        ippatsu_eligible=intermediate.ippatsu_eligible,
+        double_riichi=intermediate.double_riichi,
+    )

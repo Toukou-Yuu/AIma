@@ -11,6 +11,7 @@ from kernel.hand.validate import validate_tile_conservation
 from kernel.play.model import CallResolution, RiverEntry, TurnPhase
 from kernel.tiles.model import Tile
 from kernel.wall.split import (
+    DEAD_INDICATOR_STOCK,
     INDICATOR_COUNT,
     LIVE_WALL_SIZE,
     RINSHAN_COUNT,
@@ -109,7 +110,7 @@ def validate_board_state(board: BoardState) -> None:
     river_n = len(board.river)
     live_remaining = len(board.live_wall) - board.live_draw_index
     rinshan_remaining = RINSHAN_COUNT - board.rinshan_draw_index
-    dead_remaining = rinshan_remaining + INDICATOR_COUNT
+    dead_remaining = rinshan_remaining + DEAD_INDICATOR_STOCK
     if in_concealed + in_melds + river_n + live_remaining + dead_remaining != 136:
         msg = "tile count conservation violated (expected 136 total)"
         raise ValueError(msg)
@@ -153,16 +154,25 @@ def validate_board_state(board: BoardState) -> None:
     elif board.turn_phase == TurnPhase.CALL_RESPONSE:
         cs = board.call_state
         assert cs is not None
-        if not board.river:
-            msg = "CALL_RESPONSE requires non-empty river"
-            raise ValueError(msg)
-        if cs.river_index != len(board.river) - 1:
-            msg = "call_state.river_index must point to last river discard"
-            raise ValueError(msg)
-        if board.river[cs.river_index].tile != cs.claimed_tile:
-            msg = "claimed_tile must match river at river_index"
-            raise ValueError(msg)
-        discard_seat = board.river[-1].seat
+        if cs.chankan_rinshan_pending:
+            if cs.river_index != -1:
+                msg = "chankan call_state requires river_index == -1"
+                raise ValueError(msg)
+        else:
+            if not board.river:
+                msg = "CALL_RESPONSE requires non-empty river"
+                raise ValueError(msg)
+            if cs.river_index != len(board.river) - 1:
+                msg = "call_state.river_index must point to last river discard"
+                raise ValueError(msg)
+            if board.river[cs.river_index].tile != cs.claimed_tile:
+                msg = "claimed_tile must match river at river_index"
+                raise ValueError(msg)
+        discard_seat = (
+            cs.discard_seat
+            if cs.chankan_rinshan_pending
+            else board.river[-1].seat
+        )
         for s in range(4):
             tot = _seat_total_tiles(board.hands[s], board.melds[s])
             if s == discard_seat:
