@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from dataclasses import replace
 
 from kernel.table.model import MatchPreset, PrevailingWind, RoundNumber, initial_table_snapshot
 from kernel.table.transitions import (
@@ -139,7 +140,7 @@ class TestComputeMatchRanking:
             dealer_seat=0,
         )
         # 手动设置分数：席次 0=30000, 1=20000, 2=40000, 3=10000
-        table = table.replace(scores=(30000, 20000, 40000, 10000))
+        table = replace(table, scores=(30000, 20000, 40000, 10000))
 
         ranking = compute_match_ranking(table)
 
@@ -150,7 +151,7 @@ class TestComputeMatchRanking:
         """两家同分 1 位：并列 1 位。"""
         table = initial_table_snapshot(starting_points=25000)
         # 席次 0=35000, 1=35000, 2=20000, 3=10000
-        table = table.replace(scores=(35000, 35000, 20000, 10000))
+        table = replace(table, scores=(35000, 35000, 20000, 10000))
 
         ranking = compute_match_ranking(table)
 
@@ -161,7 +162,7 @@ class TestComputeMatchRanking:
         """三家同分。"""
         table = initial_table_snapshot(starting_points=25000)
         # 席次 0=25000, 1=25000, 2=25000, 3=25000
-        table = table.replace(scores=(25000, 25000, 25000, 25000))
+        table = replace(table, scores=(25000, 25000, 25000, 25000))
 
         ranking = compute_match_ranking(table)
 
@@ -179,7 +180,7 @@ class TestFinalSettlement:
             kyoutaku=3000,  # 3 根供托
         )
         # 席次 0=30000, 1=20000, 2=40000, 3=10000
-        table = table.replace(scores=(30000, 20000, 40000, 10000))
+        table = replace(table, scores=(30000, 20000, 40000, 10000))
 
         ranking, new_table = final_settlement(table)
 
@@ -195,7 +196,7 @@ class TestFinalSettlement:
             kyoutaku=3000,  # 3 根供托
         )
         # 席次 0=35000, 1=35000, 2=20000, 3=10000
-        table = table.replace(scores=(35000, 35000, 20000, 10000))
+        table = replace(table, scores=(35000, 35000, 20000, 10000))
 
         ranking, new_table = final_settlement(table)
 
@@ -211,7 +212,7 @@ class TestFinalSettlement:
             kyoutaku=1000,  # 1 根供托
         )
         # 三家并列 1 位
-        table = table.replace(scores=(30000, 30000, 30000, 10000))
+        table = replace(table, scores=(30000, 30000, 30000, 10000))
 
         ranking, new_table = final_settlement(table)
 
