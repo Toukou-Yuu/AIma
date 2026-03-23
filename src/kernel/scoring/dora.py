@@ -1,4 +1,4 @@
-"""表宝牌：指示牌的下一张循环；与手牌（含副露）匹配计数。"""
+"""表宝牌：指示牌的下一张循环；与手牌（含副露）匹配计数；赤五处理。"""
 
 from __future__ import annotations
 
@@ -37,11 +37,30 @@ def ura_indicators_for_settlement(
     return tuple(dead.ura_bases[i] for i in range(k))
 
 
+def _is_red_five_match(tile: Tile, dora: Tile) -> bool:
+    """
+    检查 tile 是否匹配 dora（考虑赤五）。
+    赤五是普通五的「升级版」，当宝牌是 5 时，赤五也算。
+    """
+    if tile == dora:
+        return True
+    # 宝牌是 5 时，赤五也算
+    if dora.rank == 5 and tile.rank == 5 and tile.suit == dora.suit and tile.is_red:
+        return True
+    return False
+
+
 def count_dora_in_tiles(tiles: Counter[Tile], dora: tuple[Tile, ...]) -> int:
-    """``tiles`` 中含多少枚与 ``dora`` 列表匹配的牌（按 ``Tile`` 值；赤五与通常五区分）。"""
+    """
+    ``tiles`` 中含多少枚与 ``dora`` 列表匹配的牌（考虑赤五）。
+    赤五是普通五的「升级版」，当宝牌是 5 时，赤五也算宝牌。
+    """
     n = 0
-    for d in dora:
-        n += tiles.get(d, 0)
+    for t, count in tiles.items():
+        for d in dora:
+            if _is_red_five_match(t, d):
+                n += count
+                break  # 避免重复计数
     return n
 
 
