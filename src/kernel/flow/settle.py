@@ -11,8 +11,8 @@ from kernel.deal.model import BoardState
 from kernel.flow.model import TenpaiResult
 from kernel.riichi.tenpai import _iter_ron_candidate_tiles, is_tenpai_default
 from kernel.scoring.yaku import count_yaku_han
-from kernel.table.model import PrevailingWind, TableSnapshot, seat_wind_rank
-from kernel.tiles.model import Suit, Tile
+from kernel.table.model import TableSnapshot
+from kernel.tiles.model import Tile
 
 if TYPE_CHECKING:
     pass
@@ -35,10 +35,6 @@ def _has_yaku_with_win_tile(
     """
     concealed = board.hands[seat]
     melds = board.melds[seat]
-
-    # 临时 TableSnapshot 用于役判定
-    rw = PrevailingWind.EAST  # 简化：场风默认东
-    sw_tile = Tile(Suit.HONOR, seat_wind_rank(table.dealer_seat, seat))
 
     # 检查七对子
     if can_ron_seven_pairs(concealed, melds, win_tile):
@@ -201,7 +197,6 @@ def settle_flow_mangan(
         return table
 
     scores = list(table.scores)
-    noten_count = len(noten)
 
     for fm_seat in flow_mangan_seats:
         # 确定满贯点数（亲家 12000，子家 8000）

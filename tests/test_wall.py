@@ -28,9 +28,7 @@ def test_split_wall_concat_roundtrip() -> None:
     wall = tuple(shuffle_deck(build_deck(), seed=7))
     s = split_wall(wall)
     dead_pairs = tuple(
-        t
-        for i in range(INDICATOR_COUNT)
-        for t in (s.dead.ura_bases[i], s.dead.indicators[i])
+        t for i in range(INDICATOR_COUNT) for t in (s.dead.ura_bases[i], s.dead.indicators[i])
     )
     back = s.live + s.dead.rinshan + dead_pairs
     assert back == wall

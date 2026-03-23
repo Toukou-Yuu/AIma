@@ -4,20 +4,18 @@ from __future__ import annotations
 
 from collections import Counter
 
-import pytest
-
 from kernel.hand.melds import Meld, MeldKind
 from kernel.scoring.dora import (
+    _is_red_five_match,
     count_dora_in_tiles,
     count_dora_total,
     count_ura_dora_total,
     dora_from_indicators,
     successor_tile,
     ura_indicators_for_settlement,
-    _is_red_five_match,
 )
-from kernel.tiles.model import Suit, Tile
 from kernel.tiles.deck import build_deck, shuffle_deck
+from kernel.tiles.model import Suit, Tile
 
 
 class TestSuccessorTile:
@@ -103,7 +101,7 @@ class TestCountDoraInTiles:
         """赤五算宝牌。"""
         tiles = Counter()
         tiles[Tile(Suit.MAN, 5, False)] = 2  # 普通五
-        tiles[Tile(Suit.MAN, 5, True)] = 1   # 赤五
+        tiles[Tile(Suit.MAN, 5, True)] = 1  # 赤五
 
         dora = (Tile(Suit.MAN, 5, False),)  # 宝牌是 5
         assert count_dora_in_tiles(tiles, dora) == 3  # 全部算宝牌

@@ -7,6 +7,7 @@ from collections import Counter
 import pytest
 
 from kernel import (
+    RIICHI_STICK_POINTS,
     Action,
     ActionKind,
     BoardState,
@@ -14,7 +15,6 @@ from kernel import (
     IllegalActionError,
     Meld,
     MeldKind,
-    RIICHI_STICK_POINTS,
     Suit,
     Tile,
     TurnPhase,
@@ -30,7 +30,6 @@ from kernel.engine.state import GameState
 from kernel.play import apply_discard
 from kernel.riichi.tenpai import is_tenpai_default, is_tenpai_seven_pairs
 from kernel.table import TableSnapshot
-from tests.call_helpers import clear_call_window_state
 
 
 def _board(*, seed: int = 0, dealer: int = 0) -> BoardState:
@@ -367,8 +366,10 @@ class TestIppatsuInterruption:
         # 验证 play/transitions.py 中 apply_discard 的实现
         # 第 78 行：_replace_board 调用中无 ippatsu_eligible 参数
         # 意味着默认保留原状态
-        from kernel.play.transitions import apply_discard as play_apply_discard
         import inspect
+
+        from kernel.play.transitions import apply_discard as play_apply_discard
+
         source = inspect.getsource(play_apply_discard)
         # 确认 apply_discard 不清空一发
         assert "ippatsu_eligible=frozenset()" not in source

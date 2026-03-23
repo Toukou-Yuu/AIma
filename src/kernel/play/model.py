@@ -79,7 +79,8 @@ class CallResolution:
 
     @staticmethod
     def initial_chankan(kan_seat: int, added_tile: Tile) -> CallResolution:
-        """加杠抢杠：``claimed_tile`` 为从手牌补入明刻的那一张；``river_index=-1`` 表示非河底舍牌。"""
+        """加杠抢杠：``claimed_tile`` 为从手牌补入明刻的那一张；
+        ``river_index=-1`` 表示非河底舍牌。"""
         o1 = (kan_seat + 1) % 4
         o2 = (kan_seat + 2) % 4
         o3 = (kan_seat + 3) % 4

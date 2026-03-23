@@ -4,19 +4,16 @@ from __future__ import annotations
 
 from collections import Counter
 
-import pytest
-
 from kernel import BoardState, Tile, build_board_after_split, build_deck, split_wall
 from kernel.deal.model import BoardState as BS
 from kernel.play.model import CallResolution, RiverEntry, TurnPhase
+from kernel.scoring.dora import ura_indicators_for_settlement
 from kernel.scoring.furiten import is_furiten_for_tile
 from kernel.scoring.points import (
-    child_ron_payment_from_discarder,
     child_ron_base_points,
-    dealer_ron_base_points,
+    child_ron_payment_from_discarder,
     round_up_100,
 )
-from kernel.scoring.dora import ura_indicators_for_settlement
 from kernel.scoring.settle import settle_ron_table
 from kernel.table.model import initial_table_snapshot
 from kernel.tiles.model import Suit

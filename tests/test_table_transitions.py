@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import pytest
 from dataclasses import replace
 
 from kernel.table.model import MatchPreset, PrevailingWind, RoundNumber, initial_table_snapshot
 from kernel.table.transitions import (
     advance_round,
-    should_match_end,
     compute_match_ranking,
     final_settlement,
+    should_match_end,
 )
 
 
@@ -144,7 +143,8 @@ class TestComputeMatchRanking:
 
         ranking = compute_match_ranking(table)
 
-        # 期望：席次 2 是 1 位 (40000), 席次 0 是 2 位 (30000), 席次 1 是 3 位 (20000), 席次 3 是 4 位 (10000)
+        # 期望：席次 2 是 1 位 (40000), 席次 0 是 2 位 (30000)
+        #       席次 1 是 3 位 (20000), 席次 3 是 4 位 (10000)
         assert ranking == (2, 3, 1, 4)
 
     def test_two_way_tie_first(self) -> None:

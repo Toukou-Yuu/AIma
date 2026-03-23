@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 from kernel.call import apply_open_meld, apply_pass_call, apply_ron, board_after_ron_winners
 from kernel.call.win import can_tsumo_default
@@ -15,7 +16,6 @@ from kernel.event_log import (
     CallEvent,
     DiscardTileEvent,
     DrawTileEvent,
-    EventLog,
     FlowEvent,
     GameEvent,
     HandOverEvent,
@@ -32,11 +32,14 @@ from kernel.play.model import TurnPhase
 from kernel.riichi.tenpai import is_tenpai_default
 from kernel.scoring.dora import ura_indicators_for_settlement
 from kernel.scoring.settle import settle_ron_table, settle_tsumo_table
-from kernel.table.model import RIICHI_STICK_POINTS
-from kernel.table.model import TableSnapshot
+from kernel.table.model import RIICHI_STICK_POINTS, TableSnapshot
 from kernel.table.transitions import advance_round, compute_match_ranking, should_match_end
 from kernel.wall import split_wall
 from kernel.wall.split import split_wall as deal_split_wall
+
+if TYPE_CHECKING:
+    from kernel.deal.model import Meld
+    from kernel.tiles.model import Tile
 
 
 class EngineError(ValueError):
@@ -220,7 +223,8 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
     - ``IN_ROUND`` + ``MUST_DISCARD`` + ``ANKAN`` / ``SHANKUMINKAN`` → ``kernel.kan``
     - ``IN_ROUND`` 且 ``board.turn_phase == CALL_RESPONSE``：
       ``PASS_CALL`` / ``RON`` / ``OPEN_MELD``（``kernel.call``）；荣和成立时转 ``HAND_OVER``。
-        - ``IN_ROUND`` 且 ``MUST_DISCARD`` + ``TSUMO``：自摸和了（须 ``last_draw_tile``；岭上则 ``can_tsumo_default`` 按 15 张路径）→ ``HAND_OVER`` 并结算点棒。
+    - ``IN_ROUND`` 且 ``MUST_DISCARD`` + ``TSUMO``：自摸和了（须 ``last_draw_tile``；
+      岭上则 ``can_tsumo_default`` 按 15 张路径）→ ``HAND_OVER`` 并结算点棒。
     其余组合抛 ``IllegalActionError``。
     """
     _validate_action_seat(action)
@@ -538,10 +542,7 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
             # 生成 DiscardTileEvent
             eb = _create_event_builder(state)
             # 判断是否摸切：比较打出的牌与最后摸的牌
-            is_tsumogiri = (
-                board.last_draw_tile is not None
-                and action.tile == board.last_draw_tile
-            )
+            is_tsumogiri = board.last_draw_tile is not None and action.tile == board.last_draw_tile
             discard_event = eb.discard_tile(
                 seat=seat,
                 tile=action.tile,
@@ -786,7 +787,7 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
             # 检查和了后是否终局
             if should_match_end(state.table):
                 # 终局：计算名次，进入 MATCH_END
-                ranking = compute_match_ranking(state.table)
+                compute_match_ranking(state.table)  # 仅用于验证
                 return ApplyOutcome(
                     new_state=GameState(
                         phase=GamePhase.MATCH_END,
@@ -863,7 +864,7 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
             # 检查是否终局
             if should_match_end(state.table):
                 # 终局：计算名次，进入 MATCH_END
-                ranking = compute_match_ranking(state.table)
+                compute_match_ranking(state.table)  # 仅用于验证
                 return ApplyOutcome(
                     new_state=GameState(
                         phase=GamePhase.MATCH_END,
@@ -887,8 +888,8 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 # 但实际上我们无法在这里获取原 table，所以需要一个新方案
 
                 # 最佳方案：在 GameState 中添加 continue_dealer 字段
-                # 临时方案：假设 FLOWN 状态下 honba>0 表示连庄（不推进局序），honba=0 表示亲流（推进）
-                # 这不够精确，但可以工作
+                # 临时方案：假设 FLOWN 状态下 honba>0 表示连庄（不推进局序），
+                #          honba=0 表示亲流（推进）；这不够精确，但可以工作
 
                 # 更精确的方式：检查亲家是否听牌
                 if (

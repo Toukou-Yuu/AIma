@@ -2,42 +2,31 @@
 
 from __future__ import annotations
 
-import pytest
 from collections import Counter
 
 from kernel.deal import build_board_after_split
-from kernel.deal.model import BoardState, LIVE_WALL_AFTER_DEAL
+from kernel.deal.model import LIVE_WALL_AFTER_DEAL, BoardState
 from kernel.engine.actions import Action, ActionKind
-from kernel.engine.apply import apply, IllegalActionError
+from kernel.engine.apply import IllegalActionError, apply
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import initial_game_state
-from kernel.flow.model import FlowKind, FlowResult, TenpaiResult
+from kernel.flow.model import FlowKind, TenpaiResult
+from kernel.flow.settle import (
+    compute_tenpai_result,
+    settle_flow,
+)
 from kernel.flow.transitions import (
+    check_flow_kind,
     is_exhausted_flow,
-    is_nine_nine_flow,
-    is_four_winds_flow,
     is_four_kans_flow,
     is_four_riichi_flow,
+    is_four_winds_flow,
+    is_nine_nine_flow,
     is_three_ron_flow,
-    check_flow_kind,
 )
-from kernel.flow.settle import (
-    compute_tenpai_result,
-    settle_tenpai,
-    should_continue_dealer,
-    settle_flow,
-)
-from kernel.flow.settle import (
-    compute_tenpai_result,
-    settle_tenpai,
-    should_continue_dealer,
-    settle_flow,
-    settle_flow_mangan,
-)
-from kernel.play.model import RiverEntry, TurnPhase
-from kernel.tiles.model import Suit, Tile
 from kernel.table.model import initial_table_snapshot
 from kernel.tiles.deck import build_deck, shuffle_deck
+from kernel.tiles.model import Suit, Tile
 from kernel.wall.split import split_wall
 
 
@@ -89,63 +78,69 @@ class TestNineNineFlow:
     def test_is_nine_nine_with_9_kinds(self) -> None:
         """9 种幺九/字牌判定为九种九牌。"""
         # 13 张牌：9 种幺九/字牌
-        hand = Counter([
-            Tile(Suit.MAN, 1),  # 一万
-            Tile(Suit.MAN, 9),  # 九万
-            Tile(Suit.PIN, 1),  # 一筒
-            Tile(Suit.PIN, 9),  # 九筒
-            Tile(Suit.SOU, 1),  # 一索
-            Tile(Suit.SOU, 9),  # 九索
-            Tile(Suit.HONOR, 1),  # 东
-            Tile(Suit.HONOR, 2),  # 南
-            Tile(Suit.HONOR, 3),  # 西
-            Tile(Suit.HONOR, 4),  # 北
-            Tile(Suit.HONOR, 5),  # 白
-            Tile(Suit.HONOR, 6),  # 发
-            Tile(Suit.HONOR, 7),  # 中
-        ])
+        hand = Counter(
+            [
+                Tile(Suit.MAN, 1),  # 一万
+                Tile(Suit.MAN, 9),  # 九万
+                Tile(Suit.PIN, 1),  # 一筒
+                Tile(Suit.PIN, 9),  # 九筒
+                Tile(Suit.SOU, 1),  # 一索
+                Tile(Suit.SOU, 9),  # 九索
+                Tile(Suit.HONOR, 1),  # 东
+                Tile(Suit.HONOR, 2),  # 南
+                Tile(Suit.HONOR, 3),  # 西
+                Tile(Suit.HONOR, 4),  # 北
+                Tile(Suit.HONOR, 5),  # 白
+                Tile(Suit.HONOR, 6),  # 发
+                Tile(Suit.HONOR, 7),  # 中
+            ]
+        )
 
         assert is_nine_nine_flow(hand) is True
 
     def test_not_nine_nine_with_8_kinds(self) -> None:
         """8 种幺九/字牌不判定为九种九牌。"""
         # 13 张牌：8 种幺九/字牌 + 非幺九牌
-        hand = Counter([
-            Tile(Suit.MAN, 1),  # 一万
-            Tile(Suit.MAN, 9),  # 九万
-            Tile(Suit.PIN, 1),  # 一筒
-            Tile(Suit.PIN, 9),  # 九筒
-            Tile(Suit.SOU, 1),  # 一索
-            Tile(Suit.SOU, 9),  # 九索
-            Tile(Suit.HONOR, 1),  # 东
-            Tile(Suit.HONOR, 2),  # 南
-            Tile(Suit.MAN, 5),  # 五万（非幺九）
-            Tile(Suit.MAN, 5),  # 五万
-            Tile(Suit.PIN, 5),  # 五筒
-            Tile(Suit.PIN, 5),  # 五筒
-            Tile(Suit.SOU, 5),  # 五索
-        ])
+        hand = Counter(
+            [
+                Tile(Suit.MAN, 1),  # 一万
+                Tile(Suit.MAN, 9),  # 九万
+                Tile(Suit.PIN, 1),  # 一筒
+                Tile(Suit.PIN, 9),  # 九筒
+                Tile(Suit.SOU, 1),  # 一索
+                Tile(Suit.SOU, 9),  # 九索
+                Tile(Suit.HONOR, 1),  # 东
+                Tile(Suit.HONOR, 2),  # 南
+                Tile(Suit.MAN, 5),  # 五万（非幺九）
+                Tile(Suit.MAN, 5),  # 五万
+                Tile(Suit.PIN, 5),  # 五筒
+                Tile(Suit.PIN, 5),  # 五筒
+                Tile(Suit.SOU, 5),  # 五索
+            ]
+        )
 
         assert is_nine_nine_flow(hand) is False
 
     def test_nine_nine_with_duplicates(self) -> None:
         """有重复牌但种类≥9 时判定为九种九牌。"""
         # 13 张牌：9 种幺九/字牌（有重复）
-        hand = Counter([
-            Tile(Suit.MAN, 1),
-            Tile(Suit.MAN, 1),  # 重复
-            Tile(Suit.MAN, 9),
-            Tile(Suit.PIN, 1),
-            Tile(Suit.PIN, 9),
-            Tile(Suit.SOU, 1),
-            Tile(Suit.SOU, 9),
-            Tile(Suit.HONOR, 1),
-            Tile(Suit.HONOR, 2),
-            Tile(Suit.HONOR, 3),
-            Tile(Suit.HONOR, 4),
-            Tile(Suit.HONOR, 5),
-            Tile(Suit.HONOR, 6),
-        ])
+        hand = Counter(
+            [
+                Tile(Suit.MAN, 1),
+                Tile(Suit.MAN, 1),  # 重复
+                Tile(Suit.MAN, 9),
+                Tile(Suit.PIN, 1),
+                Tile(Suit.PIN, 9),
+                Tile(Suit.SOU, 1),
+                Tile(Suit.SOU, 9),
+                Tile(Suit.HONOR, 1),
+                Tile(Suit.HONOR, 2),
+                Tile(Suit.HONOR, 3),
+                Tile(Suit.HONOR, 4),
+                Tile(Suit.HONOR, 5),
+                Tile(Suit.HONOR, 6),
+            ]
+        )
 
         assert is_nine_nine_flow(hand) is True
 
@@ -448,8 +443,6 @@ class TestFlowMangan:
 
         # 构造一个虚拟的 board（用于 check_flow_mangan 判断）
         # 这里简化：直接测试结算逻辑
-        from kernel.deal.model import BoardState
-        from kernel.play.model import TurnPhase
 
         b0 = _make_board_from_wall(_make_standard_wall())
 

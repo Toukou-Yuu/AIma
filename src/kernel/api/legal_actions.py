@@ -216,7 +216,12 @@ def _legal_actions_must_discard(
     if last_tile is not None:
         from kernel.call.win import can_tsumo_default
 
-        if can_tsumo_default(concealed, melds, last_tile, last_draw_was_rinshan=board.last_draw_was_rinshan):
+        if can_tsumo_default(
+            concealed,
+            melds,
+            last_tile,
+            last_draw_was_rinshan=board.last_draw_was_rinshan,
+        ):
             actions.append(
                 LegalAction(
                     kind=ActionKind.TSUMO,

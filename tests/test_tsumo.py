@@ -22,8 +22,8 @@ from kernel import (
     split_wall,
 )
 from kernel.engine.state import GameState
-from kernel.scoring.points import child_tsumo_payments
 from kernel.scoring.dora import ura_indicators_for_settlement
+from kernel.scoring.points import child_tsumo_payments
 from kernel.scoring.settle import settle_tsumo_table
 
 

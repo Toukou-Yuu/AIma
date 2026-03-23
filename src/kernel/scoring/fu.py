@@ -122,7 +122,8 @@ def compute_fu_detail(
 ) -> dict[str, int]:
     """
     详细符计算分解。
-    返回各分项符数的字典：{"base": ..., "tsumo": ..., "pair": ..., "sets": ..., "menzen_ron": ..., "total": ...}
+    返回各分项符数的字典：
+    {"base": ..., "tsumo": ..., "pair": ..., "sets": ..., "menzen_ron": ..., "total": ...}
 
     七对子：符固定 25（不切上）。
     """

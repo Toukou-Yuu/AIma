@@ -34,7 +34,8 @@ class DeadWall:
     在 ``wall[122:136]`` 这段里：
     - 前 6 张：岭上摸牌储备（``rinshan[0..5]``）。
     - 后 8 张：4 槽叠置，每槽 ``(ura_bases[i], indicators[i])`` —— 先里侧、后表侧；
-      开局与开杠翻开的是 ``indicators[i]``；**立直和了**结算时用同下标的 ``ura_bases[i]`` 作里宝指示牌。
+      开局与开杠翻开的是 ``indicators[i]``；
+      **立直和了**结算时用同下标的 ``ura_bases[i]`` 作里宝指示牌。
     """
 
     rinshan: tuple[Tile, ...]

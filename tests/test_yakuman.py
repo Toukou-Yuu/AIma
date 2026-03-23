@@ -4,23 +4,15 @@ from __future__ import annotations
 
 from collections import Counter
 
-import pytest
-
 from kernel import (
-    Action,
-    ActionKind,
-    GamePhase,
-    GameState,
     Suit,
     Tile,
-    apply,
+    build_board_after_split,
     build_deck,
-    initial_game_state,
-    shuffle_deck,
+    split_wall,
 )
 from kernel.deal.model import BoardState
 from kernel.hand.melds import Meld, MeldKind
-from kernel.play.model import RiverEntry, TurnPhase
 from kernel.scoring.yaku import (
     _is_chinroutou,
     _is_chuuren_poutou,
@@ -37,8 +29,7 @@ from kernel.scoring.yaku import (
     _is_tsuuiisou,
     count_yaku_han,
 )
-from kernel.table.model import MatchPreset, PrevailingWind, RoundNumber, initial_table_snapshot
-from kernel import build_board_after_split, split_wall, BoardState
+from kernel.table.model import initial_table_snapshot
 
 
 def _board_sorted_deal(*, dealer: int = 0) -> BoardState:
@@ -75,8 +66,16 @@ class TestDaisangen:
         c[Tile(Suit.MAN, 1)] = 2
 
         melds = (
-            Meld(kind=MeldKind.PON, tiles=[Tile(Suit.HONOR, 5), Tile(Suit.HONOR, 5), Tile(Suit.HONOR, 5)], from_seat=1),
-            Meld(kind=MeldKind.PON, tiles=[Tile(Suit.HONOR, 6), Tile(Suit.HONOR, 6), Tile(Suit.HONOR, 6)], from_seat=2),
+            Meld(
+                kind=MeldKind.PON,
+                tiles=[Tile(Suit.HONOR, 5), Tile(Suit.HONOR, 5), Tile(Suit.HONOR, 5)],
+                from_seat=1,
+            ),
+            Meld(
+                kind=MeldKind.PON,
+                tiles=[Tile(Suit.HONOR, 6), Tile(Suit.HONOR, 6), Tile(Suit.HONOR, 6)],
+                from_seat=2,
+            ),
         )
 
         full = c.copy()
@@ -141,7 +140,11 @@ class TestSuuankou:
         c[Tile(Suit.PIN, 1)] = 3
 
         melds = (
-            Meld(kind=MeldKind.PON, tiles=[Tile(Suit.PIN, 9), Tile(Suit.PIN, 9), Tile(Suit.PIN, 9)], from_seat=1),
+            Meld(
+                kind=MeldKind.PON,
+                tiles=[Tile(Suit.PIN, 9), Tile(Suit.PIN, 9), Tile(Suit.PIN, 9)],
+                from_seat=1,
+            ),
         )
         c[Tile(Suit.SOU, 1)] = 2
 
@@ -158,11 +161,18 @@ class TestKokushiMusou:
         c: Counter[Tile] = Counter()
         # 十三种幺九牌各一张
         terminals = [
-            Tile(Suit.MAN, 1), Tile(Suit.MAN, 9),
-            Tile(Suit.PIN, 1), Tile(Suit.PIN, 9),
-            Tile(Suit.SOU, 1), Tile(Suit.SOU, 9),
-            Tile(Suit.HONOR, 1), Tile(Suit.HONOR, 2), Tile(Suit.HONOR, 3),
-            Tile(Suit.HONOR, 4), Tile(Suit.HONOR, 5), Tile(Suit.HONOR, 6),
+            Tile(Suit.MAN, 1),
+            Tile(Suit.MAN, 9),
+            Tile(Suit.PIN, 1),
+            Tile(Suit.PIN, 9),
+            Tile(Suit.SOU, 1),
+            Tile(Suit.SOU, 9),
+            Tile(Suit.HONOR, 1),
+            Tile(Suit.HONOR, 2),
+            Tile(Suit.HONOR, 3),
+            Tile(Suit.HONOR, 4),
+            Tile(Suit.HONOR, 5),
+            Tile(Suit.HONOR, 6),
             Tile(Suit.HONOR, 7),
         ]
         for t in terminals:
@@ -178,11 +188,18 @@ class TestKokushiMusou:
         """国士十三面：十三种幺九牌各一张。"""
         c: Counter[Tile] = Counter()
         terminals = [
-            Tile(Suit.MAN, 1), Tile(Suit.MAN, 9),
-            Tile(Suit.PIN, 1), Tile(Suit.PIN, 9),
-            Tile(Suit.SOU, 1), Tile(Suit.SOU, 9),
-            Tile(Suit.HONOR, 1), Tile(Suit.HONOR, 2), Tile(Suit.HONOR, 3),
-            Tile(Suit.HONOR, 4), Tile(Suit.HONOR, 5), Tile(Suit.HONOR, 6),
+            Tile(Suit.MAN, 1),
+            Tile(Suit.MAN, 9),
+            Tile(Suit.PIN, 1),
+            Tile(Suit.PIN, 9),
+            Tile(Suit.SOU, 1),
+            Tile(Suit.SOU, 9),
+            Tile(Suit.HONOR, 1),
+            Tile(Suit.HONOR, 2),
+            Tile(Suit.HONOR, 3),
+            Tile(Suit.HONOR, 4),
+            Tile(Suit.HONOR, 5),
+            Tile(Suit.HONOR, 6),
             Tile(Suit.HONOR, 7),
         ]
         for t in terminals:
@@ -205,7 +222,11 @@ class TestKokushiMusou:
         c[Tile(Suit.HONOR, 7)] = 2
 
         melds = (
-            Meld(kind=MeldKind.CHI, tiles=[Tile(Suit.MAN, 1), Tile(Suit.MAN, 2), Tile(Suit.MAN, 3)], from_seat=1),
+            Meld(
+                kind=MeldKind.CHI,
+                tiles=[Tile(Suit.MAN, 1), Tile(Suit.MAN, 2), Tile(Suit.MAN, 3)],
+                from_seat=1,
+            ),
         )
 
         assert _is_kokushi_musou(c, melds) is False
@@ -354,7 +375,11 @@ class TestChuurenPoutou:
         c[Tile(Suit.MAN, 9)] = 3
 
         melds = (
-            Meld(kind=MeldKind.CHI, tiles=[Tile(Suit.MAN, 2), Tile(Suit.MAN, 3), Tile(Suit.MAN, 4)], from_seat=1),
+            Meld(
+                kind=MeldKind.CHI,
+                tiles=[Tile(Suit.MAN, 2), Tile(Suit.MAN, 3), Tile(Suit.MAN, 4)],
+                from_seat=1,
+            ),
         )
 
         win_tile = Tile(Suit.MAN, 5)
@@ -368,10 +393,26 @@ class TestSuuKantsu:
     def test_suu_kantsu_basic(self) -> None:
         """四杠子：四组杠子。"""
         melds = (
-            Meld(kind=MeldKind.DAIMINKAN, tiles=[Tile(Suit.MAN, 1), Tile(Suit.MAN, 1), Tile(Suit.MAN, 1), Tile(Suit.MAN, 1)], from_seat=0),
-            Meld(kind=MeldKind.ANKAN, tiles=[Tile(Suit.MAN, 9), Tile(Suit.MAN, 9), Tile(Suit.MAN, 9), Tile(Suit.MAN, 9)], from_seat=0),
-            Meld(kind=MeldKind.DAIMINKAN, tiles=[Tile(Suit.PIN, 1), Tile(Suit.PIN, 1), Tile(Suit.PIN, 1), Tile(Suit.PIN, 1)], from_seat=0),
-            Meld(kind=MeldKind.ANKAN, tiles=[Tile(Suit.PIN, 9), Tile(Suit.PIN, 9), Tile(Suit.PIN, 9), Tile(Suit.PIN, 9)], from_seat=0),
+            Meld(
+                kind=MeldKind.DAIMINKAN,
+                tiles=[Tile(Suit.MAN, 1), Tile(Suit.MAN, 1), Tile(Suit.MAN, 1), Tile(Suit.MAN, 1)],
+                from_seat=0,
+            ),
+            Meld(
+                kind=MeldKind.ANKAN,
+                tiles=[Tile(Suit.MAN, 9), Tile(Suit.MAN, 9), Tile(Suit.MAN, 9), Tile(Suit.MAN, 9)],
+                from_seat=0,
+            ),
+            Meld(
+                kind=MeldKind.DAIMINKAN,
+                tiles=[Tile(Suit.PIN, 1), Tile(Suit.PIN, 1), Tile(Suit.PIN, 1), Tile(Suit.PIN, 1)],
+                from_seat=0,
+            ),
+            Meld(
+                kind=MeldKind.ANKAN,
+                tiles=[Tile(Suit.PIN, 9), Tile(Suit.PIN, 9), Tile(Suit.PIN, 9), Tile(Suit.PIN, 9)],
+                from_seat=0,
+            ),
         )
 
         assert _is_suu_kantsu(melds) is True
@@ -379,9 +420,21 @@ class TestSuuKantsu:
     def test_suu_kantsu_not_three_kan(self) -> None:
         """四杠子：三组杠子则不是。"""
         melds = (
-            Meld(kind=MeldKind.DAIMINKAN, tiles=[Tile(Suit.MAN, 1), Tile(Suit.MAN, 1), Tile(Suit.MAN, 1), Tile(Suit.MAN, 1)], from_seat=0),
-            Meld(kind=MeldKind.ANKAN, tiles=[Tile(Suit.MAN, 9), Tile(Suit.MAN, 9), Tile(Suit.MAN, 9), Tile(Suit.MAN, 9)], from_seat=0),
-            Meld(kind=MeldKind.DAIMINKAN, tiles=[Tile(Suit.PIN, 1), Tile(Suit.PIN, 1), Tile(Suit.PIN, 1), Tile(Suit.PIN, 1)], from_seat=0),
+            Meld(
+                kind=MeldKind.DAIMINKAN,
+                tiles=[Tile(Suit.MAN, 1), Tile(Suit.MAN, 1), Tile(Suit.MAN, 1), Tile(Suit.MAN, 1)],
+                from_seat=0,
+            ),
+            Meld(
+                kind=MeldKind.ANKAN,
+                tiles=[Tile(Suit.MAN, 9), Tile(Suit.MAN, 9), Tile(Suit.MAN, 9), Tile(Suit.MAN, 9)],
+                from_seat=0,
+            ),
+            Meld(
+                kind=MeldKind.DAIMINKAN,
+                tiles=[Tile(Suit.PIN, 1), Tile(Suit.PIN, 1), Tile(Suit.PIN, 1), Tile(Suit.PIN, 1)],
+                from_seat=0,
+            ),
         )
 
         assert _is_suu_kantsu(melds) is False
@@ -436,7 +489,9 @@ class TestYakumanHan:
         c[win_tile] = 1
 
         han = count_yaku_han(
-            board, table, 0,
+            board,
+            table,
+            0,
             for_ron=False,
             win_tile=win_tile,
             concealed=c,
@@ -452,11 +507,18 @@ class TestYakumanHan:
 
         c: Counter[Tile] = Counter()
         terminals = [
-            Tile(Suit.MAN, 1), Tile(Suit.MAN, 9),
-            Tile(Suit.PIN, 1), Tile(Suit.PIN, 9),
-            Tile(Suit.SOU, 1), Tile(Suit.SOU, 9),
-            Tile(Suit.HONOR, 1), Tile(Suit.HONOR, 2), Tile(Suit.HONOR, 3),
-            Tile(Suit.HONOR, 4), Tile(Suit.HONOR, 5), Tile(Suit.HONOR, 6),
+            Tile(Suit.MAN, 1),
+            Tile(Suit.MAN, 9),
+            Tile(Suit.PIN, 1),
+            Tile(Suit.PIN, 9),
+            Tile(Suit.SOU, 1),
+            Tile(Suit.SOU, 9),
+            Tile(Suit.HONOR, 1),
+            Tile(Suit.HONOR, 2),
+            Tile(Suit.HONOR, 3),
+            Tile(Suit.HONOR, 4),
+            Tile(Suit.HONOR, 5),
+            Tile(Suit.HONOR, 6),
             Tile(Suit.HONOR, 7),
         ]
         for t in terminals:
@@ -466,7 +528,9 @@ class TestYakumanHan:
         win_tile = Tile(Suit.HONOR, 7)
 
         han = count_yaku_han(
-            board, table, 0,
+            board,
+            table,
+            0,
             for_ron=False,
             win_tile=win_tile,
             concealed=c,
@@ -490,7 +554,9 @@ class TestYakumanHan:
         win_tile = Tile(Suit.HONOR, 5)
 
         han = count_yaku_han(
-            board, table, 0,
+            board,
+            table,
+            0,
             for_ron=False,
             win_tile=win_tile,
             concealed=c,

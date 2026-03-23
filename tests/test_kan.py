@@ -144,9 +144,7 @@ def test_no_more_dora_indicators_raises() -> None:
     for _ in range(4):
         new_concealed[quad] -= 1
     melds_l = list(b0.melds)
-    melds_l[d] = b0.melds[d] + (
-        Meld(MeldKind.ANKAN, (quad, quad, quad, quad), called_tile=None),
-    )
+    melds_l[d] = b0.melds[d] + (Meld(MeldKind.ANKAN, (quad, quad, quad, quad), called_tile=None),)
     all_four = tuple(b0.dead_wall.indicators)
     intermediate = BoardState(
         hands=tuple(new_concealed if s == d else b0.hands[s] for s in range(4)),
