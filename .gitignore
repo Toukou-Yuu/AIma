@@ -38,3 +38,10 @@ ref_repository/
 
 # UI：demo 生成的预览图
 src/ui/output.png
+
+# Web 前端（src/web/ui / Vite）
+src/web/ui/node_modules/
+src/web/ui/dist/
+src/web/ui/dist-ssr/
+src/web/ui/.vite/
+src/web/ui/*.local

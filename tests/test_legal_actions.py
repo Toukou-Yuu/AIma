@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import Counter
+
 import pytest
 
 from kernel import (
@@ -119,6 +121,7 @@ class TestObservation:
         assert obs.kyoutaku == 0
         assert obs.wall_remaining is None  # 人类模式不可见剩余牌数
         assert obs.dead_wall is None  # 人类模式不可见王牌
+        assert obs.hands_by_seat is None  # 人类模式不暴露他家手牌
 
     def test_observation_debug_mode(self) -> None:
         """测试调试模式观测（全知视角）。"""
@@ -133,6 +136,11 @@ class TestObservation:
         assert obs.ura_indicators is not None  # 调试模式可见里宝
         assert obs.wall_remaining is not None  # 调试模式可见剩余牌数
         assert obs.dead_wall is not None  # 调试模式可见王牌
+        assert obs.hands_by_seat is not None
+        assert len(obs.hands_by_seat) == 4
+        for s in range(4):
+            assert obs.hands_by_seat[s] == Counter(g1.board.hands[s].elements())
+        assert obs.hand == obs.hands_by_seat[0]
 
     def test_observation_river(self) -> None:
         """测试河的观测。"""

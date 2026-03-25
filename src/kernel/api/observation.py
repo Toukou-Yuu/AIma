@@ -55,6 +55,7 @@ class Observation:
         last_discard_seat: 最后舍牌者
         wall_remaining: 剩余牌数（仅全知模式）
         dead_wall: 王牌信息（仅全知模式）
+        hands_by_seat: 四家门前手牌（仅 debug；human 为 None，不暴露他家）
     """
 
     seat: int
@@ -72,6 +73,7 @@ class Observation:
     last_discard_seat: int | None
     wall_remaining: int | None
     dead_wall: tuple[Tile, ...] | None
+    hands_by_seat: tuple[Counter[Tile], Counter[Tile], Counter[Tile], Counter[Tile]] | None
 
 
 def observation(
@@ -109,14 +111,12 @@ def observation(
     # 手牌信息
     hand = None
     melds = ()
+    hands_by_seat: tuple[Counter[Tile], Counter[Tile], Counter[Tile], Counter[Tile]] | None = None
     if board is not None:
-        if mode == "debug":
-            # 全知模式：返回所有手牌
-            hand = Counter(board.hands[seat].elements())
-        else:
-            # 人类模式：仅返回自家手牌
-            hand = Counter(board.hands[seat].elements())
+        hand = Counter(board.hands[seat].elements())
         melds = tuple(board.melds[seat])
+        if mode == "debug":
+            hands_by_seat = tuple(Counter(board.hands[s].elements()) for s in range(4))
 
     # 河信息
     river = ()
@@ -191,4 +191,5 @@ def observation(
         last_discard_seat=last_discard_seat,
         wall_remaining=wall_remaining,
         dead_wall=dead_wall,
+        hands_by_seat=hands_by_seat,
     )
