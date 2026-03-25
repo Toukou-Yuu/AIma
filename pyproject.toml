@@ -6,11 +6,12 @@ build-backend = "setuptools.build_meta"
 name = "aima"
 version = "0.0.1"
 description = "Riichi mahjong engine (kernel)"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "ruff>=0.3"]
+ui = ["Pillow>=10.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -34,3 +34,7 @@ CLAUDE.md
 idea.md
 .cursor/
 .codex/
+ref_repository/
+
+# UI：demo 生成的预览图
+src/ui/output.png
