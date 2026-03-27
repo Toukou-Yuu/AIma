@@ -19,7 +19,9 @@
 | [`validate.py`](validate.py) | 解析结果与当前 `legal_actions` 逐项匹配 |
 | [`action_build.py`](action_build.py) | `LegalAction` → `Action` |
 | [`turns.py`](turns.py) | 当前待决策的 `seat` 列表（`CALL_RESPONSE` 为多席） |
-| [`runner.py`](runner.py) | `run_llm_match`：局间 `NOOP`+牌山、步数上限 |
+| [`runner.py`](runner.py) | `run_llm_match`：局间 `NOOP`+牌山、步数上限；可选简单日志 |
+| [`table_snapshot_text.py`](table_snapshot_text.py) | 全桌「读谱式」纯文本快照（简体中文）；合并摸打时标本巡摸牌，主串去重 |
+| [`simple_log.py`](simple_log.py) | `--log-session` 时与内核事件配套的块级追加（调试用） |
 | [`cli.py`](cli.py) / [`__main__.py`](__main__.py) | `python -m llm` |
 
 ## 安装
@@ -76,12 +78,13 @@ python -m llm --dry-run --seed 0 --max-steps 100 --log-session my_run_01
 
 | 路径 | 内容 |
 |------|------|
-| `logs/replay/{stem}.json` | **整局结束后**一次性写入：供 `replay_from_actions` 的 `actions` + 内核事件 `events` **wire**（不是手牌/牌河可读战报） |
-| `logs/debug/{stem}.log` | **运行过程中**持续追加：`apply` 每步摘要、模型解析出的 `llm_choice`、**仅写入本文件的** `httpx` HTTP 行（控制台仍隐藏） |
+| `logs/replay/{stem}.json` | **整局结束后**一次性写入：供 `replay_from_actions` 的 `actions` + 内核事件 `events` wire（确定性回放，非战报） |
+| `logs/debug/{stem}.log` | **运行过程中**持续追加：`apply` 每步摘要、模型解析出的 `llm_choice`、仅写入本文件的 `httpx` HTTP 行（控制台仍隐藏） |
+| `logs/simple/{stem}.txt` | **`--log-session`**：简体中文全桌快照 + 「执行」行；合并摸打时执行行含「摸xx打牌」、手牌行用全角括号标本巡摸入（主串去掉一张同键牌避免重复） |
 
 `--log-session` 单独写可自动生成 `stem`（本地时间 `YYYYMMDD-HHMMSS`）；也可 `--log-session 自定义名`。仍可与 `--log-json 其它路径.json` 同时写入第二份牌谱。
 
-要看「人类读谱」式局面，请用 Web UI 或自写脚本调用 `observation(..., human)`；牌谱 JSON 的设计目标是**确定性回放**，不是战报文本。
+牌谱 JSON 的设计目标是**确定性回放**；人类读谱优先看 `logs/simple/*.txt` 或 Web UI（`observation(..., human)`）。
 
 牌谱字段与编解码见内核模块 `kernel.replay_json`；`RunResult.as_match_log()` 可程序化得到与 `--log-json` 相同结构的 dict。
 
@@ -108,5 +111,5 @@ pytest tests/test_llm_*.py -q
 ## 说明
 
 - 正式对局每位模型选手应使用 **`observation(..., mode="human")`**；不要用 `debug` 观测当选手输入。
-- `legal_actions` 对部分鸣牌/杠组合**可能未完全穷举**，以 `apply` 与内核文档为准；扩展枚举属后续工作。
+- `legal_actions` 已枚举 `OPEN_MELD` / `ANKAN` / `SHANKUMINKAN`（与 `kernel.api.meld_candidates` 一致）；仍以 `apply` 为最终校验。
 - **API 省调用**：某席 `legal_actions` **仅有** `pass_call` 时，`choose_legal_action` **不调用** `complete`，直接过（有 `RON`/鸣牌等其它选项时仍会请求模型）。

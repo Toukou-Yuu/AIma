@@ -159,7 +159,8 @@ stateDiagram-v2
 | `engine/`      | `GamePhase`、`GameState`、`Action`、`apply`    |
 | `event_log.py` | 结构化事件类型与 `EventLog` 容器                      |
 | `replay.py`    | 基于动作序列的回放与日志校验辅助                            |
-| `api/`         | `legal_actions`、`observation`（对外稳定边界）       |
+| `replay_json.py` | `Action` 与 JSON wire 互转（牌谱、CLI `--replay`） |
+| `api/`         | `legal_actions`、`observation`；`meld_candidates`（鸣牌/杠候选枚举） |
 
 
 更细的目录索引见 `src/kernel/docs/layout.md` 与各子包 `README.md`。
@@ -182,4 +183,4 @@ stateDiagram-v2
 2. 用 `legal_actions(state, seat)` 取候选；将选择映射为 `Action` 后调用 `apply`。
 3. 处理 `IllegalActionError`，不直接改 `GameState` 字段。
 
-面向调用方的字段级说明见同目录 `**kernel-api-for-ai.md`**。
+面向调用方的字段级说明见同目录 `kernel-api-for-ai.md`。

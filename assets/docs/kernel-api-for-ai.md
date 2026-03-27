@@ -15,7 +15,7 @@
   - `outcome = apply(state, action)`，`state = outcome.new_state`；
   - 可选：收集 `outcome.events` 写入日志。
 4. **局末**：
-  - `state.phase == HAND_OVER` 或 `FLOWN` 时，用 `**NOOP` + 下一局 `wall`** 推进（见 §5）；
+  - `state.phase == HAND_OVER` 或 `FLOWN` 时，用 `NOOP` + 下一局 `wall` 推进（见 §5）；
   - `state.phase == MATCH_END` 时**停止调用 `apply`**。
 
 ---
@@ -32,10 +32,10 @@ def observation(
 ) -> Observation
 ```
 
-- `**seat**`：必须为 `0..3`，否则 `ValueError`。
-- `**mode**`：
-  - `**human**`（正式对局推荐）：返回**该 seat 可见**的信息。当前实现中自家手牌完整；河、宝牌指示、场况、立直状态等公共信息一致。**注意**：若未来加入「他家手牌隐藏」的细化，仍以本函数实现为准。
-  - `**debug`**：除人类信息外，还提供 `wall_remaining`、`dead_wall`（王牌相关拼接）等调试字段；**禁止**作为公平对局的选手通道。
+- `seat`：必须为 `0..3`，否则 `ValueError`。
+- `mode`：
+  - `human`（正式对局推荐）：返回**该 seat 可见**的信息。当前实现中自家手牌完整；河、宝牌指示、场况、立直状态等公共信息一致。**注意**：若未来加入「他家手牌隐藏」的细化，仍以本函数实现为准。
+  - `debug`：除人类信息外，还提供 `wall_remaining`、`dead_wall`（王牌相关拼接）等调试字段；**禁止**作为公平对局的选手通道。
 
 ### 2.1 `Observation` 字段说明
 
@@ -68,25 +68,28 @@ def observation(
 def legal_actions(state: GameState, seat: int) -> tuple[LegalAction, ...]
 ```
 
-- `**seat**`：`0..3`，否则 `ValueError`。
-- **返回值**：当前该席在规则下可执行的 `**LegalAction`** 列表；可能为空元组。
+- `seat`：`0..3`，否则 `ValueError`。
+- **返回值**：当前该席在规则下可执行的 `LegalAction` 列表；可能为空元组。
 
 ### 3.1 `LegalAction` 与 `Action` 的对应关系
 
-`LegalAction` 是**便于枚举**的视图；提交引擎时必须转为 `Action`：
+`LegalAction` 是**便于枚举**的视图；提交引擎时必须转为 `Action`（见 `llm.action_build` 或自写映射）：
 
 
-| `LegalAction.kind` | 构造 `Action` 时的要点                                                          |
-| ------------------ | ------------------------------------------------------------------------- |
-| `DRAW`             | `Action(kind=DRAW, seat=seat)`（`seat` 通常即 `current_seat`）                 |
-| `DISCARD`          | 必须带 `tile`；若 `declare_riichi=True`，同步设置 `Action.declare_riichi=True`      |
-| `TSUMO`            | `Action(kind=TSUMO, seat=seat)`；`LegalAction.tile` 与当前实现一致时可附带，引擎主要依据盘面校验 |
-| `PASS_CALL`        | `Action(kind=PASS_CALL, seat=seat)`                                       |
-| `RON`              | `Action(kind=RON, seat=seat)`（和了牌以应答上下文为准）                                |
-| `NOOP`             | `Action(kind=NOOP, seat=seat)`                                            |
+| `LegalAction.kind` | 构造 `Action` 时的要点 |
+| ------------------ | ------------------- |
+| `DRAW` | `Action(kind=DRAW, seat=seat)`（`seat` 须为 `current_seat`） |
+| `DISCARD` | 必须带 `tile`；若 `declare_riichi=True`，同步设置 `Action.declare_riichi=True` |
+| `TSUMO` | `Action(kind=TSUMO, seat=seat)`；可附带 `tile`（与盘面一致） |
+| `PASS_CALL` | `Action(kind=PASS_CALL, seat=seat)` |
+| `RON` | `Action(kind=RON, seat=seat)`（荣和牌以 `CallResolution` 上下文为准） |
+| `OPEN_MELD` | 必须带 `meld: Meld`（吃 / 碰 / 大明杠 之一；由 `legal_actions` 枚举，与 `kernel.api.meld_candidates.enumerate_call_response_open_melds` 一致） |
+| `ANKAN` | 必须带 `meld`（暗杠；见 `enumerate_ankan_melds`） |
+| `SHANKUMINKAN` | 必须带 `meld`（加杠；见 `enumerate_shankuminkan_melds`） |
+| `NOOP` | `Action(kind=NOOP, seat=seat)`；局间推进时常需同时传 `wall`（见 §5） |
 
 
-`OPEN_MELD` / `ANKAN` / `SHANKUMINKAN`：**引擎已支持**相应 `apply` 路径，但 `legal_actions` 内对「所有可鸣副露 / 可杠组合」的**穷举仍有待补全**（源码中留有占位）。编排层若需自动鸣牌/杠，可在观测手牌与舍牌基础上调用 `kernel` 内校验函数或自行枚举候选 `Meld` 后 `**apply` 试探**（捕获 `IllegalActionError`）——**以 `apply` 为准**。
+副露与杠的**候选枚举**实现于 `kernel.api.meld_candidates`，由 `legal_actions` 在 `CALL_RESPONSE` / `MUST_DISCARD` 中调用；若上层自造 `Meld`，仍须以 `apply` 是否抛出 `IllegalActionError` 为准。
 
 ### 3.2 各 `GamePhase` 下 `legal_actions` 行为摘要
 
@@ -100,8 +103,8 @@ def legal_actions(state: GameState, seat: int) -> tuple[LegalAction, ...]
 
 **注意**：
 
-- `HAND_OVER` / `FLOWN` 的 `NOOP` 在 `apply` 里常需附带 `**wall`**（下一局牌山），见 §5；`legal_actions` **不会**携带 `wall`，需编排层自行拼接。
-- `**MATCH_END`**：`legal_actions` 仍返回 `NOOP`，但当前 `apply` **未实现**终局阶段的转移，对 `MATCH_END` 调用 `apply` 会抛 `IllegalActionError`。编排层应在检测到 `state.phase == MATCH_END` 后**停止**再调用 `apply`（可将 `NOOP` 视为占位，勿当真提交）。
+- `HAND_OVER` / `FLOWN` 的 `NOOP` 在 `apply` 里常需附带 `wall`（下一局牌山），见 §5；`legal_actions` **不会**携带 `wall`，需编排层自行拼接。
+- `MATCH_END`：`legal_actions` 仍返回 `NOOP`，但当前 `apply` **未实现**终局阶段的转移，对 `MATCH_END` 调用 `apply` 会抛 `IllegalActionError`。编排层应在检测到 `state.phase == MATCH_END` 后**停止**再调用 `apply`（可将 `NOOP` 视为占位，勿当真提交）。
 
 ---
 
@@ -114,7 +117,7 @@ def apply(state: GameState, action: Action) -> ApplyOutcome
 ```
 
 - **成功**：`ApplyOutcome.new_state` 为不可变新状态；`ApplyOutcome.events` 为本步事件元组。
-- **失败**：抛出 `**IllegalActionError`**（`ValueError` 系）。编排层应记录日志、让模型重选或判负（策略由上层定）。
+- **失败**：抛出 `IllegalActionError`（`ValueError` 系）。编排层应记录日志、让模型重选或判负（策略由上层定）。
 
 **不要**直接 `dataclasses.replace` 修改 `GameState` / `BoardState` 来「走棋」。
 
@@ -122,13 +125,13 @@ def apply(state: GameState, action: Action) -> ApplyOutcome
 
 ## 5. 局间 `NOOP` 与 `wall`（易错点）
 
-当 `state.phase` 为 `**HAND_OVER` 或 `FLOWN`** 时，调用：
+当 `state.phase` 为 `HAND_OVER` 或 `FLOWN` 时，调用：
 
 ```python
 apply(state, Action(kind=ActionKind.NOOP, wall=next_wall_tuple))
 ```
 
-- `**next_wall_tuple**`：长度 136、且与 `build_deck()` 同多重集合的标准牌山。
+- `next_wall_tuple`：长度 136、且与 `build_deck()` 同多重集合的标准牌山。
 - 若省略 `wall` 或非法牌山：`IllegalActionError`。
 
 `MATCH_END` 之后：**不应再调用 `apply`**（当前实现会抛 `IllegalActionError`）。
@@ -150,11 +153,11 @@ wall = tuple(shuffle_deck(build_deck(), seed=42))
 ## 7. 辅助 API：回放与事件
 
 
-| 符号                          | 模块                 | 用途                                                  |
-| --------------------------- | ------------------ | --------------------------------------------------- |
-| `replay_from_actions`       | `kernel.replay`    | 给定 `list[Action]` 串行 `apply`，返回终态与每步 `ApplyOutcome` |
-| `EventLog` / `GameEvent` 子类 | `kernel.event_log` | 事件类型定义；编排层可将 `outcome.events` 扁平化归档                 |
-
+| 符号 | 模块 | 用途 |
+| ---- | ---- | ---- |
+| `replay_from_actions` | `kernel.replay` | 给定 `list[Action]` 串行 `apply`，返回终态与每步 `ApplyOutcome` |
+| `action_to_wire` / `wire_to_action` | `kernel.replay_json` | `Action` 与可 JSON 序列化的 wire 互转，供牌谱落盘与 `--replay` |
+| `EventLog` / `GameEvent` 子类 | `kernel.event_log` | 事件类型定义；编排层可将 `outcome.events` 扁平化归档 |
 
 `replay_from_event_log` 等函数侧重**日志与动作序列一致性**的验证，详见 `kernel.replay` 文档字符串。
 
@@ -163,7 +166,7 @@ wall = tuple(shuffle_deck(build_deck(), seed=42))
 ## 8. 场况与配置
 
 - **场况默认值**：`kernel.table.model.initial_table_snapshot()`（起点数、立直棒点数等可与 `kernel.config.DEFAULT_CONFIG` 对齐）。
-- **规则条文**：`mahjong_rules/Mahjong_Soul.md`（版本以文件为准）；与实现不一致时以 `**apply` 行为**为准。
+- **规则条文**：`mahjong_rules/Mahjong_Soul.md`（版本以文件为准）；与实现不一致时以 **`apply` 行为**为准。
 
 ---
 
@@ -171,7 +174,7 @@ wall = tuple(shuffle_deck(build_deck(), seed=42))
 
 1. **正式对局**只使用 `observation(..., mode="human")`；`debug` 仅用于开发/观战。
 2. 模型输出先映射为结构化 `Action`，再 `apply`；**切勿**解析自然语言直接改状态。
-3. 对 `legal_actions` 未穷举的分支（鸣牌/杠），采用「候选生成 + `apply` 校验」或扩展上层枚举，与内核保持单一真相源。
+3. 鸣牌与杠以 `legal_actions` 枚举为准；扩展新动作类型时仍应经 `apply` 校验。
 4. 超时、重试、多 seat 并行**不属于**内核职责；在编排层实现并保证对 `apply` 的调用单线程顺序一致即可（同一 `state` 不并发 `apply`）。
 
 ---

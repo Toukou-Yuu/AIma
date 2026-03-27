@@ -1,5 +1,7 @@
 # Web：API + 浏览器 UI
 
+仓库总览与安装见根目录 **`README.md`**。
+
 ## 结构
 
 - `api/`：FastAPI，内存对局，REST JSON；牌码与内核 `Tile.to_code()` 一致。

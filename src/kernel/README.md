@@ -1,6 +1,16 @@
 # kernel — 日麻对局内核
 
-本目录包含**牌桌规则与状态机**实现（摸打、鸣牌、流局、点数等），**不**包含大模型 HTTP 调用。
+本目录包含**牌桌规则与状态机**实现（摸打、鸣牌、杠、立直、流局、点数、局/比赛流等），**不**包含大模型 HTTP 调用。
 
-- 设计对照见仓库根目录 `mahjong_rules/` 下规则文档（人类可读，运行时以代码为准）。
-- 子目录与模块职责见 [`docs/layout.md`](docs/layout.md)。
+- **人类可读规则清单**（不参与裁决）：仓库根目录 `mahjong_rules/` 下 Markdown，版本以文件内为准。
+- **架构与状态流**（给维护者/编排层）：`assets/docs/kernel-architecture.md`。
+- **对外 API**（观测 / 合法动作 / `apply`）：`assets/docs/kernel-api-for-ai.md`。
+- **本包目录索引**：[`docs/layout.md`](docs/layout.md)；各子包另有 `README.md`。
+
+## 相关代码
+
+| 目录 | 说明 |
+|------|------|
+| `src/llm/` | 大模型编排，仅通过 `kernel.api` + `apply` 接入 |
+| `src/ui/` | 终端 PNG 桌面渲染 |
+| `src/web/` | HTTP API + 浏览器 UI |
