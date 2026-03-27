@@ -130,6 +130,7 @@ def test_chi_stage_lists_chi_open_meld() -> None:
         last_draw_was_rinshan=False,
         rinshan_draw_index=0,
         call_state=cs,
+        all_discards_per_seat=((t4,), (), (), ()),
     )
     g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
     acts = legal_actions(g, 3)
@@ -157,6 +158,8 @@ def test_riichi_seat_no_open_meld_in_call_response() -> None:
         rinshan_draw_index=b.rinshan_draw_index,
         call_state=b.call_state,
         riichi=riichi,
+        all_discards_per_seat=b.all_discards_per_seat,
+        called_discard_indices=b.called_discard_indices,
     )
     g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b2)
     acts = legal_actions(g, 1)

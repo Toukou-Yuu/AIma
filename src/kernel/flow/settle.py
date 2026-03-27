@@ -5,14 +5,13 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from kernel.call.win import can_ron_default, can_ron_seven_pairs
 from kernel.config import DEFAULT_CONFIG, MahjongConfig
 from kernel.deal.model import BoardState
 from kernel.flow.model import TenpaiResult
-from kernel.riichi.tenpai import _iter_ron_candidate_tiles, is_tenpai_default
-from kernel.scoring.yaku import count_yaku_han
+from kernel.riichi.tenpai import is_tenpai_default
+from kernel.scoring.points import nagashi_mangan_payments
 from kernel.table.model import TableSnapshot
-from kernel.tiles.model import Tile
+from kernel.tiles.model import Suit, Tile
 
 if TYPE_CHECKING:
     pass
@@ -22,75 +21,36 @@ if TYPE_CHECKING:
 TENPAI_PAYMENT_POINTS = 1000
 
 
-def _has_yaku_with_win_tile(
-    board: BoardState,
-    table: TableSnapshot,
-    seat: int,
-    win_tile: Tile,
-) -> bool:
-    """
-    检查和了牌为 win_tile 时是否有役（至少 1 番）。
-
-    流局满贯判定用：假设自摸/荣和 win_tile 时检查役种。
-    """
-    concealed = board.hands[seat]
-    melds = board.melds[seat]
-
-    # 检查七对子
-    if can_ron_seven_pairs(concealed, melds, win_tile):
-        han = count_yaku_han(
-            board,
-            table,
-            seat,
-            for_ron=True,
-            win_tile=win_tile,
-            concealed=concealed,
-            melds=melds,
-            is_tsumo=False,
-        )
-        return han >= 1
-
-    # 检查标准形
-    if can_ron_default(concealed, melds, win_tile):
-        han = count_yaku_han(
-            board,
-            table,
-            seat,
-            for_ron=True,
-            win_tile=win_tile,
-            concealed=concealed,
-            melds=melds,
-            is_tsumo=False,
-        )
-        return han >= 1
-
-    return False
+def _is_yaochu_tile(t: Tile) -> bool:
+    """幺九：字牌或数牌的一、九（非赤五）。"""
+    if t.suit == Suit.HONOR:
+        return True
+    return t.rank in (1, 9)
 
 
 def check_flow_mangan(
     board: BoardState,
-    table: TableSnapshot,
+    _table: TableSnapshot,
     seat: int,
 ) -> bool:
     """
-    流局满贯判定：荒牌流局时，听牌者手牌满足和了形（有役）。
+    流し満貫（流局满贯）判定。
 
-    判定逻辑：
-    1. 检查是否听牌
-    2. 遍历所有待牌，检查是否存在至少一张牌使手牌「和了形 + 有役」
+    与「听牌且存在带役待牌」无关；标准条件为：
+    1. 荒牌流局时该席 **听牌**；
+    2. 本局 **全部舍牌**（打牌）均为幺九（一・九・字）；
+    3. **没有任何舍牌被他家吃/碰/大明杠** 鸣走（暗杠/加杠/荣和不计）。
 
-    返回：是否流局满贯。
+    ``_table`` 保留参数以兼容调用方，当前判定不依赖场况表。
     """
-    # 1. 检查是否听牌
     if not is_tenpai_default(board.hands[seat], board.melds[seat]):
         return False
-
-    # 2. 遍历待牌，检查是否有役
-    for win_tile in _iter_ron_candidate_tiles():
-        if _has_yaku_with_win_tile(board, table, seat, win_tile):
-            return True
-
-    return False
+    disc = board.all_discards_per_seat[seat]
+    if not disc:
+        return False
+    if board.called_discard_indices[seat]:
+        return False
+    return all(_is_yaochu_tile(t) for t in disc)
 
 
 def compute_tenpai_result(
@@ -160,16 +120,12 @@ def settle_flow_mangan(
     config: MahjongConfig = DEFAULT_CONFIG,
 ) -> TableSnapshot:
     """
-    流局满贯结算：听牌者中满足流局满贯条件者按满贯收取点数。
+    流し満貫（流局满贯）结算：满足「幺九舍牌且未被鸣牌」且听牌者，按**满贯自摸**分摊。
 
-    规则：
-    - 流局满贯者：从每个未听牌者收取满贯点数（8000/12000）
-    - 未听牌者：支付给每个流局满贯者满贯点数
-    - 听牌但未满贯者：不参与满贯结算（仅参与普通听牌结算）
+    点棒与 ``child_tsumo_payments(..., fu=30, han=5, honba)`` 一致（子合计 8000、亲合计 12000，
+    由亲/子三家**分开**支付，非每家各付满额）。
 
-    满贯点数：
-    - 子家：8000 点
-    - 亲家：12000 点
+    听牌但非流し満貫者：仅参与普通听牌料（``settle_tenpai``）。
 
     Args:
         table: 牌桌快照
@@ -199,13 +155,14 @@ def settle_flow_mangan(
     scores = list(table.scores)
 
     for fm_seat in flow_mangan_seats:
-        # 确定满贯点数（亲家 12000，子家 8000）
-        mangan_points = 12_000 if fm_seat == table.dealer_seat else 8_000
-
-        # 从每个未听牌者收取
-        for n in noten:
-            scores[n] -= mangan_points
-            scores[fm_seat] += mangan_points
+        deltas = nagashi_mangan_payments(
+            fm_seat,
+            table.dealer_seat,
+            table.honba,
+            noten,
+        )
+        for s in range(4):
+            scores[s] += deltas[s]
 
     return replace(table, scores=tuple(scores))
 

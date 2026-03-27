@@ -52,6 +52,10 @@ def _replace_board(board: BoardState, **kwargs: object) -> BoardState:
         riichi=kwargs.get("riichi", board.riichi),
         ippatsu_eligible=kwargs.get("ippatsu_eligible", board.ippatsu_eligible),
         double_riichi=kwargs.get("double_riichi", board.double_riichi),
+        all_discards_per_seat=kwargs.get("all_discards_per_seat", board.all_discards_per_seat),
+        called_discard_indices=kwargs.get(
+            "called_discard_indices", board.called_discard_indices
+        ),
     )
 
 
@@ -243,6 +247,21 @@ def _strip_called_meld(meld: Meld, claimer: int, discard_seat: int) -> Meld:
     )
 
 
+def _called_discard_indices_after_minkan_claim(
+    board: BoardState,
+    discard_seat: int,
+) -> tuple[frozenset[int], ...]:
+    """吃/碰/大明杠鸣走河底舍牌时，将该舍牌在本家 ``all_discards_per_seat`` 中的下标记入。"""
+    n = len(board.all_discards_per_seat[discard_seat])
+    if n < 1:
+        msg = "minkan claim requires at least one recorded discard for discard_seat"
+        raise ValueError(msg)
+    di = n - 1
+    nc = list(board.called_discard_indices)
+    nc[discard_seat] = frozenset(nc[discard_seat]) | {di}
+    return tuple(nc)
+
+
 def _remove_claimed_river(board: BoardState) -> tuple[Tile, ...]:
     cs = board.call_state
     assert cs is not None
@@ -286,6 +305,7 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
         new_melds = list(board.melds)
         new_melds[seat] = board.melds[seat] + (m2,)
         new_river = _remove_claimed_river(board)
+        new_called = _called_discard_indices_after_minkan_claim(board, ds)
         return _replace_board(
             board,
             hands=tuple(new_concealed if s == seat else board.hands[s] for s in range(4)),
@@ -297,6 +317,7 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
             last_draw_was_rinshan=False,
             call_state=None,
             ippatsu_eligible=frozenset(),
+            called_discard_indices=new_called,
         )
 
     if meld.kind == MeldKind.PON:
@@ -316,6 +337,7 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
         new_melds = list(board.melds)
         new_melds[seat] = board.melds[seat] + (m2,)
         new_river = _remove_claimed_river(board)
+        new_called = _called_discard_indices_after_minkan_claim(board, ds)
         return _replace_board(
             board,
             hands=tuple(new_concealed if s == seat else board.hands[s] for s in range(4)),
@@ -327,6 +349,7 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
             last_draw_was_rinshan=False,
             call_state=None,
             ippatsu_eligible=frozenset(),
+            called_discard_indices=new_called,
         )
 
     if meld.kind == MeldKind.DAIMINKAN:
@@ -346,6 +369,7 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
         new_melds = list(board.melds)
         new_melds[seat] = board.melds[seat] + (m2,)
         new_river = _remove_claimed_river(board)
+        new_called = _called_discard_indices_after_minkan_claim(board, ds)
         intermediate = _replace_board(
             board,
             hands=tuple(new_concealed if s == seat else board.hands[s] for s in range(4)),
@@ -356,6 +380,7 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
             last_draw_tile=None,
             last_draw_was_rinshan=False,
             call_state=None,
+            called_discard_indices=new_called,
         )
         after_kan = apply_after_kan_rinshan_draw(intermediate, seat)
         return _replace_board(after_kan, ippatsu_eligible=frozenset())
@@ -392,4 +417,6 @@ def board_after_ron_winners(board: BoardState) -> BoardState:
         riichi=board.riichi,
         ippatsu_eligible=frozenset(),
         double_riichi=board.double_riichi,
+        all_discards_per_seat=board.all_discards_per_seat,
+        called_discard_indices=board.called_discard_indices,
     )

@@ -54,6 +54,8 @@ def apply_ankan(board: BoardState, seat: int, meld: Meld) -> BoardState:
         riichi=board.riichi,
         ippatsu_eligible=board.ippatsu_eligible,
         double_riichi=board.double_riichi,
+        all_discards_per_seat=board.all_discards_per_seat,
+        called_discard_indices=board.called_discard_indices,
     )
     return apply_after_kan_rinshan_draw(intermediate, seat)
 
@@ -121,6 +123,8 @@ def apply_shankuminkan(board: BoardState, seat: int, meld: Meld) -> BoardState:
         riichi=board.riichi,
         ippatsu_eligible=board.ippatsu_eligible,
         double_riichi=board.double_riichi,
+        all_discards_per_seat=board.all_discards_per_seat,
+        called_discard_indices=board.called_discard_indices,
     )
     cs = CallResolution.initial_chankan(seat, extra)
     return BoardState(
@@ -140,4 +144,6 @@ def apply_shankuminkan(board: BoardState, seat: int, meld: Meld) -> BoardState:
         riichi=intermediate.riichi,
         ippatsu_eligible=intermediate.ippatsu_eligible,
         double_riichi=intermediate.double_riichi,
+        all_discards_per_seat=intermediate.all_discards_per_seat,
+        called_discard_indices=intermediate.called_discard_indices,
     )

@@ -187,18 +187,24 @@ def format_hand_over_section(
         if isinstance(ev, HandOverEvent):
             ho = ev
             break
-    if ho is None or not ho.win_lines:
+    if ho is None:
         return None
-    out: list[str] = []
-    out.append("本局和了：")
-    for ln in ho.win_lines:
-        who = _seat_wind_name(dealer_seat, ln.seat)
-        rk = "荣和" if ln.win_kind == "ron" else "自摸"
-        yaku_txt = "、".join(ln.yakus) if ln.yakus else "—"
-        out.append(
-            f"  {who} {ln.hand_pattern} {rk} {ln.han}番{ln.fu}符 [{yaku_txt}] {ln.points:+d}点"
-        )
-    return "\n".join(out)
+    if ho.win_lines:
+        out: list[str] = []
+        out.append("本局和了：")
+        for ln in ho.win_lines:
+            who = _seat_wind_name(dealer_seat, ln.seat)
+            rk = "荣和" if ln.win_kind == "ron" else "自摸"
+            yaku_txt = "、".join(ln.yakus) if ln.yakus else "—"
+            out.append(
+                f"  {who} {ln.hand_pattern} {rk} {ln.han}番{ln.fu}符 [{yaku_txt}] {ln.points:+d}点"
+            )
+        return "\n".join(out)
+    # 回退：理论上 win_lines 与 winners 同时存在；若仅有和了者则至少输出点棒变化
+    if ho.winners:
+        wn = "、".join(_seat_wind_name(dealer_seat, s) for s in ho.winners)
+        return f"本局和了：{wn}（点棒变化 {list(ho.payments)}，番符明细未记录）"
+    return None
 
 
 _FLOW_KIND_CN: dict[FlowKind, str] = {
@@ -258,7 +264,11 @@ def _format_points_and_winrate_lines(
     win_counts: tuple[int, int, int, int],
     hands_finished: int,
 ) -> tuple[str, str]:
-    """点棒一行 + 和了/胜率一行（相对亲席：东→南→西→北；附绝对座位 S0–S3）。"""
+    """点棒一行 + 和了次数/已终局数一行（相对亲席：东→南→西→北；附绝对座位 S0–S3）。
+
+    分母 ``hands_finished`` 含**流局**与**和了终局**；分子为各家**和了**次数。
+    荣和收集未完成时本局尚未记入分母（见引擎 ``HandOverEvent`` 触发时机）。
+    """
     pt_parts: list[str] = []
     wr_parts: list[str] = []
     for rel in range(4):
@@ -273,7 +283,7 @@ def _format_points_and_winrate_lines(
             pct = 100.0 * wc / hands_finished
             wr_parts.append(f"{wlab}家{abs_s}{wc}/{hands_finished}({pct:.1f}%)")
     line_pt = "点数：" + "  ".join(pt_parts)
-    line_wr = "和了胜率：" + "  ".join(wr_parts)
+    line_wr = "和了次数/已终局数：" + "  ".join(wr_parts)
     return line_pt, line_wr
 
 
@@ -343,13 +353,13 @@ def format_table_snapshot_block(
     """
     输出一块多行快照；若不在局中或无 ``board`` 则返回简短说明。
 
-    ``win_counts`` / ``hands_finished``：本场已终局数与各家和了次数，用于胜率（和了数/已终局数）。
-    ``hand_over_section``：和了结算摘要（番型等），由 ``format_hand_over_section`` 从事件生成。
+    ``win_counts`` / ``hands_finished``：各家和了次数与**已终局数**（分母含流局与和了；**一局**在
+    发出 ``HandOverEvent`` / ``FlowEvent`` 时记一次）。
+    ``hand_over_section``：和了或流局摘要，由 ``format_round_end_section`` 生成；**写在「执行」之后**。
     ``turn_draw_tile`` / ``discard_seat`` / ``discarded_tile``：合并摸打后仅打牌快照时，
     用全角括号标本巡摸入牌；主串中去重同键牌。若传入 ``discarded_tile``，先加回打出张再标注，
     表示摸后打前的门内张数（含 14 枚通常待打）。
-    ``llm_why`` / ``llm_why_seat``：模型对本步选择的简要理由，写在「执行：」下一行（``东南西北``家：…）。
-    ``hand_over_section``：由 ``format_round_end_section`` 填入，可为「本局和了」或「本局流局」摘要。
+    ``llm_why`` / ``llm_why_seat``：模型理由，写在「执行」与「本局结算」摘要**之后**（``东南西北``家：…）。
     """
     lines: list[str] = []
     table = state.table
@@ -364,14 +374,12 @@ def format_table_snapshot_block(
         )
         lines.append(ln_pt)
         lines.append(ln_wr)
-        if hand_over_section:
-            lines.append(hand_over_section)
         if last_action_cn:
             lines.append(f"执行：{last_action_cn}")
-            if llm_why and llm_why_seat is not None:
-                lines.append(
-                    f"{_seat_wind_name(ds, llm_why_seat)}：{llm_why.strip()}"
-                )
+        if hand_over_section:
+            lines.append(hand_over_section)
+        if last_action_cn and llm_why and llm_why_seat is not None:
+            lines.append(f"{_seat_wind_name(ds, llm_why_seat)}：{llm_why.strip()}")
         lines.append("-----------------------------------------------------")
         return "\n".join(lines) + "\n"
 
@@ -418,12 +426,12 @@ def format_table_snapshot_block(
             lines.append(f"    ├── {melds_txt}")
             lines.append(f"    └── 牌河：{river_full}")
 
-    if hand_over_section:
-        lines.append(hand_over_section)
     if last_action_cn:
         lines.append(f"执行：{last_action_cn}")
-        if llm_why and llm_why_seat is not None:
-            lines.append(f"{_seat_wind_name(dealer, llm_why_seat)}：{llm_why.strip()}")
+    if hand_over_section:
+        lines.append(hand_over_section)
+    if last_action_cn and llm_why and llm_why_seat is not None:
+        lines.append(f"{_seat_wind_name(dealer, llm_why_seat)}：{llm_why.strip()}")
     lines.append("-----------------------------------------------------")
     return "\n".join(lines) + "\n"
 

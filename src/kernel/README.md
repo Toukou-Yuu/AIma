@@ -6,6 +6,7 @@
 - **架构与状态流**（给维护者/编排层）：`assets/docs/kernel-architecture.md`。
 - **对外 API**（观测 / 合法动作 / `apply`）：`assets/docs/kernel-api-for-ai.md`。
 - **本包目录索引**：[`docs/layout.md`](docs/layout.md)；各子包另有 `README.md`。
+- **荒牌流局·流し満貫**：`BoardState` 记录各家完整舍牌与被鸣下标；`flow/settle.py` 与 `scoring/points.nagashi_mangan_payments` 实现判定与点棒（与满贯自摸分摊一致）。人类可读条文见 `mahjong_rules/Mahjong_Soul.md` §9。
 
 ## 相关代码
 

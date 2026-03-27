@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import FrozenSet
 
 from kernel.hand.melds import Meld, meld_tile_count, validate_meld_shape
@@ -25,6 +25,16 @@ LIVE_WALL_AFTER_DEAL = LIVE_WALL_SIZE - INITIAL_DEAL_TILES
 
 # 表宝指示牌：与 ``DeadWall.indicators`` 顺序一致，先翻开第 1 张（下标 0）
 FIRST_DORA_INDICATOR_INDEX = 0
+
+
+def _empty_discards_per_seat() -> tuple[tuple[Tile, ...], ...]:
+    """本局各家舍牌列表初值（四席各空）。"""
+    return ((), (), (), ())
+
+
+def _empty_called_indices_per_seat() -> tuple[frozenset[int], ...]:
+    """``流し満貫`` 用：被吃/碰/大明杠鸣走的舍牌下标。"""
+    return (frozenset(), frozenset(), frozenset(), frozenset())
 
 
 def _seat_meld_tile_sum(melds: tuple[Meld, ...]) -> int:
@@ -90,6 +100,14 @@ class BoardState:
     """尚处于一发机会内的立直席（鸣牌或荣和结算后清空）；供后续点数模块消费。"""
     double_riichi: FrozenSet[int] = frozenset()
     """双立直席（本局该席第一打即立直）；须同时为已立直席。"""
+    all_discards_per_seat: tuple[tuple[Tile, ...], ...] = field(
+        default_factory=_empty_discards_per_seat
+    )
+    """本局各席按顺序打出的牌（含已被吃碰大明杠从河移走的那张，仍计入本列表）。"""
+    called_discard_indices: tuple[frozenset[int], ...] = field(
+        default_factory=_empty_called_indices_per_seat
+    )
+    """各席 ``all_discards_per_seat[seat]`` 的下标：被他家吃/碰/大明杠鸣走的舍牌。"""
 
     def __post_init__(self) -> None:
         validate_board_state(self)
@@ -151,6 +169,15 @@ def validate_board_state(board: BoardState) -> None:
         if not board.riichi[s]:
             msg = "double_riichi seat must be riichi"
             raise ValueError(msg)
+
+    if len(board.all_discards_per_seat) != 4 or len(board.called_discard_indices) != 4:
+        msg = "all_discards_per_seat / called_discard_indices must have length 4"
+        raise ValueError(msg)
+    for s in range(4):
+        for i in board.called_discard_indices[s]:
+            if i < 0 or i >= len(board.all_discards_per_seat[s]):
+                msg = f"called_discard_indices[{s}] out of range for all_discards_per_seat"
+                raise ValueError(msg)
 
     cur = board.current_seat
     if board.turn_phase == TurnPhase.NEED_DRAW:

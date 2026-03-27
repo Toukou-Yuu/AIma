@@ -45,6 +45,8 @@ def apply_draw(board: BoardState, seat: int) -> BoardState:
         riichi=board.riichi,
         ippatsu_eligible=board.ippatsu_eligible,
         double_riichi=board.double_riichi,
+        all_discards_per_seat=board.all_discards_per_seat,
+        called_discard_indices=board.called_discard_indices,
     )
 
 
@@ -77,6 +79,8 @@ def board_after_tsumo_win(board: BoardState, *, winner: int, win_tile: Tile) -> 
         riichi=board.riichi,
         ippatsu_eligible=frozenset(),
         double_riichi=board.double_riichi,
+        all_discards_per_seat=board.all_discards_per_seat,
+        called_discard_indices=board.called_discard_indices,
     )
 
 
@@ -106,6 +110,8 @@ def apply_discard(
     tsumogiri = board.last_draw_tile is not None and tile == board.last_draw_tile
     new_hands = list(board.hands)
     new_hands[seat] = remove_tile(new_hands[seat], tile)
+    new_discards = list(board.all_discards_per_seat)
+    new_discards[seat] = board.all_discards_per_seat[seat] + (tile,)
     entry = RiverEntry(seat=seat, tile=tile, tsumogiri=tsumogiri, riichi=declare_riichi)
     new_river = board.river + (entry,)
     river_index = len(new_river) - 1
@@ -137,4 +143,6 @@ def apply_discard(
         riichi=new_riichi,
         ippatsu_eligible=new_ippatsu,
         double_riichi=new_double,
+        all_discards_per_seat=tuple(new_discards),
+        called_discard_indices=board.called_discard_indices,
     )

@@ -166,3 +166,46 @@ def child_tsumo_payments(
         out[s] -= pay
         out[winner] += pay
     return out
+
+
+def nagashi_mangan_payments(
+    winner: int,
+    dealer: int,
+    honba: int,
+    noten: frozenset[int],
+) -> dict[int, int]:
+    """
+    流し満貫（荒牌流局）：与**满贯自摸**同一总额，按亲/子分摊至未听者。
+
+    - 子家和了：合计 **8000**（+ 本场每名 100×honba）= 亲付 **4000**、另两家子各 **2000**（+本场）
+    - 亲家和了：合计 **12000**（+本场）= 三家子各 **4000**（+本场）
+
+    并非「每家未听者各付 8000/12000」。
+
+    未听者恰为三家时，与 ``child_tsumo_payments(..., fu=30, han=5, honba)`` 完全一致。
+    未听者少于三家时，按满额自摸下各非和了者应付额之比例，在仅未听者之间缩放到总额不变。
+    """
+    full = child_tsumo_payments(winner, dealer, 30, 5, honba)
+    target = full[winner]
+    losses = {s: -full[s] for s in range(4) if s != winner}
+    payers = sorted(s for s in range(4) if s != winner and s in noten)
+    if not payers:
+        return {0: 0, 1: 0, 2: 0, 3: 0}
+    if frozenset(payers) == frozenset(losses.keys()):
+        return full
+    sum_raw = sum(losses[s] for s in payers)
+    out = {0: 0, 1: 0, 2: 0, 3: 0}
+    if sum_raw <= 0:
+        each = target // len(payers)
+        for n in payers:
+            out[n] -= each
+        out[winner] = -sum(out[s] for s in range(4))
+        return out
+    remainder = target
+    for n in payers[:-1]:
+        pay = (losses[n] * target + sum_raw // 2) // sum_raw
+        out[n] -= pay
+        remainder -= pay
+    out[payers[-1]] -= remainder
+    out[winner] = target
+    return out

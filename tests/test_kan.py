@@ -357,6 +357,7 @@ def _board_call_response_daiminkan_ready() -> tuple[BoardState, Tile]:
             last_draw_was_rinshan=False,
             rinshan_draw_index=0,
             call_state=cs,
+            all_discards_per_seat=((t,), (), (), ()),
         ),
         t,
     )

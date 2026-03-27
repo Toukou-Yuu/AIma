@@ -80,7 +80,7 @@ python -m llm --dry-run --seed 0 --max-steps 100 --log-session my_run_01
 |------|------|
 | `logs/replay/{stem}.json` | **整局结束后**一次性写入：供 `replay_from_actions` 的 `actions` + 内核事件 `events` wire（确定性回放，非战报） |
 | `logs/debug/{stem}.log` | **运行过程中**持续追加：`apply` 每步摘要、模型解析出的 `llm_choice`、仅写入本文件的 `httpx` HTTP 行（控制台仍隐藏） |
-| `logs/simple/{stem}.txt` | **`--log-session`**：简体中文全桌快照 + 「执行」行；风位旁有绝对座位 **`(S0)`–`(S3)`**；合并摸打时先把本步打出张加回再标本巡摸牌，使摸后打前门内为 14 枚（与主串去重一致） |
+| `logs/simple/{stem}.txt` | **`--log-session`**：简体中文全桌快照；风位旁有绝对座位 **`(S0)`–`(S3)`**；块内顺序为 **「执行：…」→ 本局和了/本局流局摘要（若有）→ 模型理由行**；统计行 **「和了次数/已终局数」** 分母含流局与和了终局（非「胜率」字面）。合并摸打时先把本步打出张加回再标本巡摸牌，使摸后打前门内为 14 枚（与主串去重一致） |
 
 `--log-session` 单独写可自动生成 `stem`（本地时间 `YYYYMMDD-HHMMSS`）；也可 `--log-session 自定义名`。仍可与 `--log-json 其它路径.json` 同时写入第二份牌谱。
 

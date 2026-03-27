@@ -59,4 +59,6 @@ def apply_after_kan_rinshan_draw(board: BoardState, seat: int) -> BoardState:
         riichi=board.riichi,
         ippatsu_eligible=board.ippatsu_eligible,
         double_riichi=board.double_riichi,
+        all_discards_per_seat=board.all_discards_per_seat,
+        called_discard_indices=board.called_discard_indices,
     )

@@ -37,7 +37,7 @@ def test_format_snapshot_after_begin_round_contains_winds_and_header() -> None:
     assert "南家" in text
     assert "(S0)" in text
     assert "点数：" in text
-    assert "和了胜率：" in text
+    assert "和了次数/已终局数：" in text
     assert "25000" in text
     assert "执行：" in text
     assert "-----------------------------------------------------" in text
@@ -98,8 +98,49 @@ def test_format_round_end_prefers_hand_over() -> None:
     assert "荒牌" not in r
 
 
+def test_format_snapshot_order_execute_hand_over_then_llm_why() -> None:
+    """本局结算摘要紧接「执行」之后，模型理由在最后。"""
+    line = WinSettlementLine(
+        seat=0,
+        win_kind="tsumo",
+        han=2,
+        fu=30,
+        hand_pattern="一般形",
+        yakus=("立直",),
+        discard_seat=None,
+        payment_from_discarder=None,
+        tsumo_deltas=None,
+        kyoutaku_share=0,
+        points=3000,
+    )
+    ho = HandOverEvent(
+        seat=None,
+        sequence=1,
+        winners=(0,),
+        payments=(3000, -1000, -1000, -1000),
+        win_lines=(line,),
+    )
+    sec = format_hand_over_section((ho,), dealer_seat=0)
+    assert sec is not None
+    g0 = initial_game_state()
+    w = tuple(shuffle_deck(build_deck(), seed=44))
+    state = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=w)).new_state
+    text = format_table_snapshot_block(
+        state,
+        hand_number=1,
+        last_action_cn="东家 自摸和了（TSUMO）",
+        hand_over_section=sec,
+        llm_why="听牌即立",
+        llm_why_seat=0,
+    )
+    ex = text.index("执行：")
+    ho_i = text.index("本局和了：")
+    why_i = text.index("东家：听牌即立")
+    assert ex < ho_i < why_i
+
+
 def test_format_snapshot_llm_why_line_below_execute() -> None:
-    """「执行：」下一行输出「风位家：模型理由」。"""
+    """无结算摘要时「执行：」下一行为「风位家：模型理由」。"""
     g0 = initial_game_state()
     w = tuple(shuffle_deck(build_deck(), seed=43))
     state = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=w)).new_state

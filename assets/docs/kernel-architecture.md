@@ -145,7 +145,7 @@ stateDiagram-v2
 | -------------- | ------------------------------------------- |
 | `tiles/`       | 牌模型、`build_deck` / `shuffle_deck`（可复现种子）    |
 | `wall/`        | 牌山切分、王牌结构 `DeadWall`（岭上/表宝/里宝槽位）            |
-| `deal/`        | 配牌、`BoardState` 定义与不变量校验                    |
+| `deal/`        | 配牌、`BoardState`（含本局各家舍牌序列；被吃/碰/大明杠鸣走的下标供流し満貫判定）与不变量校验 |
 | `play/`        | 摸打、河、`TurnPhase` 切换、舍牌后进入 `CALL_RESPONSE`   |
 | `call/`        | 鸣牌与荣和应答转移、一炮多响、同巡振听、抢杠与后续衔接                 |
 | `kan/`         | 暗杠、加杠、岭上摸、翻宝牌指示等                            |
@@ -154,7 +154,7 @@ stateDiagram-v2
 | `riichi/`      | 听牌判定等纯函数；宣言约束由 `apply`+`play` 执行            |
 | `win_shape/`   | 标准形/平和等和了形相关纯判定                             |
 | `scoring/`     | 役、符、番、点数结算与场况更新（荣和/自摸）                      |
-| `flow/`        | 流局种类判定、听牌结算、`settle_flow`                   |
+| `flow/`        | 流局种类判定、听牌结算、流し満貫（幺九舍牌且未被鸣；点棒与满贯自摸同分摊）、`settle_flow` |
 | `match/`       | 比赛层辅助（与 `table.transitions` 协同）             |
 | `engine/`      | `GamePhase`、`GameState`、`Action`、`apply`    |
 | `event_log.py` | 结构化事件类型与 `EventLog` 容器                      |
