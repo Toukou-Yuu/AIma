@@ -125,16 +125,52 @@ class FlowEvent(GameEvent):
 
 
 @dataclass(frozen=True, slots=True)
+class WinSettlementLine:
+    """单席和了结算摘要（荣和 / 自摸）。"""
+
+    seat: int
+    win_kind: str
+    """``"ron"`` 或 ``"tsumo"``。"""
+    han: int
+    fu: int
+    hand_pattern: str
+    """和了形分类（如 ``一般形``、``七对子``）。"""
+    yakus: tuple[str, ...]
+    """役名列表（简体，含表/里宝牌番数标注）。"""
+    discard_seat: int | None = None
+    payment_from_discarder: int | None = None
+    """荣和时该和了者从放铳家收取的点（本场已计入）。"""
+    tsumo_deltas: tuple[int, int, int, int] | None = None
+    """自摸时各家点棒增减（含本场、未计供托前）。"""
+    kyoutaku_share: int = 0
+    """本局该席分得的供托。"""
+    points: int = 0
+    """该席本局净得点（荣和=从铳家收入+供托份；自摸=三家支付净额+供托）。"""
+
+
+@dataclass(frozen=True, slots=True)
 class HandOverEvent(GameEvent):
     """局结束。
 
     Attributes:
         winners: 和了者集合（流局时为空）
-        payments: 各家点棒变化（相对局开始前）
+        payments: 各家点棒变化（本局相对结算前）
+        win_lines: 各和了席的符番役摘要
     """
 
     winners: tuple[int, ...]
-    payments: tuple[int, ...]
+    payments: tuple[int, int, int, int]
+    win_lines: tuple[WinSettlementLine, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class MatchEndEvent(GameEvent):
+    """比赛结束（半庄/东风战终局）。"""
+
+    ranking: tuple[int, int, int, int]
+    """各 seat 顺位（1 起算；同分同顺）。"""
+    final_scores: tuple[int, int, int, int]
+    """精算后（含终局供托分配）最终点棒。"""
 
 
 @dataclass(frozen=True, slots=True)

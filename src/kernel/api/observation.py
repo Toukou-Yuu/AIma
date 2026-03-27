@@ -9,6 +9,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from kernel.engine.phase import GamePhase
 from kernel.tiles.model import Tile
 
 if TYPE_CHECKING:
@@ -41,6 +42,7 @@ class Observation:
 
     Attributes:
         seat: 观测者座位
+        phase: 对局阶段（``IN_ROUND`` / ``HAND_OVER`` / ``MATCH_END`` 等）
         hand: 自家手牌（人类模式：门清时完整，副露后含副露；全知模式：完整）
         melds: 自家副露
         river: 全局河（按时间序）
@@ -59,6 +61,7 @@ class Observation:
     """
 
     seat: int
+    phase: GamePhase
     hand: Counter[Tile] | None
     melds: tuple[Meld, ...]
     river: tuple[RiverEntry, ...]
@@ -107,6 +110,7 @@ def observation(
 
     board = state.board
     table = state.table
+    phase = state.phase
 
     # 手牌信息
     hand = None
@@ -177,6 +181,7 @@ def observation(
 
     return Observation(
         seat=seat,
+        phase=phase,
         hand=hand,
         melds=melds,
         river=river,

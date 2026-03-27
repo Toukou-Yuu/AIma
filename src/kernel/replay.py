@@ -19,6 +19,7 @@ from kernel.event_log import (
     FlowEvent,
     GameEvent,
     HandOverEvent,
+    MatchEndEvent,
     RonEvent,
     RoundBeginEvent,
     TsumoEvent,
@@ -49,6 +50,8 @@ def _action_from_event(
         return None  # 系统事件
     if isinstance(event, HandOverEvent):
         return None  # 系统事件
+    if isinstance(event, MatchEndEvent):
+        return None
     # 其他事件类型需要动作，但这里无法完全重建
     # 回放时需要外部提供完整的动作序列
     return None
@@ -146,7 +149,7 @@ def verify_event_log(log: EventLog) -> bool:
     检查项：
     1. 事件序列号从 0 开始且连续
     2. RoundBeginEvent 在第一个
-    3. HandOverEvent 在最后一个（如果对局正常结束）
+    3. 不检查末事件类型（一局结束可为 ``HandOverEvent``；比赛结束还可有 ``MatchEndEvent`` 等）
 
     Returns:
         True 如果日志一致，False 否则
@@ -191,6 +194,18 @@ def extract_action_trace(outcome: ApplyOutcome) -> list[dict]:
         if isinstance(event, HandOverEvent):
             event_data["winners"] = event.winners
             event_data["payments"] = event.payments
+            event_data["win_lines"] = [
+                {
+                    "seat": ln.seat,
+                    "han": ln.han,
+                    "fu": ln.fu,
+                    "yakus": list(ln.yakus),
+                }
+                for ln in event.win_lines
+            ]
+        if isinstance(event, MatchEndEvent):
+            event_data["ranking"] = list(event.ranking)
+            event_data["final_scores"] = list(event.final_scores)
         if isinstance(event, RoundBeginEvent):
             event_data["dealer_seat"] = event.dealer_seat
             dora = str(event.dora_indicator) if event.dora_indicator else None

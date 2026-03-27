@@ -19,21 +19,23 @@ from kernel.event_log import (
     FlowEvent,
     GameEvent,
     HandOverEvent,
+    MatchEndEvent,
     RonEvent,
     RoundBeginEvent,
     TsumoEvent,
+    WinSettlementLine,
 )
 from kernel.flow import FlowKind, FlowResult, check_flow_kind, settle_flow
 from kernel.flow.model import TenpaiResult
 from kernel.hand.multiset import remove_tile
 from kernel.kan import apply_ankan, apply_shankuminkan
 from kernel.play import apply_discard, apply_draw, board_after_tsumo_win
-from kernel.play.model import TurnPhase
+from kernel.play.model import TurnPhase, kamicha_seat
 from kernel.riichi.tenpai import is_tenpai_default
 from kernel.scoring.dora import ura_indicators_for_settlement
 from kernel.scoring.settle import settle_ron_table, settle_tsumo_table
 from kernel.table.model import RIICHI_STICK_POINTS, TableSnapshot
-from kernel.table.transitions import advance_round, compute_match_ranking, should_match_end
+from kernel.table.transitions import advance_round, final_settlement, should_match_end
 from kernel.wall import split_wall
 from kernel.wall.split import split_wall as deal_split_wall
 
@@ -56,6 +58,8 @@ class ApplyOutcome:
 
     new_state: GameState
     events: tuple[GameEvent, ...]
+    drained_pass_calls: int = 0
+    """``CALL_PASS_DRAIN`` 内部连续 ``PASS_CALL`` 的次数；其它动作为 0。"""
 
 
 class _EventBuilder:
@@ -167,13 +171,27 @@ class _EventBuilder:
     def hand_over(
         self,
         winners: tuple[int, ...],
-        payments: tuple[int, ...],
+        payments: tuple[int, int, int, int],
+        win_lines: tuple[WinSettlementLine, ...] = (),
     ) -> HandOverEvent:
         return HandOverEvent(
             seat=None,
             sequence=self.next_sequence(),
             winners=winners,
             payments=payments,
+            win_lines=win_lines,
+        )
+
+    def match_end(
+        self,
+        ranking: tuple[int, int, int, int],
+        final_scores: tuple[int, int, int, int],
+    ) -> MatchEndEvent:
+        return MatchEndEvent(
+            seat=None,
+            sequence=self.next_sequence(),
+            ranking=ranking,
+            final_scores=final_scores,
         )
 
 
@@ -210,6 +228,140 @@ def _validate_action_seat(action: Action) -> None:
     if not 0 <= action.seat <= 3:
         msg = "action.seat must be 0..3 when provided"
         raise IllegalActionError(msg)
+
+
+_CALL_PASS_DRAIN_MAX = 64
+
+
+def _outcome_pass_call(state: GameState, seat: int) -> ApplyOutcome:
+    """执行单次 ``PASS_CALL``（含荣和收集结束时的结算与事件）。"""
+    phase = state.phase
+    board = state.board
+    if board is None:
+        msg = "IN_ROUND requires board"
+        raise IllegalActionError(msg)
+    try:
+        new_board = apply_pass_call(board, seat)
+    except ValueError as e:
+        raise IllegalActionError(str(e)) from e
+    cs_pb = new_board.call_state
+    if cs_pb is not None and cs_pb.finished and cs_pb.ron_claimants:
+        settled = board_after_ron_winners(new_board)
+        ura = ura_indicators_for_settlement(
+            new_board.dead_wall,
+            len(new_board.revealed_indicators),
+        )
+        is_chankan = cs_pb.chankan_rinshan_pending
+        continue_dealer = any(w == state.table.dealer_seat for w in cs_pb.ron_claimants)
+        new_table, win_lines, payments = settle_ron_table(
+            state.table,
+            new_board,
+            ron_winners=cs_pb.ron_claimants,
+            discard_seat=cs_pb.discard_seat,
+            win_tile=cs_pb.claimed_tile,
+            ura_indicators=ura,
+            is_chankan=is_chankan,
+            continue_dealer=continue_dealer,
+        )
+        eb = _create_event_builder(state)
+        events: list[GameEvent] = []
+        for winner in cs_pb.ron_claimants:
+            ron_event = eb.ron(
+                seat=winner,
+                win_tile=cs_pb.claimed_tile,
+                discard_seat=cs_pb.discard_seat,
+            )
+            events.append(ron_event)
+        hand_over_event = eb.hand_over(
+            winners=tuple(cs_pb.ron_claimants),
+            payments=payments,
+            win_lines=win_lines,
+        )
+        events.append(hand_over_event)
+        return ApplyOutcome(
+            new_state=GameState(
+                phase=GamePhase.HAND_OVER,
+                table=new_table,
+                board=settled,
+                ron_winners=cs_pb.ron_claimants,
+                event_sequence=eb._sequence,
+            ),
+            events=tuple(events),
+        )
+    return ApplyOutcome(
+        new_state=GameState(
+            phase=phase,
+            table=state.table,
+            board=new_board,
+            ron_winners=None,
+            event_sequence=state.event_sequence,
+        ),
+        events=(),
+    )
+
+
+def _call_response_active_seat(board: BoardState) -> int | None:
+    """
+    当前应答窗口轮到表态的席（荣和：``min(ron_remaining)``；碰杠：``pon_kan_order[idx]``；吃：上家）。
+    与 ``CALL_PASS_DRAIN`` 及串行 ``PASS_CALL`` 对齐。
+    """
+    if board.turn_phase != TurnPhase.CALL_RESPONSE:
+        return None
+    cs = board.call_state
+    if cs is None:
+        return None
+    if cs.stage == "ron":
+        return min(cs.ron_remaining) if cs.ron_remaining else None
+    if cs.stage == "pon_kan":
+        return cs.pon_kan_order[cs.pon_kan_idx]
+    if cs.stage == "chi":
+        return kamicha_seat(cs.discard_seat)
+    return None
+
+
+def _apply_call_pass_drain(state: GameState) -> ApplyOutcome:
+    """连续执行「当前先序席仅可过」的 ``PASS_CALL``，直至否则或离开应答。"""
+    # 延迟导入，避免 ``apply`` ↔ ``legal_actions`` 与 ``engine.__init__`` 形成环
+    from kernel.api.legal_actions import legal_actions
+
+    drained = 0
+    events_list: list[GameEvent] = []
+    cur = state
+    for _ in range(_CALL_PASS_DRAIN_MAX):
+        board = cur.board
+        if cur.phase != GamePhase.IN_ROUND or board is None:
+            break
+        if board.turn_phase != TurnPhase.CALL_RESPONSE:
+            break
+        seat = _call_response_active_seat(board)
+        if seat is None:
+            break
+        acts = legal_actions(cur, seat)
+        if len(acts) != 1 or acts[0].kind != ActionKind.PASS_CALL:
+            break
+        out = _outcome_pass_call(cur, seat)
+        drained += 1
+        events_list.extend(out.events)
+        cur = out.new_state
+    if drained == 0:
+        msg = "CALL_PASS_DRAIN: first pending seat is not forced pass"
+        raise IllegalActionError(msg)
+    if (
+        cur.phase == GamePhase.IN_ROUND
+        and cur.board is not None
+        and cur.board.turn_phase == TurnPhase.CALL_RESPONSE
+    ):
+        seat2 = _call_response_active_seat(cur.board)
+        if seat2 is not None:
+            acts2 = legal_actions(cur, seat2)
+            if len(acts2) == 1 and acts2[0].kind == ActionKind.PASS_CALL:
+                msg = "CALL_PASS_DRAIN: iteration limit exceeded"
+                raise IllegalActionError(msg)
+    return ApplyOutcome(
+        new_state=cur,
+        events=tuple(events_list),
+        drained_pass_calls=drained,
+    )
 
 
 def apply(state: GameState, action: Action) -> ApplyOutcome:
@@ -284,70 +436,16 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
             if kind == ActionKind.DISCARD:
                 msg = "DISCARD not allowed during CALL_RESPONSE"
                 raise IllegalActionError(msg)
+            if kind == ActionKind.CALL_PASS_DRAIN:
+                if action.seat is not None:
+                    msg = "CALL_PASS_DRAIN does not use seat"
+                    raise IllegalActionError(msg)
+                return _apply_call_pass_drain(state)
             if kind == ActionKind.PASS_CALL:
                 if action.seat is None:
                     msg = "PASS_CALL requires seat"
                     raise IllegalActionError(msg)
-                try:
-                    new_board = apply_pass_call(board, action.seat)
-                except ValueError as e:
-                    raise IllegalActionError(str(e)) from e
-                cs_pb = new_board.call_state
-                if cs_pb is not None and cs_pb.finished and cs_pb.ron_claimants:
-                    settled = board_after_ron_winners(new_board)
-                    ura = ura_indicators_for_settlement(
-                        new_board.dead_wall,
-                        len(new_board.revealed_indicators),
-                    )
-                    is_chankan = cs_pb.chankan_rinshan_pending
-                    # 连庄判定：亲家和了则连庄（一炮多响时任一亲家和了即连庄）
-                    continue_dealer = any(w == state.table.dealer_seat for w in cs_pb.ron_claimants)
-                    new_table = settle_ron_table(
-                        state.table,
-                        new_board,
-                        ron_winners=cs_pb.ron_claimants,
-                        discard_seat=cs_pb.discard_seat,
-                        win_tile=cs_pb.claimed_tile,
-                        ura_indicators=ura,
-                        is_chankan=is_chankan,
-                        continue_dealer=continue_dealer,
-                    )
-                    # 生成 RonEvent 和 HandOverEvent
-                    eb = _create_event_builder(state)
-                    events = []
-                    for winner in cs_pb.ron_claimants:
-                        ron_event = eb.ron(
-                            seat=winner,
-                            win_tile=cs_pb.claimed_tile,
-                            discard_seat=cs_pb.discard_seat,
-                        )
-                        events.append(ron_event)
-                    hand_over_event = eb.hand_over(
-                        winners=tuple(cs_pb.ron_claimants),
-                        payments=(0, 0, 0, 0),  # 简化：实际由 settle 计算
-                    )
-                    events.append(hand_over_event)
-                    return ApplyOutcome(
-                        new_state=GameState(
-                            phase=GamePhase.HAND_OVER,
-                            table=new_table,
-                            board=settled,
-                            ron_winners=cs_pb.ron_claimants,
-                            event_sequence=eb._sequence,
-                        ),
-                        events=tuple(events),
-                    )
-                # PASS_CALL 不生成事件（只是声明放弃）
-                return ApplyOutcome(
-                    new_state=GameState(
-                        phase=phase,
-                        table=state.table,
-                        board=new_board,
-                        ron_winners=None,
-                        event_sequence=state.event_sequence,  # PASS_CALL 不增加事件
-                    ),
-                    events=(),
-                )
+                return _outcome_pass_call(state, action.seat)
             if kind == ActionKind.RON:
                 if action.seat is None:
                     msg = "RON requires seat"
@@ -366,7 +464,7 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                     is_chankan = cs.chankan_rinshan_pending
                     # 连庄判定：亲家和了则连庄（一炮多响时任一亲家和了即连庄）
                     continue_dealer = any(w == state.table.dealer_seat for w in cs.ron_claimants)
-                    new_table = settle_ron_table(
+                    new_table, win_lines, payments = settle_ron_table(
                         state.table,
                         new_board,
                         ron_winners=cs.ron_claimants,
@@ -388,7 +486,8 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                         events.append(ron_event)
                     hand_over_event = eb.hand_over(
                         winners=tuple(cs.ron_claimants),
-                        payments=(0, 0, 0, 0),  # 简化：实际由 settle 计算
+                        payments=payments,
+                        win_lines=win_lines,
                     )
                     events.append(hand_over_event)
                     return ApplyOutcome(
@@ -418,8 +517,8 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 if action.meld is None:
                     msg = "OPEN_MELD requires meld"
                     raise IllegalActionError(msg)
-                # 确定鸣牌类型
-                call_kind = action.meld.kind.lower()  # "chi", "pon", "daiminkan"
+                # ``Meld.kind`` 为 ``MeldKind`` 枚举，须用 ``.value``（与 wire 小写串一致）
+                call_kind = action.meld.kind.value
                 try:
                     new_board = apply_open_meld(board, action.seat, action.meld)
                 except ValueError as e:
@@ -637,7 +736,7 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
             )
             # 连庄判定：亲家自摸则连庄
             continue_dealer = seat == state.table.dealer_seat
-            new_table = settle_tsumo_table(
+            new_table, win_lines, payments = settle_tsumo_table(
                 state.table,
                 board,
                 winner=seat,
@@ -646,12 +745,12 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 continue_dealer=continue_dealer,
             )
 
-            # 生成 HandOverEvent
-            # 计算点棒变化（相对局开始前）：简化处理，用 winners 收益表示
             winners = (seat,)
-            # payments: 简化为 (0, 0, 0, 0)，实际应由 settle 逻辑计算
-            payments = (0, 0, 0, 0)
-            hand_over_event = eb.hand_over(winners=winners, payments=payments)
+            hand_over_event = eb.hand_over(
+                winners=winners,
+                payments=payments,
+                win_lines=win_lines,
+            )
 
             return ApplyOutcome(
                 new_state=GameState(
@@ -775,7 +874,12 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                 ),
                 events=(kan_event,),
             )
-        if kind in (ActionKind.PASS_CALL, ActionKind.RON, ActionKind.OPEN_MELD):
+        if kind in (
+            ActionKind.PASS_CALL,
+            ActionKind.CALL_PASS_DRAIN,
+            ActionKind.RON,
+            ActionKind.OPEN_MELD,
+        ):
             msg = f"action {kind.value} only allowed during CALL_RESPONSE"
             raise IllegalActionError(msg)
         msg = f"action {kind.value} not allowed in phase {phase.value}"
@@ -786,16 +890,21 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
         if kind == ActionKind.NOOP:
             # 检查和了后是否终局
             if should_match_end(state.table):
-                # 终局：计算名次，进入 MATCH_END
-                compute_match_ranking(state.table)  # 仅用于验证
+                ranking, final_table = final_settlement(state.table)
+                eb = _create_event_builder(state)
+                end_ev = eb.match_end(
+                    ranking=ranking,
+                    final_scores=final_table.scores,
+                )
                 return ApplyOutcome(
                     new_state=GameState(
                         phase=GamePhase.MATCH_END,
-                        table=state.table,
+                        table=final_table,
                         board=state.board,
                         ron_winners=state.ron_winners,
+                        event_sequence=eb._sequence,
                     ),
-                    events=(),  # 终局不再生成新事件
+                    events=(end_ev,),
                 )
             else:
                 # 未终局：判断是否连庄
@@ -863,18 +972,23 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
 
             # 检查是否终局
             if should_match_end(state.table):
-                # 终局：计算名次，进入 MATCH_END
-                compute_match_ranking(state.table)  # 仅用于验证
+                ranking, final_table = final_settlement(state.table)
+                eb = _create_event_builder(state)
+                end_ev = eb.match_end(
+                    ranking=ranking,
+                    final_scores=final_table.scores,
+                )
                 return ApplyOutcome(
                     new_state=GameState(
                         phase=GamePhase.MATCH_END,
-                        table=state.table,
+                        table=final_table,
                         board=state.board,
                         ron_winners=None,
                         flow_result=state.flow_result,
                         tenpai_result=state.tenpai_result,
+                        event_sequence=eb._sequence,
                     ),
-                    events=(),
+                    events=(end_ev,),
                 )
             else:
                 # 未终局：需要判断是否连庄

@@ -1,7 +1,19 @@
 """
-大模型侧适配与编排入口（占位）。
+大模型侧：HTTP 适配、提示拼装、解析校验与跑局编排。
 
-实现进度与 API 形状待定；牌桌逻辑请使用 ``kernel`` 包。
+牌桌规则仅存在于 ``kernel``；本包通过 ``legal_actions`` / ``observation`` / ``apply`` 接入。
 """
 
-__all__: list[str] = []
+from llm.config import LLMClientConfig, load_llm_config
+from llm.protocol import ChatMessage, CompletionClient, build_client
+from llm.runner import RunResult, run_llm_match
+
+__all__ = [
+    "LLMClientConfig",
+    "ChatMessage",
+    "CompletionClient",
+    "RunResult",
+    "build_client",
+    "load_llm_config",
+    "run_llm_match",
+]

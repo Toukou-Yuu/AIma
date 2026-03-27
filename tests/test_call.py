@@ -135,7 +135,7 @@ def test_same_turn_furiten_via_engine_illegal_action() -> None:
 
 def test_pass_call_chain_via_engine_reaches_need_draw() -> None:
     g0 = initial_game_state()
-    w = tuple(shuffle_deck(build_deck(), seed=15))
+    w = tuple(shuffle_deck(build_deck(), seed=1))
     g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=w)).new_state
     b = g1.board
     assert b is not None
@@ -146,7 +146,7 @@ def test_pass_call_chain_via_engine_reaches_need_draw() -> None:
         cs = g.board.call_state
         assert cs is not None
         if cs.stage == "ron":
-            s = next(iter(cs.ron_remaining))
+            s = min(cs.ron_remaining)
         elif cs.stage == "pon_kan":
             s = cs.pon_kan_order[cs.pon_kan_idx]
         else:
@@ -157,3 +157,39 @@ def test_pass_call_chain_via_engine_reaches_need_draw() -> None:
     assert g.board is not None
     assert g.board.turn_phase.name == "NEED_DRAW"
     assert g.phase == GamePhase.IN_ROUND
+
+
+def test_call_pass_drain_equivalent_to_serial_pass() -> None:
+    g0 = initial_game_state()
+    # seed=15 在枚举 OPEN_MELD 后，应答席常含吃碰，CALL_PASS_DRAIN 无法连过；seed=1 下每步仅 PASS
+    w = tuple(shuffle_deck(build_deck(), seed=1))
+    g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=w)).new_state
+    b = g1.board
+    assert b is not None
+    d0 = next(iter(b.hands[b.current_seat].elements()))
+    g2 = apply(g1, Action(ActionKind.DISCARD, seat=b.current_seat, tile=d0)).new_state
+    g_chain = g2
+    n_pass = 0
+    while g_chain.board is not None and g_chain.board.call_state is not None:
+        cs = g_chain.board.call_state
+        assert cs is not None
+        if cs.stage == "ron":
+            s = min(cs.ron_remaining)
+        elif cs.stage == "pon_kan":
+            s = cs.pon_kan_order[cs.pon_kan_idx]
+        else:
+            from kernel.play.model import kamicha_seat
+
+            s = kamicha_seat(cs.discard_seat)
+        g_chain = apply(g_chain, Action(ActionKind.PASS_CALL, seat=s)).new_state
+        n_pass += 1
+    out = apply(g2, Action(ActionKind.CALL_PASS_DRAIN))
+    assert out.drained_pass_calls == n_pass
+    assert out.new_state == g_chain
+
+
+def test_call_pass_drain_rejected_when_first_pending_can_ron() -> None:
+    b = _board_seven_pairs_ron_window()
+    gs = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
+    with pytest.raises(IllegalActionError, match="not forced pass"):
+        apply(gs, Action(ActionKind.CALL_PASS_DRAIN))

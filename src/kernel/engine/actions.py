@@ -22,6 +22,8 @@ class ActionKind(Enum):
     """打牌：须在 ``MUST_DISCARD``；须指定 ``seat``（须为 ``current_seat``）与 ``tile``。"""
     PASS_CALL = "pass_call"
     """放弃当前鸣牌/荣和机会；须在 ``CALL_RESPONSE``，``seat`` 须为当前阶段有权表态者。"""
+    CALL_PASS_DRAIN = "call_pass_drain"
+    """仅在 ``CALL_RESPONSE``：从当前局面起，连续执行所有「唯一合法动作为 ``PASS_CALL``」的表态，直至离开应答或遇到多选项（编排/牌谱合并用）。"""
     RON = "ron"
     """荣和；须在应答窗口的荣和阶段且形成立（当前默认可判七对子）。"""
     TSUMO = "tsumo"

@@ -264,6 +264,9 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
     if cs.chankan_rinshan_pending:
         msg = "抢杠窗口仅允许荣和，不可开副露"
         raise ValueError(msg)
+    if board.riichi[seat]:
+        msg = "OPEN_MELD not allowed after riichi"
+        raise ValueError(msg)
     tile = cs.claimed_tile
     ds = cs.discard_seat
     if meld.called_tile != tile:

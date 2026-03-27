@@ -168,7 +168,7 @@ stateDiagram-v2
 
 ## 7. 事件日志（每步 `ApplyOutcome.events`）
 
-每步 `apply` 可产生 0 个或多个 `GameEvent` 子类实例（含 `sequence`，自 `GameState.event_sequence` 递增）。主要类型包括：`RoundBeginEvent`、`DrawTileEvent`、`DiscardTileEvent`、`CallEvent`、`RonEvent`、`TsumoEvent`、`FlowEvent`、`HandOverEvent`。
+每步 `apply` 可产生 0 个或多个 `GameEvent` 子类实例（含 `sequence`，自 `GameState.event_sequence` 递增）。主要类型包括：`RoundBeginEvent`、`DrawTileEvent`、`DiscardTileEvent`、`CallEvent`、`RonEvent`、`TsumoEvent`、`FlowEvent`、`HandOverEvent`（含 `win_lines` 结算摘要）、`MatchEndEvent`（终局顺位与最终点棒）。
 
 用途：**调试**、**审计**、与 `replay` 模块配合做确定性验证。完整定义见 `kernel.event_log`。
 
@@ -178,7 +178,7 @@ stateDiagram-v2
 
 内核**不**负责 HTTP、多模型与提示词。AI 侧应：
 
-1. 用 `observation(state, seat, mode="human")` 取**人类可见**信息（正式对局）。
+1. 用 `observation(state, seat, mode="human")` 取**人类可见**信息（正式对局）；`Observation.phase` 标明 `in_round` / `hand_over` / `match_end` 等阶段。
 2. 用 `legal_actions(state, seat)` 取候选；将选择映射为 `Action` 后调用 `apply`。
 3. 处理 `IllegalActionError`，不直接改 `GameState` 字段。
 

@@ -23,6 +23,7 @@ from kernel.engine import (
     apply,
     initial_game_state,
 )
+from kernel.event_log import MatchEndEvent, WinSettlementLine
 from kernel.hand import (
     Meld,
     MeldKind,
@@ -84,6 +85,7 @@ __all__ = [
     "GameState",
     "IllegalActionError",
     "LegalAction",
+    "MatchEndEvent",
     "MatchPreset",
     "Meld",
     "MeldKind",
@@ -97,6 +99,7 @@ __all__ = [
     "Tile",
     "WALL_SIZE",
     "WallSplit",
+    "WinSettlementLine",
     "add_tile",
     "apply",
     "apply_discard",

@@ -8,6 +8,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from kernel.api.meld_candidates import (
+    enumerate_ankan_melds,
+    enumerate_call_response_open_melds,
+    enumerate_shankuminkan_melds,
+)
 from kernel.call.win import can_ron_default, can_ron_seven_pairs
 from kernel.deal.model import Meld
 from kernel.engine.actions import ActionKind
@@ -141,23 +146,9 @@ def _legal_actions_call_response(
                     )
                 )
 
-    # 检查是否可以 OPEN_MELD（碰/杠/吃）
-    # 注意：这里需要生成所有可能的副露
-    # 简化：仅返回一个通用的 OPEN_MELD 动作，具体副露由外部决定
-    # 实际需要枚举所有可能的副露组合
-    if cs.stage in ("pon_kan", "chi"):
-        # 检查当前行动者是否可以鸣牌
-        if cs.stage == "pon_kan":
-            current = cs.pon_kan_order[cs.pon_kan_idx]
-            if seat == current:
-                # TODO: 枚举所有可能的 PON 和 KAN
-                pass
-        elif cs.stage == "chi":
-            from kernel.play.model import kamicha_seat
-
-            if seat == kamicha_seat(cs.discard_seat):
-                # TODO: 枚举所有可能的 CHI
-                pass
+    # OPEN_MELD：碰 / 大明杠 / 吃（由 meld_candidates 全枚举，与 apply_open_meld 一致）
+    for m in enumerate_call_response_open_melds(board, seat):
+        actions.append(LegalAction(kind=ActionKind.OPEN_MELD, seat=seat, meld=m))
 
     return tuple(actions)
 
@@ -230,12 +221,10 @@ def _legal_actions_must_discard(
                 )
             )
 
-    # ANKAN: 枚举所有可能的暗杠
-    # 简化：不在此枚举具体暗杠，留给外部处理
-    # TODO: 枚举所有四张相同的牌组
+    for m in enumerate_ankan_melds(board, seat):
+        actions.append(LegalAction(kind=ActionKind.ANKAN, seat=seat, meld=m))
 
-    # SHANKUMINKAN: 枚举所有可能的加杠
-    # 简化：不在此枚举具体加杠
-    # TODO: 检查已有的副露中可以加杠的组合
+    for m in enumerate_shankuminkan_melds(board, seat):
+        actions.append(LegalAction(kind=ActionKind.SHANKUMINKAN, seat=seat, meld=m))
 
     return tuple(actions)

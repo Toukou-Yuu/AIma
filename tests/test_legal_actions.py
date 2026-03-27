@@ -9,10 +9,13 @@ import pytest
 from kernel import (
     Action,
     ActionKind,
+    GamePhase,
+    GameState,
     LegalAction,
     apply,
     build_deck,
     initial_game_state,
+    initial_table_snapshot,
     legal_actions,
     observation,
     shuffle_deck,
@@ -112,6 +115,7 @@ class TestObservation:
         # 人类模式：可见自家手牌
         obs = observation(g1, 0, mode="human")
         assert obs.seat == 0
+        assert obs.phase.value == "in_round"
         assert obs.hand is not None
         assert obs.melds == ()  # 开局无副露
         assert len(obs.dora_indicators) == 1
@@ -168,6 +172,17 @@ class TestObservation:
         obs = observation(g1, 0, mode="human")
         assert len(obs.riichi_state) == 4
         assert all(not r for r in obs.riichi_state)  # 开局无立直
+
+    def test_observation_phase_hand_over(self) -> None:
+        """和了后观测应带 ``phase=HAND_OVER``。"""
+        from tests.test_tsumo import _must_discard_chiitoitsu_tsumo_s1
+
+        b = _must_discard_chiitoitsu_tsumo_s1()
+        g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
+        out = apply(g, Action(ActionKind.TSUMO, seat=1))
+        assert out.new_state.phase == GamePhase.HAND_OVER
+        obs = observation(out.new_state, 0, mode="human")
+        assert obs.phase == GamePhase.HAND_OVER
 
 
 class TestLegalActionDataclass:

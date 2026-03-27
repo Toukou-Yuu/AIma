@@ -101,7 +101,7 @@ def test_apply_tsumo_chiitoitsu_hand_over_and_scores() -> None:
     assert out.new_state.phase == GamePhase.HAND_OVER
     assert out.new_state.ron_winners == frozenset({1})
     ura = ura_indicators_for_settlement(b.dead_wall, len(b.revealed_indicators))
-    exp = settle_tsumo_table(
+    exp, _, _ = settle_tsumo_table(
         tab,
         b,
         winner=1,

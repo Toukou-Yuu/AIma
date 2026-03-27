@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import replace
 
 from kernel.deal.model import BoardState
+from kernel.event_log import WinSettlementLine
+from kernel.hand.melds import Meld
 from kernel.scoring.dora import count_dora_total, count_ura_dora_total
 from kernel.scoring.fu import compute_fu_detail
 from kernel.scoring.points import child_ron_payment_from_discarder, child_tsumo_payments
-from kernel.scoring.yaku import _prevailing_wind_tile, count_yaku_han
+from kernel.scoring.yaku import (
+    _is_kokushi_musou,
+    _is_kokushi_thirteen_waits,
+    _prevailing_wind_tile,
+    non_dora_yaku_han_and_labels,
+)
 from kernel.table.model import TableSnapshot, seat_wind_rank
 from kernel.tiles.model import Suit, Tile
 from kernel.win_shape.pinfu import pinfu_eligible
@@ -24,11 +32,28 @@ def _is_hotei(board: BoardState, discard_seat: int) -> bool:
     是否河底（某席的舍牌已是该席最后一张打出的牌）。
     简化判定：河中该席舍牌数 = 该席应打总数 - 1。
     """
-    # 简化：检查 discard_seat 的河牌数是否为最后一张
     river_count = sum(1 for e in board.river if e.seat == discard_seat)
-    # 标准局：每家应打 13-14 张，这里简化为河底 = 最后一张舍牌
-    # 更精确的判定需要跟踪该局已进行的巡目
     return river_count >= 17  # 近似判定
+
+
+def _hand_pattern_zh(
+    concealed: Counter[Tile],
+    melds: tuple[Meld, ...],
+    win_tile: Tile,
+    *,
+    for_ron: bool,
+) -> str:
+    """和了形的人类可读分类（不含具体面子分解）。"""
+    from kernel.call.win import can_ron_seven_pairs, can_win_seven_pairs_concealed_14
+
+    if for_ron:
+        if can_ron_seven_pairs(concealed, melds, win_tile):
+            return "七对子"
+    elif can_win_seven_pairs_concealed_14(concealed, melds):
+        return "七对子"
+    if _is_kokushi_thirteen_waits(concealed, melds, win_tile) or _is_kokushi_musou(concealed, melds):
+        return "国士无双"
+    return "一般形"
 
 
 def settle_ron_table(
@@ -41,16 +66,12 @@ def settle_ron_table(
     ura_indicators: tuple[Tile, ...] = (),
     allow_open_tanyao: bool = True,
     is_chankan: bool = False,
-    continue_dealer: bool = False,  # 新增：连庄判定结果
-) -> TableSnapshot:
+    continue_dealer: bool = False,
+) -> tuple[TableSnapshot, tuple[WinSettlementLine, ...], tuple[int, int, int, int]]:
     """
     一炮多响：每位和了者从放铳家收取完整荣和点（含本场）；供托清零并按席位数整数分给和了者。
-    里宝仅在和了者已立直时计入（``ura_indicators`` 非空时生效）。
-    抢杠：``is_chankan=True`` 时计抢杠役。
 
-    **连庄判定**：
-    - ``continue_dealer=True``：本场 +1（亲家和了或流局亲听牌）
-    - ``continue_dealer=False``：本场重置为 0（亲流）
+    返回 ``(新场况, 和了明细行, 各家点棒本局增减)``。
     """
     if not ron_winners:
         msg = "ron_winners must be non-empty"
@@ -59,8 +80,10 @@ def settle_ron_table(
         msg = "discard_seat must be 0..3"
         raise ValueError(msg)
 
+    old_scores = table.scores
     scores = list(table.scores)
     winners_sorted = tuple(sorted(ron_winners))
+    built: list[WinSettlementLine] = []
 
     for w in winners_sorted:
         if not 0 <= w <= 3:
@@ -70,7 +93,6 @@ def settle_ron_table(
         rw = _prevailing_wind_tile(table.prevailing_wind)
         sw = Tile(Suit.HONOR, seat_wind_rank(table.dealer_seat, w))
 
-        # 检测七对子
         from kernel.call.win import can_ron_seven_pairs
 
         is_chiitoitsu = can_ron_seven_pairs(board.hands[w], board.melds[w], win_tile)
@@ -84,7 +106,6 @@ def settle_ron_table(
             seat_wind_tile=sw,
         )
 
-        # 使用完整符计算
         fu_detail = compute_fu_detail(
             board.hands[w],
             board.melds[w],
@@ -98,10 +119,9 @@ def settle_ron_table(
         )
         fu = fu_detail["total"]
 
-        # 河底捞鱼判定
         is_hotei = _is_hotei(board, discard_seat)
 
-        han = count_yaku_han(
+        nd_han, nd_labels = non_dora_yaku_han_and_labels(
             board,
             table,
             w,
@@ -110,27 +130,36 @@ def settle_ron_table(
             concealed=board.hands[w],
             melds=board.melds[w],
             allow_open_tanyao=allow_open_tanyao,
-            last_draw_was_rinshan=False,  # 荣和不是岭上
-            is_haitei=False,  # 荣和不是海底
+            last_draw_was_rinshan=False,
+            is_haitei=False,
             is_hotei=is_hotei,
             is_chankan=is_chankan,
-            is_tsumo=False,  # 荣和
+            is_tsumo=False,
         )
-        han += count_dora_total(
+        dora_h = count_dora_total(
             board.hands[w],
             board.melds[w],
             win_tile,
             for_ron=True,
             revealed_indicators=board.revealed_indicators,
         )
+        ura_h = 0
         if board.riichi[w] and ura_indicators:
-            han += count_ura_dora_total(
+            ura_h = count_ura_dora_total(
                 board.hands[w],
                 board.melds[w],
                 win_tile,
                 for_ron=True,
                 ura_indicators=ura_indicators,
             )
+        han = nd_han + dora_h + ura_h
+
+        yakus_list = list(nd_labels)
+        if dora_h:
+            yakus_list.append(f"表宝牌{dora_h}")
+        if ura_h:
+            yakus_list.append(f"里宝牌{ura_h}")
+
         pay = child_ron_payment_from_discarder(
             w,
             discard_seat,
@@ -142,18 +171,50 @@ def settle_ron_table(
         scores[discard_seat] -= pay
         scores[w] += pay
 
+        pattern = _hand_pattern_zh(board.hands[w], board.melds[w], win_tile, for_ron=True)
+        built.append(
+            WinSettlementLine(
+                seat=w,
+                win_kind="ron",
+                han=han,
+                fu=fu,
+                hand_pattern=pattern,
+                yakus=tuple(yakus_list),
+                discard_seat=discard_seat,
+                payment_from_discarder=pay,
+                tsumo_deltas=None,
+                kyoutaku_share=0,
+                points=pay,
+            )
+        )
+
     kt = table.kyoutaku
     if kt:
         n = len(winners_sorted)
         base = kt // n
         rem = kt % n
         for i, w in enumerate(winners_sorted):
-            scores[w] += base + (1 if i < rem else 0)
+            share = base + (1 if i < rem else 0)
+            scores[w] += share
+            prev = built[i]
+            built[i] = WinSettlementLine(
+                seat=prev.seat,
+                win_kind=prev.win_kind,
+                han=prev.han,
+                fu=prev.fu,
+                hand_pattern=prev.hand_pattern,
+                yakus=prev.yakus,
+                discard_seat=prev.discard_seat,
+                payment_from_discarder=prev.payment_from_discarder,
+                tsumo_deltas=prev.tsumo_deltas,
+                kyoutaku_share=share,
+                points=prev.points + share,
+            )
 
-    # 本场更新：连庄时 +1，亲流时重置
     new_honba = table.honba + 1 if continue_dealer else 0
-
-    return replace(table, scores=tuple(scores), kyoutaku=0, honba=new_honba)
+    new_table = replace(table, scores=tuple(scores), kyoutaku=0, honba=new_honba)
+    payments = tuple(new_table.scores[i] - old_scores[i] for i in range(4))
+    return new_table, tuple(built), payments
 
 
 def settle_tsumo_table(
@@ -164,23 +225,21 @@ def settle_tsumo_table(
     win_tile: Tile,
     ura_indicators: tuple[Tile, ...] = (),
     allow_open_tanyao: bool = True,
-    continue_dealer: bool = False,  # 新增：连庄判定结果
-) -> TableSnapshot:
-    """自摸：三家点棒按子/亲公式；供托归和了者（整数根按席均分余数）。
+    continue_dealer: bool = False,
+) -> tuple[TableSnapshot, tuple[WinSettlementLine, ...], tuple[int, int, int, int]]:
+    """自摸：三家点棒按子/亲公式；供托归和了者。
 
-    **连庄判定**：
-    - ``continue_dealer=True``：本场 +1（亲家和了）
-    - ``continue_dealer=False``：本场重置为 0（亲流）
+    返回 ``(新场况, 和了明细行, 各家点棒本局增减)``。
     """
     if not 0 <= winner <= 3:
         msg = "winner must be 0..3"
         raise ValueError(msg)
 
+    old_scores = table.scores
     menzen = len(board.melds[winner]) == 0
     rw = _prevailing_wind_tile(table.prevailing_wind)
     sw = Tile(Suit.HONOR, seat_wind_rank(table.dealer_seat, winner))
 
-    # 检测七对子
     from kernel.call.win import can_win_seven_pairs_concealed_14
 
     is_chiitoitsu = can_win_seven_pairs_concealed_14(board.hands[winner], board.melds[winner])
@@ -194,7 +253,6 @@ def settle_tsumo_table(
         seat_wind_tile=sw,
     )
 
-    # 使用完整符计算
     fu_detail = compute_fu_detail(
         board.hands[winner],
         board.melds[winner],
@@ -208,11 +266,10 @@ def settle_tsumo_table(
     )
     fu = fu_detail["total"]
 
-    # 岭上/海底判定
     is_rinshan = board.last_draw_was_rinshan
     is_haitei = _is_haitei(board)
 
-    han = count_yaku_han(
+    nd_han, nd_labels = non_dora_yaku_han_and_labels(
         board,
         table,
         winner,
@@ -223,25 +280,33 @@ def settle_tsumo_table(
         allow_open_tanyao=allow_open_tanyao,
         last_draw_was_rinshan=is_rinshan,
         is_haitei=is_haitei,
-        is_hotei=False,  # 自摸不是河底
-        is_chankan=False,  # 自摸不是抢杠
-        is_tsumo=True,  # 自摸
+        is_hotei=False,
+        is_chankan=False,
+        is_tsumo=True,
     )
-    han += count_dora_total(
+    dora_h = count_dora_total(
         board.hands[winner],
         board.melds[winner],
         win_tile,
         for_ron=False,
         revealed_indicators=board.revealed_indicators,
     )
+    ura_h = 0
     if board.riichi[winner] and ura_indicators:
-        han += count_ura_dora_total(
+        ura_h = count_ura_dora_total(
             board.hands[winner],
             board.melds[winner],
             win_tile,
             for_ron=False,
             ura_indicators=ura_indicators,
         )
+    han = nd_han + dora_h + ura_h
+
+    yakus_list = list(nd_labels)
+    if dora_h:
+        yakus_list.append(f"表宝牌{dora_h}")
+    if ura_h:
+        yakus_list.append(f"里宝牌{ura_h}")
 
     deltas = child_tsumo_payments(
         winner,
@@ -258,7 +323,25 @@ def settle_tsumo_table(
     if kt:
         scores[winner] += kt
 
-    # 本场更新：连庄时 +1，亲流时重置
-    new_honba = table.honba + 1 if continue_dealer else 0
+    # child_tsumo_payments 已含本场；和了者净得（含三家支付）+ 供托
+    points_line = deltas[winner] + kt
 
-    return replace(table, scores=tuple(scores), kyoutaku=0, honba=new_honba)
+    pattern = _hand_pattern_zh(board.hands[winner], board.melds[winner], win_tile, for_ron=False)
+    line = WinSettlementLine(
+        seat=winner,
+        win_kind="tsumo",
+        han=han,
+        fu=fu,
+        hand_pattern=pattern,
+        yakus=tuple(yakus_list),
+        discard_seat=None,
+        payment_from_discarder=None,
+        tsumo_deltas=tuple(deltas),
+        kyoutaku_share=kt,
+        points=points_line,
+    )
+
+    new_honba = table.honba + 1 if continue_dealer else 0
+    new_table = replace(table, scores=tuple(scores), kyoutaku=0, honba=new_honba)
+    payments = tuple(new_table.scores[i] - old_scores[i] for i in range(4))
+    return new_table, (line,), payments

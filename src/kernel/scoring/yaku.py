@@ -717,6 +717,215 @@ def _is_chihou(board: BoardState, winner: int, for_ron: bool) -> bool:
     return len(board.river) == 1
 
 
+def _yakuhai_labels_for_triplets(
+    keys: Counter[tuple[Suit, int]],
+    *,
+    round_wind_tile: Tile,
+    seat_wind_tile: Tile,
+) -> list[str]:
+    t_r = triplet_key(round_wind_tile)
+    t_s = triplet_key(seat_wind_tile)
+    out: list[str] = []
+    if t_r == t_s:
+        if keys[t_r] >= 3:
+            out.append("连风刻")
+    else:
+        if keys[t_r] >= 3:
+            out.append("场风刻")
+        if keys[t_s] >= 3:
+            out.append("自风刻")
+    for rank, name in ((5, "白"), (6, "发"), (7, "中")):
+        if keys[(Suit.HONOR, rank)] >= 3:
+            out.append(f"{name}刻")
+    return out
+
+
+def _yakuhai_labels_chiitoitsu_pairs(
+    full: Counter[Tile],
+    *,
+    round_wind_tile: Tile,
+    seat_wind_tile: Tile,
+) -> list[str]:
+    if round_wind_tile == seat_wind_tile and full.get(round_wind_tile, 0) == 2:
+        return ["连风对"]
+    out: list[str] = []
+    if full.get(round_wind_tile, 0) == 2:
+        out.append("场风对")
+    if full.get(seat_wind_tile, 0) == 2:
+        out.append("自风对")
+    for rank, name in ((5, "白"), (6, "发"), (7, "中")):
+        tt = Tile(Suit.HONOR, rank)
+        if full.get(tt, 0) == 2:
+            out.append(f"{name}对")
+    return out
+
+
+def non_dora_yaku_han_and_labels(
+    board: BoardState,
+    table: TableSnapshot,
+    winner: int,
+    *,
+    for_ron: bool,
+    win_tile: Tile,
+    concealed: Counter[Tile],
+    melds: tuple[Meld, ...],
+    allow_open_tanyao: bool = True,
+    last_draw_was_rinshan: bool = False,
+    is_haitei: bool = False,
+    is_hotei: bool = False,
+    is_chankan: bool = False,
+    is_tsumo: bool = False,
+) -> tuple[int, tuple[str, ...]]:
+    """
+    与 ``count_yaku_han`` 相同的非ドラ役番累计，并返回简体役名列表（供事件日志）。
+    """
+    full = _full_tile_counter(concealed, melds, win_tile, for_ron=for_ron)
+    labels: list[str] = []
+
+    if _is_daisangen(full):
+        return 13, ("大三元",)
+    if _is_suuankou_tanki(concealed, melds, win_tile, for_ron=for_ron):
+        return 13, ("四暗刻单骑",)
+    if _is_suuankou(concealed, melds, win_tile, for_ron=for_ron):
+        return 13, ("四暗刻",)
+    if _is_kokushi_thirteen_waits(concealed, melds, win_tile):
+        return 13, ("国士无双十三面",)
+    if _is_kokushi_musou(concealed, melds):
+        return 13, ("国士无双",)
+    if _is_chinroutou(full, melds):
+        return 13, ("清老头",)
+    if _is_tsuuiisou(full, melds):
+        return 13, ("字一色",)
+    if _is_ryuuiisou(full, melds):
+        return 13, ("绿一色",)
+    if _is_junsei_chuuren_poutou(concealed, melds, win_tile):
+        return 13, ("纯正九莲宝灯",)
+    if _is_chuuren_poutou(concealed, melds, win_tile):
+        return 13, ("九莲宝灯",)
+    if _is_suu_kantsu(melds):
+        return 13, ("四杠子",)
+    if _is_daisuushii(full, melds):
+        return 13, ("大四喜",)
+    if _is_shou_suushii(full, melds):
+        return 13, ("小四喜",)
+    if _is_tenhou(board, winner, is_tsumo=is_tsumo):
+        return 13, ("天和",)
+    if _is_chihou(board, winner, for_ron=for_ron):
+        return 13, ("地和",)
+
+    han = 0
+    if winner in board.double_riichi:
+        han += 2
+        labels.append("双立直")
+    elif board.riichi[winner]:
+        han += 1
+        labels.append("立直")
+    if winner in board.ippatsu_eligible:
+        han += 1
+        labels.append("一发")
+
+    rw = _prevailing_wind_tile(table.prevailing_wind)
+    sw = Tile(Suit.HONOR, seat_wind_rank(table.dealer_seat, winner))
+
+    if _is_chiitoitsu(full, melds):
+        han += 2
+        labels.append("七对子")
+        if _is_tanyao(full, allow_open=allow_open_tanyao, has_melds=False):
+            han += 1
+            labels.append("断幺九")
+        han += _yakuhai_han_chiitoitsu_pairs(full, round_wind_tile=rw, seat_wind_tile=sw)
+        labels.extend(_yakuhai_labels_chiitoitsu_pairs(full, round_wind_tile=rw, seat_wind_tile=sw))
+        return han, tuple(labels)
+
+    if last_draw_was_rinshan:
+        han += 1
+        labels.append("岭上开花")
+    if is_haitei:
+        han += 1
+        labels.append("海底捞月")
+    elif is_hotei:
+        han += 1
+        labels.append("河底捞鱼")
+    if is_chankan:
+        han += 1
+        labels.append("抢杠")
+    if _is_tanyao(full, allow_open=allow_open_tanyao, has_melds=len(melds) > 0):
+        han += 1
+        labels.append("断幺九")
+
+    yh = _yakuhai_han_triplets(
+        _triplet_key_counts(full),
+        round_wind_tile=rw,
+        seat_wind_tile=sw,
+    )
+    if yh:
+        han += yh
+        labels.extend(_yakuhai_labels_for_triplets(_triplet_key_counts(full), round_wind_tile=rw, seat_wind_tile=sw))
+
+    if pinfu_eligible(
+        concealed,
+        melds,
+        win_tile,
+        for_ron=for_ron,
+        round_wind_tile=rw,
+        seat_wind_tile=sw,
+    ):
+        han += 1
+        labels.append("平和")
+
+    if _is_toitoi(melds, concealed, win_tile, for_ron=for_ron):
+        han += 2
+        labels.append("对对和")
+
+    if _is_sanshoku_same_rank(melds):
+        menzen = len(melds) == 0
+        han += 3 if menzen else 2
+        labels.append("三色同顺(门清)" if menzen else "三色同顺")
+
+    if _is_ikkitsukan(melds):
+        menzen = len(melds) == 0
+        han += 3 if menzen else 2
+        labels.append("一气通贯(门清)" if menzen else "一气通贯")
+
+    has_chi = any(m.kind == MeldKind.CHI for m in melds)
+    if has_chi:
+        all_chi_have_yaokyuu = True
+        for m in melds:
+            if m.kind == MeldKind.CHI:
+                ranks = [t.rank for t in m.tiles]
+                if 1 not in ranks and 9 not in ranks:
+                    all_chi_have_yaokyuu = False
+                    break
+        if all_chi_have_yaokyuu:
+            menzen = len(melds) == 0
+            has_honor = any(t.suit == Suit.HONOR for t in full.keys())
+            if not has_honor:
+                han += 4 if menzen else 3
+                labels.append("纯全带幺九(门清)" if menzen else "纯全带幺九")
+            else:
+                han += 2 if menzen else 1
+                labels.append("混全带幺九(门清)" if menzen else "混全带幺九")
+
+    if _is_all_terminals_and_honors(full):
+        if not _is_chiitoitsu(full, melds):
+            han += 2
+            labels.append("混老头")
+
+    ananko_count = _count_ananko(concealed, melds)
+    if ananko_count >= 3:
+        han += 2
+        labels.append("三暗刻")
+
+    triplet_keys = _triplet_key_counts(full)
+    dragon_triplets = sum(1 for rank in (5, 6, 7) if triplet_keys[(Suit.HONOR, rank)] >= 3)
+    dragon_pairs = sum(1 for rank in (5, 6, 7) if 2 <= triplet_keys[(Suit.HONOR, rank)] < 3)
+    if dragon_triplets == 2 and dragon_pairs >= 1:
+        han += 2
+        labels.append("小三元")
+
+    return han, tuple(labels)
+
+
 def count_yaku_han(
     board: BoardState,
     table: TableSnapshot,
@@ -755,175 +964,18 @@ def count_yaku_han(
 
     不含ドラ、不含本场。
     """
-    full = _full_tile_counter(concealed, melds, win_tile, for_ron=for_ron)
-
-    # ========== 役满判定（优先） ==========
-    # 大三元
-    if _is_daisangen(full):
-        return 13
-
-    # 四暗刻单骑（双倍役满，按 13 番返回）
-    if _is_suuankou_tanki(concealed, melds, win_tile, for_ron=for_ron):
-        return 13
-
-    # 四暗刻
-    if _is_suuankou(concealed, melds, win_tile, for_ron=for_ron):
-        return 13
-
-    # 国士无理十三面（双倍役满，按 13 番返回）
-    if _is_kokushi_thirteen_waits(concealed, melds, win_tile):
-        return 13
-
-    # 国士无理
-    if _is_kokushi_musou(concealed, melds):
-        return 13
-
-    # 清老头
-    if _is_chinroutou(full, melds):
-        return 13
-
-    # 字一色
-    if _is_tsuuiisou(full, melds):
-        return 13
-
-    # 绿一色
-    if _is_ryuuiisou(full, melds):
-        return 13
-
-    # 纯正九莲宝灯（双倍役满，按 13 番返回）
-    if _is_junsei_chuuren_poutou(concealed, melds, win_tile):
-        return 13
-
-    # 九莲宝灯
-    if _is_chuuren_poutou(concealed, melds, win_tile):
-        return 13
-
-    # 四杠子
-    if _is_suu_kantsu(melds):
-        return 13
-
-    # 大四喜
-    if _is_daisuushii(full, melds):
-        return 13
-
-    # 小四喜
-    if _is_shou_suushii(full, melds):
-        return 13
-
-    # 天和
-    if _is_tenhou(board, winner, is_tsumo=is_tsumo):
-        return 13
-
-    # 地和
-    if _is_chihou(board, winner, for_ron=for_ron):
-        return 13
-    # ========== 役满判定结束 ==========
-
-    han = 0
-
-    # 立直相关
-    if winner in board.double_riichi:
-        han += 2
-    elif board.riichi[winner]:
-        han += 1
-    if winner in board.ippatsu_eligible:
-        han += 1
-
-    rw = _prevailing_wind_tile(table.prevailing_wind)
-    sw = Tile(Suit.HONOR, seat_wind_rank(table.dealer_seat, winner))
-
-    # 七对子
-    if _is_chiitoitsu(full, melds):
-        han += 2
-        if _is_tanyao(full, allow_open=allow_open_tanyao, has_melds=False):
-            han += 1
-        han += _yakuhai_han_chiitoitsu_pairs(full, round_wind_tile=rw, seat_wind_tile=sw)
-        return han
-
-    # 岭上开花
-    if last_draw_was_rinshan:
-        han += 1
-
-    # 海底捞月/河底捞鱼
-    if is_haitei or is_hotei:
-        han += 1
-
-    # 抢杠
-    if is_chankan:
-        han += 1
-
-    # 断幺九
-    if _is_tanyao(full, allow_open=allow_open_tanyao, has_melds=len(melds) > 0):
-        han += 1
-
-    # 役牌
-    han += _yakuhai_han_triplets(
-        _triplet_key_counts(full),
-        round_wind_tile=rw,
-        seat_wind_tile=sw,
-    )
-
-    # 平和
-    if pinfu_eligible(
-        concealed,
-        melds,
-        win_tile,
+    return non_dora_yaku_han_and_labels(
+        board,
+        table,
+        winner,
         for_ron=for_ron,
-        round_wind_tile=rw,
-        seat_wind_tile=sw,
-    ):
-        han += 1
-
-    # 对对和
-    if _is_toitoi(melds, concealed, win_tile, for_ron=for_ron):
-        han += 2
-
-    # 三色同顺
-    if _is_sanshoku_same_rank(melds):
-        menzen = len(melds) == 0
-        han += 3 if menzen else 2
-
-    # 一气通贯
-    if _is_ikkitsukan(melds):
-        menzen = len(melds) == 0
-        han += 3 if menzen else 2
-
-    # 混全带幺 / 纯全带幺（简化版：仅检查副露）
-    has_chi = any(m.kind == MeldKind.CHI for m in melds)
-    if has_chi:
-        # 检查是否所有顺子都包含 1 或 9
-        all_chi_have_yaokyuu = True
-        for m in melds:
-            if m.kind == MeldKind.CHI:
-                ranks = [t.rank for t in m.tiles]
-                if 1 not in ranks and 9 not in ranks:
-                    all_chi_have_yaokyuu = False
-                    break
-        if all_chi_have_yaokyuu:
-            menzen = len(melds) == 0
-            # 纯全带幺（无字牌）
-            has_honor = any(t.suit == Suit.HONOR for t in full.keys())
-            if not has_honor:
-                han += 4 if menzen else 3
-            else:
-                han += 2 if menzen else 1
-
-    # 混老头（全幺九）
-    if _is_all_terminals_and_honors(full):
-        # 检查是否有七对子（已处理）或标准形
-        if not _is_chiitoitsu(full, melds):
-            han += 2
-
-    # 三暗刻
-    ananko_count = _count_ananko(concealed, melds)
-    if ananko_count >= 3:
-        han += 2
-
-    # 小三元（三元牌两个刻子 + 一个对子）
-    triplet_keys = _triplet_key_counts(full)
-    dragon_triplets = sum(1 for rank in (5, 6, 7) if triplet_keys[(Suit.HONOR, rank)] >= 3)
-    dragon_pairs = sum(1 for rank in (5, 6, 7) if 2 <= triplet_keys[(Suit.HONOR, rank)] < 3)
-    if dragon_triplets == 2 and dragon_pairs >= 1:
-        han += 2
-
-    return han
+        win_tile=win_tile,
+        concealed=concealed,
+        melds=melds,
+        allow_open_tanyao=allow_open_tanyao,
+        last_draw_was_rinshan=last_draw_was_rinshan,
+        is_haitei=is_haitei,
+        is_hotei=is_hotei,
+        is_chankan=is_chankan,
+        is_tsumo=is_tsumo,
+    )[0]

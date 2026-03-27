@@ -146,7 +146,7 @@ def test_settle_ron_chiitoitsu_transfers_scores() -> None:
         tab.honba,
     )
     ura = ura_indicators_for_settlement(b.dead_wall, len(b.revealed_indicators))
-    new_tab = settle_ron_table(
+    new_tab, _, _ = settle_ron_table(
         tab,
         b,
         ron_winners=frozenset({1}),
@@ -171,7 +171,7 @@ def test_settle_ron_kyoutaku_to_winner() -> None:
         tab.honba,
     )
     ura = ura_indicators_for_settlement(b.dead_wall, len(b.revealed_indicators))
-    new_tab = settle_ron_table(
+    new_tab, _, _ = settle_ron_table(
         tab,
         b,
         ron_winners=frozenset({1}),

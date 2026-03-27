@@ -136,8 +136,17 @@ def validate_board_state(board: BoardState) -> None:
 
     cur = board.current_seat
     if board.turn_phase == TurnPhase.NEED_DRAW:
+        # 与 ``CALL_RESPONSE`` 一致：杠后已从岭上摸入并打出一张时，该席可暂为 14（门内+副露），
+        # 下一轮摸牌前仍视为「待摸」；不能一律按 13 校验。
         for s in range(4):
-            validate_tile_conservation(board.hands[s], board.melds[s], 13)
+            tot = _seat_total_tiles(board.hands[s], board.melds[s])
+            has_quad_meld = any(meld_tile_count(m) == 4 for m in board.melds[s])
+            if tot == 13:
+                pass
+            elif tot == 14 and has_quad_meld:
+                pass
+            else:
+                validate_tile_conservation(board.hands[s], board.melds[s], 13)
         if board.last_draw_tile is not None:
             msg = "last_draw_tile must be None in NEED_DRAW"
             raise ValueError(msg)
