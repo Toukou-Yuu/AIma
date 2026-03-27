@@ -24,6 +24,7 @@ from kernel import (
     split_wall,
 )
 from kernel.call.transitions import apply_open_meld, apply_ron
+from kernel.deal.model import validate_board_state
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState
 from kernel.kan import (
@@ -33,6 +34,7 @@ from kernel.kan import (
     completed_kan_rinshan_count,
 )
 from kernel.play import apply_discard
+from kernel.play.transitions import apply_draw
 from kernel.play.model import CallResolution
 from kernel.table import initial_table_snapshot
 from tests.call_helpers import clear_call_window
@@ -378,3 +380,61 @@ def test_completed_kan_rinshan_count_matches_index() -> None:
     an = Meld(MeldKind.ANKAN, (quad, quad, quad, quad), called_tile=None)
     b1 = apply_ankan(b0, d, an)
     assert completed_kan_rinshan_count(b1) == b1.rinshan_draw_index == 1
+
+
+def test_validate_must_discard_accepts_current_15_live_draw_after_post_kan_14() -> None:
+    """NEED_DRAW 时该席可为杠后 14；轮到其本墙摸牌后为 15，MUST_DISCARD 须接受（非岭摸）。"""
+    b0, quad = _find_dealer_quad_seed()
+    d = b0.current_seat
+    an = Meld(MeldKind.ANKAN, (quad, quad, quad, quad), called_tile=None)
+    g0 = GameState(
+        phase=GamePhase.IN_ROUND,
+        table=initial_table_snapshot(dealer_seat=0),
+        board=b0,
+        ron_winners=None,
+    )
+    g1 = apply(g0, Action(ActionKind.ANKAN, seat=d, meld=an)).new_state
+    b1 = g1.board
+    assert b1 is not None
+    t_drop = next(iter(b1.hands[d].elements()))
+    g2 = apply(g1, Action(ActionKind.DISCARD, seat=d, tile=t_drop)).new_state
+    b2 = g2.board
+    assert b2 is not None
+    b = clear_call_window(b2)
+    assert b.turn_phase == TurnPhase.NEED_DRAW
+    it = 0
+    while b.current_seat != d and it < 30:
+        assert b.turn_phase == TurnPhase.NEED_DRAW
+        b = apply_draw(b, b.current_seat)
+        t = next(iter(b.hands[b.current_seat].elements()))
+        b = apply_discard(b, b.current_seat, t, declare_riichi=False)
+        b = clear_call_window(b)
+        it += 1
+    assert b.current_seat == d
+    b4 = apply_draw(b, d)
+    assert b4.last_draw_was_rinshan is False
+    validate_board_state(b4)
+
+
+def test_validate_must_discard_accepts_other_seat_post_kan_14() -> None:
+    """暗杠+岭摸+打牌后该席 14 张；下家摸牌后 MUST_DISCARD 校验须与 NEED_DRAW 一致（含副露 4 张杠）。"""
+    b0, quad = _find_dealer_quad_seed()
+    d = b0.current_seat
+    an = Meld(MeldKind.ANKAN, (quad, quad, quad, quad), called_tile=None)
+    g0 = GameState(
+        phase=GamePhase.IN_ROUND,
+        table=initial_table_snapshot(dealer_seat=0),
+        board=b0,
+        ron_winners=None,
+    )
+    g1 = apply(g0, Action(ActionKind.ANKAN, seat=d, meld=an)).new_state
+    b1 = g1.board
+    assert b1 is not None
+    t_drop = next(iter(b1.hands[d].elements()))
+    g2 = apply(g1, Action(ActionKind.DISCARD, seat=d, tile=t_drop)).new_state
+    b2 = g2.board
+    assert b2 is not None
+    b3 = clear_call_window(b2)
+    assert b3.turn_phase == TurnPhase.NEED_DRAW
+    b4 = apply_draw(b3, b3.current_seat)
+    validate_board_state(b4)

@@ -9,7 +9,8 @@ from typing import Any
 
 from kernel.deal.model import BoardState
 from kernel.engine.state import GameState
-from kernel.event_log import GameEvent, HandOverEvent
+from kernel.event_log import FlowEvent, GameEvent, HandOverEvent
+from kernel.flow.model import FlowKind
 from kernel.hand.melds import Meld, MeldKind
 from kernel.table.model import PrevailingWind, TableSnapshot
 from kernel.tiles.model import Tile
@@ -42,6 +43,11 @@ def _wind_seat_label(dealer_seat: int, seat: int) -> str:
     return _WIND_SEAT[r]
 
 
+def _absolute_seat_suffix(seat: int) -> str:
+    """引擎座位绝对标号（0–3），与相对风位「东南西北」并列显示。"""
+    return f"(S{seat})"
+
+
 def _seat_wind_name(dealer_seat: int, seat: int | None) -> str:
     """东家 / 南家 …（相对当前亲席）。"""
     if seat is None:
@@ -68,12 +74,13 @@ def _meld_segment(m: Meld, owner_seat: int, dealer_seat: int) -> str:
     if ds is None:
         return f"{k.value}[{tiles_s}]"
     who = _seat_wind_name(dealer_seat, ds)
+    ds_abs = _absolute_seat_suffix(ds) if ds is not None else ""
     if k == MeldKind.CHI:
-        return f"吃{who}[{tiles_s}]"
+        return f"吃{who}{ds_abs}[{tiles_s}]"
     if k == MeldKind.PON:
-        return f"碰{who}[{tiles_s}]"
+        return f"碰{who}{ds_abs}[{tiles_s}]"
     if k == MeldKind.DAIMINKAN:
-        return f"大明杠{who}[{tiles_s}]"
+        return f"大明杠{who}{ds_abs}[{tiles_s}]"
     return f"{k.value}{who}[{tiles_s}]"
 
 
@@ -132,10 +139,15 @@ def _hand_line_with_draw_note(
     *,
     discard_seat: int | None,
     turn_draw_tile: Tile | None,
+    discarded_tile: Tile | None = None,
 ) -> str:
     """
     手牌行：排序门内张数；若本块为「打牌」快照且带本巡摸牌（合并摸打日志时由 runner 传入），
     在**该家**行末用全角 ``（牌码）`` 标**本巡摸入的牌**（与牌河 ``<>`` 摸切、手切区分）。
+
+    ``discarded_tile``：本步打出的牌。快照为「打后」局面时门内少 1 张；若与 ``turn_draw_tile`` 同
+    时传入，则先把打出的牌加回计数，表示**摸入后、打出前**的门内（含 14 枚通常待打阶段），
+    再与 ``（牌码）`` 去重，避免摸切后只剩 13 枚看起来像「少一张」。
     """
     c = Counter(board.hands[seat].elements())
     annotate = (
@@ -143,6 +155,8 @@ def _hand_line_with_draw_note(
         and turn_draw_tile is not None
         and seat == discard_seat
     )
+    if annotate and discarded_tile is not None:
+        c[discarded_tile] += 1
     return _concealed_sorted_with_turn_draw_note(
         c,
         turn_draw_tile=turn_draw_tile,
@@ -187,25 +201,77 @@ def format_hand_over_section(
     return "\n".join(out)
 
 
+_FLOW_KIND_CN: dict[FlowKind, str] = {
+    FlowKind.EXHAUSTED: "荒牌流局（牌山摸完）",
+    FlowKind.NINE_NINE: "九种九牌流局",
+    FlowKind.FOUR_WINDS: "四风连打流局",
+    FlowKind.FOUR_KANS: "四杠散了流局",
+    FlowKind.FOUR_RIICHI: "四家立直流局",
+    FlowKind.THREE_RON: "三家和流局",
+}
+
+
+def format_flow_section(
+    events: tuple[GameEvent, ...],
+    dealer_seat: int,
+) -> str | None:
+    """
+    从 ``apply`` 返回的事件列中取出 ``FlowEvent``，生成「本局流局」摘要（听牌席）。
+    """
+    fe: FlowEvent | None = None
+    for ev in events:
+        if isinstance(ev, FlowEvent):
+            fe = ev
+            break
+    if fe is None:
+        return None
+    title = _FLOW_KIND_CN.get(fe.flow_kind, fe.flow_kind.value)
+    lines: list[str] = [f"本局流局：{title}"]
+    if fe.tenpai_seats:
+        tp = "、".join(_seat_wind_name(dealer_seat, s) for s in sorted(fe.tenpai_seats))
+        lines.append(f"听牌：{tp}")
+        noten = [s for s in range(4) if s not in fe.tenpai_seats]
+        if noten:
+            nt = "、".join(_seat_wind_name(dealer_seat, s) for s in noten)
+            lines.append(f"未听：{nt}")
+    else:
+        lines.append("听牌：无（四家均未听牌）")
+    return "\n".join(lines)
+
+
+def format_round_end_section(
+    events: tuple[GameEvent, ...] | None,
+    dealer_seat: int,
+) -> str | None:
+    """和了摘要或流局摘要，本步只会有一种。"""
+    if not events:
+        return None
+    ho = format_hand_over_section(events, dealer_seat)
+    if ho is not None:
+        return ho
+    return format_flow_section(events, dealer_seat)
+
+
 def _format_points_and_winrate_lines(
     dealer_seat: int,
     scores: tuple[int, int, int, int],
     win_counts: tuple[int, int, int, int],
     hands_finished: int,
 ) -> tuple[str, str]:
-    """点棒一行 + 和了/胜率一行（相对亲席：东→南→西→北）。"""
+    """点棒一行 + 和了/胜率一行（相对亲席：东→南→西→北；附绝对座位 S0–S3）。"""
     pt_parts: list[str] = []
     wr_parts: list[str] = []
     for rel in range(4):
         seat = (dealer_seat + rel) % 4
         wlab = _WIND_SEAT[rel]
-        pt_parts.append(f"{wlab}{scores[seat]}")
+        abs_s = _absolute_seat_suffix(seat)
+        pt_parts.append(f"{wlab}{abs_s}{scores[seat]}")
         wc = win_counts[seat]
         if hands_finished <= 0:
-            wr_parts.append(f"{wlab}家{wc}/0(—)")
+            wr_parts.append(f"{wlab}家{abs_s}{wc}/0(—)")
         else:
             pct = 100.0 * wc / hands_finished
-            wr_parts.append(f"{wlab}家{wc}/{hands_finished}({pct:.1f}%)")
+            wr_parts.append(f"{wlab}家{abs_s}{wc}/{hands_finished}({pct:.1f}%)")
     line_pt = "点数：" + "  ".join(pt_parts)
     line_wr = "和了胜率：" + "  ".join(wr_parts)
     return line_pt, line_wr
@@ -270,14 +336,20 @@ def format_table_snapshot_block(
     hand_over_section: str | None = None,
     turn_draw_tile: Tile | None = None,
     discard_seat: int | None = None,
+    discarded_tile: Tile | None = None,
+    llm_why: str | None = None,
+    llm_why_seat: int | None = None,
 ) -> str:
     """
     输出一块多行快照；若不在局中或无 ``board`` 则返回简短说明。
 
     ``win_counts`` / ``hands_finished``：本场已终局数与各家和了次数，用于胜率（和了数/已终局数）。
     ``hand_over_section``：和了结算摘要（番型等），由 ``format_hand_over_section`` 从事件生成。
-    ``turn_draw_tile`` / ``discard_seat``：合并摸打后仅打牌快照时，用全角括号标本巡摸入牌；
-    主串中会去掉一张同键牌，避免与排序手牌重复。
+    ``turn_draw_tile`` / ``discard_seat`` / ``discarded_tile``：合并摸打后仅打牌快照时，
+    用全角括号标本巡摸入牌；主串中去重同键牌。若传入 ``discarded_tile``，先加回打出张再标注，
+    表示摸后打前的门内张数（含 14 枚通常待打）。
+    ``llm_why`` / ``llm_why_seat``：模型对本步选择的简要理由，写在「执行：」下一行（``东南西北``家：…）。
+    ``hand_over_section``：由 ``format_round_end_section`` 填入，可为「本局和了」或「本局流局」摘要。
     """
     lines: list[str] = []
     table = state.table
@@ -296,6 +368,10 @@ def format_table_snapshot_block(
             lines.append(hand_over_section)
         if last_action_cn:
             lines.append(f"执行：{last_action_cn}")
+            if llm_why and llm_why_seat is not None:
+                lines.append(
+                    f"{_seat_wind_name(ds, llm_why_seat)}：{llm_why.strip()}"
+                )
         lines.append("-----------------------------------------------------")
         return "\n".join(lines) + "\n"
 
@@ -326,17 +402,19 @@ def format_table_snapshot_block(
             s,
             discard_seat=discard_seat,
             turn_draw_tile=turn_draw_tile,
+            discarded_tile=discarded_tile,
         )
         melds_txt = _melds_line(board, s, dealer)
         river_body = _river_line_for_seat(board, s)
         river_full = river_body if river_body else "—"
         is_last = idx == 3
+        abs_s = _absolute_seat_suffix(s)
         if not is_last:
-            lines.append(f"├── {wlab}家：{hand_str}")
+            lines.append(f"├── {wlab}家{abs_s}：{hand_str}")
             lines.append(f"│   ├── {melds_txt}")
             lines.append(f"│   └── 牌河：{river_full}")
         else:
-            lines.append(f"└── {wlab}家：{hand_str}")
+            lines.append(f"└── {wlab}家{abs_s}：{hand_str}")
             lines.append(f"    ├── {melds_txt}")
             lines.append(f"    └── 牌河：{river_full}")
 
@@ -344,6 +422,8 @@ def format_table_snapshot_block(
         lines.append(hand_over_section)
     if last_action_cn:
         lines.append(f"执行：{last_action_cn}")
+        if llm_why and llm_why_seat is not None:
+            lines.append(f"{_seat_wind_name(dealer, llm_why_seat)}：{llm_why.strip()}")
     lines.append("-----------------------------------------------------")
     return "\n".join(lines) + "\n"
 
@@ -359,12 +439,15 @@ def write_snapshot_block(
     events: tuple[GameEvent, ...] | None = None,
     turn_draw_tile: Tile | None = None,
     discard_seat: int | None = None,
+    discarded_tile: Tile | None = None,
+    llm_why: str | None = None,
+    llm_why_seat: int | None = None,
 ) -> None:
-    """写入快照块并 flush。若给定 ``events`` 且含 ``HandOverEvent``，追加和了摘要。"""
+    """写入快照块并 flush。若给定 ``events``，追加和了或流局摘要（``format_round_end_section``）。"""
     if fp is None:
         return
     ds = state.table.dealer_seat
-    ho_sec = format_hand_over_section(events, ds) if events else None
+    ho_sec = format_round_end_section(events, ds)
     fp.write(
         format_table_snapshot_block(
             state,
@@ -375,6 +458,9 @@ def write_snapshot_block(
             hand_over_section=ho_sec,
             turn_draw_tile=turn_draw_tile,
             discard_seat=discard_seat,
+            discarded_tile=discarded_tile,
+            llm_why=llm_why,
+            llm_why_seat=llm_why_seat,
         )
     )
     fp.flush()

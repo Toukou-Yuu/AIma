@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import time
 from dataclasses import dataclass
 from typing import Any, TextIO
 
@@ -39,7 +40,7 @@ from llm.parse import extract_json_object
 from llm.protocol import ChatMessage, CompletionClient
 from llm.table_snapshot_text import action_wire_to_cn, write_snapshot_block
 from llm.turns import pending_actor_seats
-from llm.validate import find_matching_legal_action
+from llm.validate import explain_text_from_choice, find_matching_legal_action
 from llm.wire import legal_action_to_wire
 
 log = logging.getLogger(__name__)
@@ -83,16 +84,23 @@ def _write_simple_snapshot(
     events: tuple[GameEvent, ...] | None = None,
     turn_draw_tile: Tile | None = None,
     discard_seat: int | None = None,
+    discarded_tile: Tile | None = None,
+    llm_why: str | None = None,
+    llm_why_seat: int | None = None,
 ) -> None:
-    """``logs/simple``：全桌快照 + 「执行」行（相对当前亲席风位）。"""
+    """``logs/simple``：全桌快照 + 「执行」行（相对当前亲席风位 + 绝对座位 S0–S3）。"""
     if fp is None:
         return
     # 合并 PASS 不产生局面变化，跳过整块牌桌以减小日志体积
     if wire is not None and wire.get("kind") == "call_pass_drain":
         return
-    # 摸打合并为一块：只在本家打牌后输出，跳过摸牌步
+    # 摸打合并为一块：只在本家打牌后输出，跳过摸牌步；
+    # 若本步摸牌触发流局（事件中含 FlowEvent），仍输出一块以便显示「本局流局」摘要。
     if wire is not None and wire.get("kind") == "draw":
-        return
+        if events and any(isinstance(e, FlowEvent) for e in events):
+            pass
+        else:
+            return
     ds = state.table.dealer_seat
     draw_code = turn_draw_tile.to_code() if turn_draw_tile else None
     last_cn = (
@@ -110,6 +118,9 @@ def _write_simple_snapshot(
         events=events,
         turn_draw_tile=turn_draw_tile,
         discard_seat=discard_seat,
+        discarded_tile=discarded_tile,
+        llm_why=llm_why,
+        llm_why_seat=llm_why_seat,
     )
 
 
@@ -219,7 +230,9 @@ def choose_legal_action(
     client: CompletionClient | None,
     dry_run: bool,
     session_audit: bool = False,
-) -> LegalAction:
+    request_delay_seconds: float = 0.0,
+) -> tuple[LegalAction, str | None]:
+    """返回「所选合法动作」与「模型 JSON 中的 why 说明」（无请求时为 ``None``）。"""
     acts = legal_actions(state, seat)
     if not acts:
         msg = f"no legal_actions for seat {seat}"
@@ -229,10 +242,10 @@ def choose_legal_action(
     if len(acts) == 1 and acts[0].kind == ActionKind.PASS_CALL:
         if session_audit:
             log.info("llm_skipped singleton pass_call seat=%s", seat)
-        return acts[0]
+        return acts[0], None
 
     if dry_run or client is None:
-        return acts[0]
+        return acts[0], None
 
     obs = observation(state, seat, mode="human")
     user_content = build_user_prompt(obs, acts)
@@ -240,6 +253,8 @@ def choose_legal_action(
         ChatMessage(role="system", content=SYSTEM_PROMPT),
         ChatMessage(role="user", content=user_content),
     ]
+    if request_delay_seconds > 0:
+        time.sleep(request_delay_seconds)
     raw = client.complete(messages)
     if session_audit:
         head = raw if len(raw) <= 600 else raw[:600] + "…"
@@ -248,18 +263,19 @@ def choose_legal_action(
         choice = extract_json_object(raw)
     except (ValueError, TypeError) as e:
         log.warning("parse failed, fallback first legal: %s", e)
-        return acts[0]
+        return acts[0], None
+    why = explain_text_from_choice(choice)
     la = find_matching_legal_action(acts, choice)
     if la is None:
         log.warning("choice not in legal_actions, fallback first: %s", choice)
-        return acts[0]
+        return acts[0], None
     if session_audit:
         log.info(
             "llm_choice seat=%s %s",
             seat,
             json.dumps(legal_action_to_wire(la), ensure_ascii=False),
         )
-    return la
+    return la, why
 
 
 def run_llm_match(
@@ -271,6 +287,7 @@ def run_llm_match(
     verbose: bool = False,
     session_audit: bool = False,
     simple_log_file: TextIO | None = None,
+    request_delay_seconds: float = 0.0,
 ) -> RunResult:
     """
     从 ``PRE_DEAL`` 开局到 ``MATCH_END`` 或步数上限。
@@ -282,6 +299,7 @@ def run_llm_match(
       非 dry-run 时另写模型解析结果（CLI ``--log-session``）；
       遇 ``ron`` / ``tsumo`` / ``hand_over`` / ``match_end`` 等时另写 ``settlement …`` 行。
     - ``simple_log_file``：若给定，按内核事件写简体中文可读对局（与 JSON 牌谱并行）。
+    - ``request_delay_seconds``：每次调用 LLM 前休眠秒数（减压控/防连接被掐）；``dry_run`` 时不请求，不休眠。
     """
     if simple_log_file is not None:
         simple_log_file.write(f"# AIma 对局可读日志（简体中文） seed={seed}\n\n")
@@ -453,19 +471,22 @@ def run_llm_match(
                     continue
 
             seat = pending[0]
-            la = choose_legal_action(
+            la, llm_why = choose_legal_action(
                 state,
                 seat,
                 client=client,
                 dry_run=dry_run,
                 session_audit=session_audit,
+                request_delay_seconds=request_delay_seconds,
             )
             act = legal_action_to_action(la)
             turn_draw_tile: Tile | None = None
             discard_seat_for_log: int | None = None
+            discarded_tile_for_log: Tile | None = None
             if act.kind == ActionKind.DISCARD and state.board is not None:
                 turn_draw_tile = state.board.last_draw_tile
                 discard_seat_for_log = act.seat
+                discarded_tile_for_log = act.tile
             step_out = apply(state, act)
             actions_acc.append(action_to_wire(act))
             _append_events_with_settlement_log(
@@ -486,6 +507,9 @@ def run_llm_match(
                 events=step_out.events,
                 turn_draw_tile=turn_draw_tile,
                 discard_seat=discard_seat_for_log,
+                discarded_tile=discarded_tile_for_log,
+                llm_why=llm_why,
+                llm_why_seat=seat,
             )
             b = state.board
             _stderr_progress(

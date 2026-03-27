@@ -160,6 +160,13 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="每步 apply 后向 stderr 打印阶段摘要（对局进度）",
     )
+    p.add_argument(
+        "--request-delay",
+        type=float,
+        default=0.5,
+        metavar="SEC",
+        help="每次调用 LLM API 前的间隔秒数（减压控/减少连接被远端掐断）；默认 0.5；设为 0 可关闭；--dry-run 不请求 API，此项无效",
+    )
     args = p.parse_args(argv)
 
     if args.replay:
@@ -213,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
                 verbose=args.verbose,
                 session_audit=log_stem is not None,
                 simple_log_file=simple_fp,
+                request_delay_seconds=0.0 if args.dry_run else args.request_delay,
             )
     else:
         rr = run_llm_match(
@@ -223,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
             verbose=args.verbose,
             session_audit=log_stem is not None,
             simple_log_file=None,
+            request_delay_seconds=0.0 if args.dry_run else args.request_delay,
         )
     print(f"steps={rr.steps} reason={rr.stopped_reason!r} phase={rr.final_state.phase.value}")
     if log_stem is not None:

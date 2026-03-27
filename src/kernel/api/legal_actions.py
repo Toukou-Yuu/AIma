@@ -14,15 +14,56 @@ from kernel.api.meld_candidates import (
     enumerate_shankuminkan_melds,
 )
 from kernel.call.win import can_ron_default, can_ron_seven_pairs
-from kernel.deal.model import Meld
+from kernel.config import DEFAULT_CONFIG
+from kernel.deal.model import BoardState, Meld
 from kernel.engine.actions import ActionKind
 from kernel.engine.state import GameState
 from kernel.play.model import TurnPhase
 from kernel.riichi.tenpai import is_tenpai_default
+from kernel.scoring.yaku import non_dora_yaku_han_and_labels
 from kernel.tiles.model import Tile
 
 if TYPE_CHECKING:
     pass
+
+
+def _scoring_is_haitei(board: BoardState) -> bool:
+    """与 ``scoring.settle`` 一致：本墙已摸完。"""
+    return board.live_draw_index >= len(board.live_wall)
+
+
+def _scoring_is_hotei(board: BoardState, discard_seat: int) -> bool:
+    """与 ``scoring.settle`` 一致：河底近似判定。"""
+    river_count = sum(1 for e in board.river if e.seat == discard_seat)
+    return river_count >= 17
+
+
+def _legal_ron_non_dora_han(state: GameState, seat: int, win_tile: Tile) -> int:
+    """荣和时ドラ以外の役番（日麻：无役则不可和）。"""
+    board = state.board
+    if board is None:
+        return 0
+    cs = board.call_state
+    if cs is None:
+        return 0
+    table = state.table
+    discard_seat = cs.discard_seat
+    nd_han, _ = non_dora_yaku_han_and_labels(
+        board,
+        table,
+        seat,
+        for_ron=True,
+        win_tile=win_tile,
+        concealed=board.hands[seat],
+        melds=board.melds[seat],
+        allow_open_tanyao=DEFAULT_CONFIG.allow_open_tanyao,
+        last_draw_was_rinshan=False,
+        is_haitei=_scoring_is_haitei(board),
+        is_hotei=_scoring_is_hotei(board, discard_seat),
+        is_chankan=cs.chankan_rinshan_pending,
+        is_tsumo=False,
+    )
+    return nd_han
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,17 +175,18 @@ def _legal_actions_call_response(
             melds = board.melds[seat]
             win_tile = cs.claimed_tile
 
-            # 标准形或七对子
+            # 标准形或七对子，且须至少一番役（ドラ不可单算）
             if can_ron_default(concealed, melds, win_tile) or can_ron_seven_pairs(
                 concealed, melds, win_tile
             ):
-                actions.append(
-                    LegalAction(
-                        kind=ActionKind.RON,
-                        seat=seat,
-                        tile=win_tile,
+                if _legal_ron_non_dora_han(state, seat, win_tile) >= 1:
+                    actions.append(
+                        LegalAction(
+                            kind=ActionKind.RON,
+                            seat=seat,
+                            tile=win_tile,
+                        )
                     )
-                )
 
     # OPEN_MELD：碰 / 大明杠 / 吃（由 meld_candidates 全枚举，与 apply_open_meld 一致）
     for m in enumerate_call_response_open_melds(board, seat):
@@ -170,38 +212,50 @@ def _legal_actions_must_discard(
     melds = board.melds[seat]
     last_tile = board.last_draw_tile
 
-    # DISCARD: 枚举所有手牌
-    for tile in concealed.elements():
-        # 检查是否可以立直
-        if not board.riichi[seat] and not melds:
-            # 检查立直条件：门清、听牌、有足够点数
-            from kernel.hand.multiset import remove_tile
-            from kernel.table.model import RIICHI_STICK_POINTS
-
-            if state.table.scores[seat] >= RIICHI_STICK_POINTS:
-                try:
-                    hand_after = remove_tile(concealed, tile)
-                    if is_tenpai_default(hand_after, melds):
-                        actions.append(
-                            LegalAction(
-                                kind=ActionKind.DISCARD,
-                                seat=seat,
-                                tile=tile,
-                                declare_riichi=True,
-                            )
-                        )
-                except ValueError:
-                    pass
-
-        # 普通打牌
-        actions.append(
-            LegalAction(
-                kind=ActionKind.DISCARD,
-                seat=seat,
-                tile=tile,
-                declare_riichi=False,
+    # 已立直：只能摸切（打出上一张自摸），与 ``play.apply_discard`` 一致
+    if board.riichi[seat]:
+        if last_tile is not None and concealed.get(last_tile, 0) >= 1:
+            actions.append(
+                LegalAction(
+                    kind=ActionKind.DISCARD,
+                    seat=seat,
+                    tile=last_tile,
+                    declare_riichi=False,
+                )
             )
-        )
+    else:
+        # DISCARD: 枚举所有手牌
+        for tile in concealed.elements():
+            # 检查是否可以立直
+            if not melds:
+                # 检查立直条件：门清、听牌、有足够点数
+                from kernel.hand.multiset import remove_tile
+                from kernel.table.model import RIICHI_STICK_POINTS
+
+                if state.table.scores[seat] >= RIICHI_STICK_POINTS:
+                    try:
+                        hand_after = remove_tile(concealed, tile)
+                        if is_tenpai_default(hand_after, melds):
+                            actions.append(
+                                LegalAction(
+                                    kind=ActionKind.DISCARD,
+                                    seat=seat,
+                                    tile=tile,
+                                    declare_riichi=True,
+                                )
+                            )
+                    except ValueError:
+                        pass
+
+            # 普通打牌
+            actions.append(
+                LegalAction(
+                    kind=ActionKind.DISCARD,
+                    seat=seat,
+                    tile=tile,
+                    declare_riichi=False,
+                )
+            )
 
     # TSUMO: 检查是否可以自摸
     if last_tile is not None:

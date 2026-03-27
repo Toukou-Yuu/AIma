@@ -71,9 +71,11 @@ def build_user_prompt(obs: Observation, legal: tuple[LegalAction, ...]) -> str:
 SYSTEM_PROMPT = (
     "你是日式麻将（立直麻将）的牌手代理。你只能从给出的 legal_actions 中"
     "**精确选择一条**执行。\n"
-    "输出要求：仅输出一行 JSON 对象，不要 markdown 代码块，不要其它解释。\n"
-    "JSON 字段必须与所选 legal_actions 中某一项完全一致"
+    "输出要求：仅输出一行 JSON 对象，不要 markdown 代码块，不要 JSON 以外的文字。\n"
+    "JSON 中除下列动作字段外，**必须**包含字符串字段 ``why``："
+    "用一两句简体中文说明**为何**选这一手（听牌/防守/打点/宣言等）。\n"
+    "动作字段必须与所选 legal_actions 中某一项完全一致"
     "（含 kind、seat；discard 须含 tile；需要时含 declare_riichi、meld）。\n"
-    '示例：{"kind":"discard","seat":0,"tile":"3m"}\n'
-    '示例：{"kind":"pass_call","seat":1}\n'
+    '示例：{"kind":"discard","seat":0,"tile":"3m","why":"现物且维持一向听"}\n'
+    '示例：{"kind":"pass_call","seat":1,"why":"无役无法荣和"}\n'
 )

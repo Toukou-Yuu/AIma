@@ -9,6 +9,7 @@ import pytest
 from kernel import (
     Action,
     ActionKind,
+    BoardState,
     GamePhase,
     GameState,
     LegalAction,
@@ -21,6 +22,8 @@ from kernel import (
     shuffle_deck,
 )
 from kernel.api.observation import RiverEntry
+from kernel.play.model import TurnPhase
+from kernel.tiles.model import Suit, Tile
 
 
 def _wall136(*, seed: int = 0) -> tuple:
@@ -89,6 +92,39 @@ class TestLegalActions:
         # 简化：HAND_OVER 阶段只能 NOOP
         # 实际测试需要完整的和了流程
         pass
+
+    def test_legal_actions_riichi_only_tsumogiri_discard(self) -> None:
+        """已立直时打牌枚举仅含摸切（上一张自摸），避免与 ``apply_discard`` 不一致。"""
+        from tests.test_riichi import _board_chiitoitsu_dealer
+
+        b, _t7 = _board_chiitoitsu_dealer()
+        drawn = Tile(Suit.MAN, 1)
+        nh = list(b.hands)
+        assert nh[0][drawn] >= 1
+        b_riichi = BoardState(
+            hands=tuple(nh),
+            live_wall=b.live_wall,
+            live_draw_index=b.live_draw_index,
+            dead_wall=b.dead_wall,
+            revealed_indicators=b.revealed_indicators,
+            current_seat=0,
+            turn_phase=TurnPhase.MUST_DISCARD,
+            river=b.river,
+            melds=b.melds,
+            last_draw_tile=drawn,
+            last_draw_was_rinshan=False,
+            rinshan_draw_index=b.rinshan_draw_index,
+            call_state=None,
+            riichi=(True, False, False, False),
+            ippatsu_eligible=frozenset(),
+            double_riichi=frozenset(),
+        )
+        g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b_riichi)
+        acts = legal_actions(g, 0)
+        discards = [a for a in acts if a.kind == ActionKind.DISCARD]
+        assert len(discards) == 1
+        assert discards[0].tile == drawn
+        assert discards[0].declare_riichi is False
 
 
 class TestObservation:

@@ -50,13 +50,16 @@ def _take_n(pool: Counter[Tile], n: int) -> Counter[Tile]:
 
 
 def _chiitoitsu_ron_board() -> BS:
-    """seat1 七对听 7m；seat0 河底打 7m；``CALL_RESPONSE`` 且荣和阶段已结束。"""
+    """seat1 七对听 7m；seat0 河底打 7m；``CALL_RESPONSE`` 且荣和阶段已结束。
+
+    对子跨万／筒，避免全万清一色与七对子叠番导致打点与旧断言不一致。
+    """
     b0 = _board_sorted_deal(dealer=0)
     pool = _pool_not_in_wall(b0)
     t7 = Tile(Suit.MAN, 7)
     assert pool[t7] >= 2
     hand1 = Counter()
-    for r in range(1, 7):
+    for r in range(1, 6):
         t = Tile(Suit.MAN, r)
         for _ in range(2):
             assert pool[t] >= 1
@@ -64,6 +67,13 @@ def _chiitoitsu_ron_board() -> BS:
             if pool[t] == 0:
                 del pool[t]
             hand1[t] += 1
+    t1p = Tile(Suit.PIN, 1)
+    for _ in range(2):
+        assert pool[t1p] >= 1
+        pool[t1p] -= 1
+        if pool[t1p] == 0:
+            del pool[t1p]
+        hand1[t1p] += 1
     pool[t7] -= 1
     hand1[t7] += 1
     assert pool[t7] >= 1

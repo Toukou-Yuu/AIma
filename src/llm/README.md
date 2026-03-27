@@ -80,7 +80,7 @@ python -m llm --dry-run --seed 0 --max-steps 100 --log-session my_run_01
 |------|------|
 | `logs/replay/{stem}.json` | **整局结束后**一次性写入：供 `replay_from_actions` 的 `actions` + 内核事件 `events` wire（确定性回放，非战报） |
 | `logs/debug/{stem}.log` | **运行过程中**持续追加：`apply` 每步摘要、模型解析出的 `llm_choice`、仅写入本文件的 `httpx` HTTP 行（控制台仍隐藏） |
-| `logs/simple/{stem}.txt` | **`--log-session`**：简体中文全桌快照 + 「执行」行；合并摸打时执行行含「摸xx打牌」、手牌行用全角括号标本巡摸入（主串去掉一张同键牌避免重复） |
+| `logs/simple/{stem}.txt` | **`--log-session`**：简体中文全桌快照 + 「执行」行；风位旁有绝对座位 **`(S0)`–`(S3)`**；合并摸打时先把本步打出张加回再标本巡摸牌，使摸后打前门内为 14 枚（与主串去重一致） |
 
 `--log-session` 单独写可自动生成 `stem`（本地时间 `YYYYMMDD-HHMMSS`）；也可 `--log-session 自定义名`。仍可与 `--log-json 其它路径.json` 同时写入第二份牌谱。
 
@@ -107,6 +107,15 @@ else:
 pip install -e ".[dev,llm]"
 pytest tests/test_llm_*.py -q
 ```
+
+## 下一阶段（编排层）
+
+维护者约定的**近期优先事项**（与 `AGENTS.md` / `idea.md` 同步）：
+
+1. **优化日志**：`logs/simple`、`logs/debug` 的可读性、噪声与体积控制。
+2. **可视化指标**：token 用量、HTTP 请求次数、按 seat/局次聚合等（便于观战或批跑分析）。
+3. **LLM 记忆化**：在公平对局与调试隔离前提下，探索上下文缓存或压缩策略。
+4. **架构检查**：`llm` 与 `kernel` 的分层、`runner`/CLI 职责、观测→解析→校验→`apply` 管线一致性。
 
 ## 说明
 

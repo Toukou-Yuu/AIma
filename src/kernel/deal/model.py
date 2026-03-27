@@ -35,6 +35,24 @@ def _seat_total_tiles(concealed: Counter[Tile], melds: tuple[Meld, ...]) -> int:
     return sum(concealed.values()) + _seat_meld_tile_sum(melds)
 
 
+def _validate_seat_13_or_post_kan_discard_14(
+    concealed: Counter[Tile],
+    melds: tuple[Meld, ...],
+) -> None:
+    """
+    通常：门内+副露合计 13。
+    例外：副露中含 4 张杠（含暗杠/大明杠/加杠）且合计 14 —— 与 NEED_DRAW 注释一致，
+    表示「杠后岭摸已打出一张」之后、轮到他家摸打前的暂态。
+    """
+    tot = _seat_total_tiles(concealed, melds)
+    has_quad_meld = any(meld_tile_count(m) == 4 for m in melds)
+    if tot == 13:
+        return
+    if tot == 14 and has_quad_meld:
+        return
+    validate_tile_conservation(concealed, melds, 13)
+
+
 @dataclass(frozen=True, slots=True)
 class BoardState:
     """
@@ -136,17 +154,10 @@ def validate_board_state(board: BoardState) -> None:
 
     cur = board.current_seat
     if board.turn_phase == TurnPhase.NEED_DRAW:
-        # 与 ``CALL_RESPONSE`` 一致：杠后已从岭上摸入并打出一张时，该席可暂为 14（门内+副露），
+        # 与 ``CALL_RESPONSE`` / ``MUST_DISCARD`` 一致：杠后已从岭上摸入并打出一张时，该席可暂为 14（门内+副露），
         # 下一轮摸牌前仍视为「待摸」；不能一律按 13 校验。
         for s in range(4):
-            tot = _seat_total_tiles(board.hands[s], board.melds[s])
-            has_quad_meld = any(meld_tile_count(m) == 4 for m in board.melds[s])
-            if tot == 13:
-                pass
-            elif tot == 14 and has_quad_meld:
-                pass
-            else:
-                validate_tile_conservation(board.hands[s], board.melds[s], 13)
+            _validate_seat_13_or_post_kan_discard_14(board.hands[s], board.melds[s])
         if board.last_draw_tile is not None:
             msg = "last_draw_tile must be None in NEED_DRAW"
             raise ValueError(msg)
@@ -156,10 +167,18 @@ def validate_board_state(board: BoardState) -> None:
     elif board.turn_phase == TurnPhase.MUST_DISCARD:
         for s in range(4):
             if s == cur:
-                want = 15 if board.last_draw_was_rinshan else 14
+                tot_cur = _seat_total_tiles(board.hands[s], board.melds[s])
+                has_quad_meld = any(meld_tile_count(m) == 4 for m in board.melds[s])
+                if board.last_draw_was_rinshan:
+                    validate_tile_conservation(board.hands[s], board.melds[s], 15)
+                elif tot_cur == 15 and has_quad_meld:
+                    # 本墙摸牌：上一巡 NEED_DRAW 时该席仍为「杠后岭摸已打」的 14，本巡摸进后为 15（非岭摸）。
+                    pass
+                else:
+                    validate_tile_conservation(board.hands[s], board.melds[s], 14)
             else:
-                want = 13
-            validate_tile_conservation(board.hands[s], board.melds[s], want)
+                # 他家可能仍为杠后岭摸已打后的 14（含副露 4 张杠），与 NEED_DRAW 同规则。
+                _validate_seat_13_or_post_kan_discard_14(board.hands[s], board.melds[s])
     elif board.turn_phase == TurnPhase.CALL_RESPONSE:
         cs = board.call_state
         assert cs is not None
@@ -193,7 +212,7 @@ def validate_board_state(board: BoardState) -> None:
                     )
                     raise ValueError(msg)
             else:
-                validate_tile_conservation(board.hands[s], board.melds[s], 13)
+                _validate_seat_13_or_post_kan_discard_14(board.hands[s], board.melds[s])
         if board.last_draw_tile is not None:
             msg = "last_draw_tile must be None in CALL_RESPONSE"
             raise ValueError(msg)

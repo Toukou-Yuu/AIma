@@ -8,6 +8,7 @@ from kernel.deal.model import BoardState
 from kernel.hand.melds import Meld, MeldKind, triplet_key
 from kernel.table.model import PrevailingWind, TableSnapshot, seat_wind_rank
 from kernel.tiles.model import Suit, Tile
+from kernel.win_shape.decompose import menzen_peikou_level
 from kernel.win_shape.pinfu import pinfu_eligible
 
 
@@ -117,6 +118,38 @@ def _count_suits(full: Counter[Tile]) -> dict[Suit, int]:
     return counts
 
 
+def _is_chinitsu_full(full: Counter[Tile]) -> bool:
+    """清一色：无字牌，万／筒／索恰有一种非零。"""
+    s = _count_suits(full)
+    if s[Suit.HONOR] != 0:
+        return False
+    return sum(1 for su in (Suit.MAN, Suit.PIN, Suit.SOU) if s[su] > 0) == 1
+
+
+def _is_honitsu_full(full: Counter[Tile]) -> bool:
+    """混一色：有字牌，万／筒／索恰有一种非零。"""
+    s = _count_suits(full)
+    if s[Suit.HONOR] == 0:
+        return False
+    return sum(1 for su in (Suit.MAN, Suit.PIN, Suit.SOU) if s[su] > 0) == 1
+
+
+def _is_sanshoku_doukou(full: Counter[Tile]) -> bool:
+    """三色同刻：存在 rank 使万／筒／索上同 rank 刻（含杠）均 ≥3。"""
+    keys = _triplet_key_counts(full)
+    for r in range(1, 10):
+        if keys[(Suit.MAN, r)] >= 3 and keys[(Suit.PIN, r)] >= 3 and keys[(Suit.SOU, r)] >= 3:
+            return True
+    return False
+
+
+def _count_kan_melds(melds: tuple[Meld, ...]) -> int:
+    """副露中大明杠／暗杠／加杠的组数。"""
+    return sum(
+        1 for m in melds if m.kind in (MeldKind.DAIMINKAN, MeldKind.ANKAN, MeldKind.SHANKUMINKAN)
+    )
+
+
 def _has_ryanmen_chiito(melds: tuple[Meld, ...]) -> bool:
     """是否有顺子（两面子）。"""
     for m in melds:
@@ -150,67 +183,47 @@ def _has_same_suit_sequences(melds: tuple[Meld, ...], target: int) -> tuple[bool
     return (False, Suit.HONOR)
 
 
+def _tile_is_yaochuu(t: Tile) -> bool:
+    """幺九或字牌（混全/纯全带幺用）。"""
+    return t.suit == Suit.HONOR or t.rank in (1, 9)
+
+
+def _remaining_after_open_melds(full: Counter[Tile], melds: tuple[Meld, ...]) -> Counter[Tile]:
+    """从和了全体牌数减去副露张数，得到门内（含荣和牌）。"""
+    rem = Counter(full)
+    for m in melds:
+        for t in m.tiles:
+            rem[t] -= 1
+            if rem[t] <= 0:
+                del rem[t]
+    return rem
+
+
 def _is_chanta(full: Counter[Tile], melds: tuple[Meld, ...], *, with_jun: bool) -> bool:
     """
-    混全带幺/纯全带幺：所有面子和雀头都包含幺九牌/字牌。
-    with_jun=True: 纯全（无字牌）；False: 混全（允许字牌）。
+    混全带幺/纯全带幺：所有面子和雀头均须「带幺」。
+    with_jun=True: 纯全（手牌无字牌）；False: 混全（允许字牌）。
     """
-    # 检查雀头
-    sets_data = _count_sets_by_kind_for_yaku(full, melds)
-    pair_keys = sets_data["toitsu"]
-    for key in pair_keys:
-        t = Tile(key[0], key[1])
-        is_yaokyuu = t.suit == Suit.HONOR or t.rank in (1, 9)
-        if not is_yaokyuu:
-            return False
-        if with_jun and t.suit == Suit.HONOR:
-            return False
+    if with_jun and any(t.suit == Suit.HONOR for t in full.keys()):
+        return False
 
-    # 检查顺子
     for m in melds:
         if m.kind == MeldKind.CHI:
-            # 顺子必须包含 1 或 9
             ranks = [t.rank for t in m.tiles]
             if 1 not in ranks and 9 not in ranks:
                 return False
-            if with_jun:
-                # 纯全：顺子本身不能有字牌（本来就没有）
-                pass
+        else:
+            if not all(_tile_is_yaochuu(t) for t in m.tiles):
+                return False
 
-    # 检查刻子/杠子
-    for key, count in full.items():
-        if count >= 3:
-            t = Tile(key[0], key[1])
-            is_yaokyuu = t.suit == Suit.HONOR or t.rank in (1, 9)
-            if not is_yaokyuu:
-                # 检查是否是顺子的一部分（已在上面检查）
-                pass
-
+    rem = _remaining_after_open_melds(full, melds)
+    for t, n in rem.items():
+        if t.suit != Suit.HONOR and 2 <= t.rank <= 8:
+            if n >= 3:
+                return False
+            if n == 2 and not _tile_is_yaochuu(t):
+                return False
     return True
-
-
-def _count_sets_by_kind_for_yaku(
-    concealed: Counter[Tile],
-    melds: tuple[Meld, ...],
-) -> dict[str, list[tuple[Suit, int]]]:
-    """统计对子/刻子/杠子（用于役种判定）。"""
-    toitsu_keys = []
-    anko_keys = []
-    for key, count in concealed.items():
-        if count == 2:
-            toitsu_keys.append(key)
-        elif count == 3:
-            anko_keys.append(key)
-        elif count == 4:
-            # 暗刻 + 1 枚（罕见情况）
-            anko_keys.append(key)
-
-    return {
-        "ankan": [],
-        "minkan": [],
-        "anko": anko_keys,
-        "toitsu": toitsu_keys,
-    }
 
 
 def _count_ananko(concealed: Counter[Tile], melds: tuple[Meld, ...]) -> int:
@@ -648,17 +661,7 @@ def _is_daisuushii(full: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
     大四喜：四风四组刻子。
     役满。
     """
-    if melds:
-        # 检查副露中的四风刻子
-        wind_kan_count = sum(
-            1
-            for m in melds
-            if m.kind in (MeldKind.KAN, MeldKind.ANKAN, MeldKind.PON)
-            and m.tiles[0].suit == Suit.HONOR
-            and m.tiles[0].rank in (1, 2, 3, 4)
-        )
-
-    # 统计四风刻子数量
+    # ``full`` 已含副露与和了牌，直接数四风刻子即可。
     keys = _triplet_key_counts(full)
     wind_kan_count = 0
     for rank in (1, 2, 3, 4):
@@ -778,6 +781,8 @@ def non_dora_yaku_han_and_labels(
 ) -> tuple[int, tuple[str, ...]]:
     """
     与 ``count_yaku_han`` 相同的非ドラ役番累计，并返回简体役名列表（供事件日志）。
+
+    一般形路径中染手／一杯口系／三色同刻／三杠子 等与 ``count_yaku_han`` 文档一致。
     """
     full = _full_tile_counter(concealed, melds, win_tile, for_ron=for_ron)
     labels: list[str] = []
@@ -830,12 +835,43 @@ def non_dora_yaku_han_and_labels(
     if _is_chiitoitsu(full, melds):
         han += 2
         labels.append("七对子")
+        menzen_c7 = len(melds) == 0
+        if _is_chinitsu_full(full):
+            han += 6 if menzen_c7 else 5
+            labels.append("清一色(门清)" if menzen_c7 else "清一色")
+        elif _is_honitsu_full(full):
+            han += 3 if menzen_c7 else 2
+            labels.append("混一色(门清)" if menzen_c7 else "混一色")
         if _is_tanyao(full, allow_open=allow_open_tanyao, has_melds=False):
             han += 1
             labels.append("断幺九")
         han += _yakuhai_han_chiitoitsu_pairs(full, round_wind_tile=rw, seat_wind_tile=sw)
         labels.extend(_yakuhai_labels_chiitoitsu_pairs(full, round_wind_tile=rw, seat_wind_tile=sw))
         return han, tuple(labels)
+
+    menzen = len(melds) == 0
+    if _is_chinitsu_full(full):
+        han += 6 if menzen else 5
+        labels.append("清一色(门清)" if menzen else "清一色")
+    elif _is_honitsu_full(full):
+        han += 3 if menzen else 2
+        labels.append("混一色(门清)" if menzen else "混一色")
+
+    pl = menzen_peikou_level(concealed, melds, win_tile, for_ron=for_ron)
+    if pl == 2:
+        han += 3
+        labels.append("二杯口")
+    elif pl == 1:
+        han += 1
+        labels.append("一杯口")
+
+    if _is_sanshoku_doukou(full):
+        han += 2
+        labels.append("三色同刻")
+
+    if _count_kan_melds(melds) == 3:
+        han += 2
+        labels.append("三杠子")
 
     if last_draw_was_rinshan:
         han += 1
@@ -860,7 +896,11 @@ def non_dora_yaku_han_and_labels(
     )
     if yh:
         han += yh
-        labels.extend(_yakuhai_labels_for_triplets(_triplet_key_counts(full), round_wind_tile=rw, seat_wind_tile=sw))
+        labels.extend(
+            _yakuhai_labels_for_triplets(
+                _triplet_key_counts(full), round_wind_tile=rw, seat_wind_tile=sw
+            )
+        )
 
     if pinfu_eligible(
         concealed,
@@ -887,24 +927,14 @@ def non_dora_yaku_han_and_labels(
         han += 3 if menzen else 2
         labels.append("一气通贯(门清)" if menzen else "一气通贯")
 
-    has_chi = any(m.kind == MeldKind.CHI for m in melds)
-    if has_chi:
-        all_chi_have_yaokyuu = True
-        for m in melds:
-            if m.kind == MeldKind.CHI:
-                ranks = [t.rank for t in m.tiles]
-                if 1 not in ranks and 9 not in ranks:
-                    all_chi_have_yaokyuu = False
-                    break
-        if all_chi_have_yaokyuu:
-            menzen = len(melds) == 0
-            has_honor = any(t.suit == Suit.HONOR for t in full.keys())
-            if not has_honor:
-                han += 4 if menzen else 3
-                labels.append("纯全带幺九(门清)" if menzen else "纯全带幺九")
-            else:
-                han += 2 if menzen else 1
-                labels.append("混全带幺九(门清)" if menzen else "混全带幺九")
+    if _is_chanta(full, melds, with_jun=True):
+        menzen = len(melds) == 0
+        han += 4 if menzen else 3
+        labels.append("纯全带幺九(门清)" if menzen else "纯全带幺九")
+    elif _is_chanta(full, melds, with_jun=False):
+        menzen = len(melds) == 0
+        han += 2 if menzen else 1
+        labels.append("混全带幺九(门清)" if menzen else "混全带幺九")
 
     if _is_all_terminals_and_honors(full):
         if not _is_chiitoitsu(full, melds):
@@ -960,6 +990,9 @@ def count_yaku_han(
     - 混老头（2 番）
     - 三暗刻（2 番）
     - 小三元（2 番）
+    - 清一色（6 门清 / 5 副露）、混一色（3 / 2）
+    - 一杯口（1，门清一般形）、二杯口（3，门清）
+    - 三色同刻（2）、三杠子（2；四杠子为役满早退）
     - 役满：大三元、四暗刻、国士无理、清老头、字一色、绿一色、九莲宝灯、四杠子、大小四喜、天和/地和
 
     不含ドラ、不含本场。

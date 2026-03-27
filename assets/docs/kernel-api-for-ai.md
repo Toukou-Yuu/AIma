@@ -167,6 +167,7 @@ wall = tuple(shuffle_deck(build_deck(), seed=42))
 
 - **场况默认值**：`kernel.table.model.initial_table_snapshot()`（起点数、立直棒点数等可与 `kernel.config.DEFAULT_CONFIG` 对齐）。
 - **规则条文**：`mahjong_rules/Mahjong_Soul.md`（版本以文件为准）；与实现不一致时以 **`apply` 行为**为准。
+- **役种对照**：§12 与 `kernel.scoring.yaku.non_dora_yaku_han_and_labels`（及结算路径）对齐；§12.2 列为友人桌常见但**尚未实现**的番种。
 
 ---
 

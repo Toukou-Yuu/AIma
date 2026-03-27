@@ -131,11 +131,14 @@ def settle_ron_table(
             melds=board.melds[w],
             allow_open_tanyao=allow_open_tanyao,
             last_draw_was_rinshan=False,
-            is_haitei=False,
+            is_haitei=_is_haitei(board),
             is_hotei=is_hotei,
             is_chankan=is_chankan,
             is_tsumo=False,
         )
+        if nd_han < 1:
+            msg = "荣和须至少一番役（ドラ不可单独计和）"
+            raise ValueError(msg)
         dora_h = count_dora_total(
             board.hands[w],
             board.melds[w],
@@ -284,6 +287,9 @@ def settle_tsumo_table(
         is_chankan=False,
         is_tsumo=True,
     )
+    if nd_han < 1:
+        msg = "自摸须至少一番役（ドラ不可单独计和）"
+        raise ValueError(msg)
     dora_h = count_dora_total(
         board.hands[winner],
         board.melds[winner],
