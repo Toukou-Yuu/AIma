@@ -1,9 +1,6 @@
 # llm — 大模型调用与编排
 
-本包实现 **HTTP 适配、观测与合法动作的提示拼装、模型输出解析与校验、``apply`` 闭环跑局**。  
-**牌桌规则与状态机仅在 `kernel`**；本包通过 `legal_actions` / `observation(..., mode="human")` / `apply` 接入，**禁止**改写内核状态或绕过校验。
-
-职责边界见 [`docs/scope.md`](docs/scope.md)。
+本包实现 **HTTP 适配、观测与合法动作的提示拼装、模型输出解析与校验、``apply`` 闭环跑局**。**牌桌规则与状态机仅在 `kernel`**；本包通过 `legal_actions` / `observation(..., mode="human")` / `apply` 接入，**禁止**改写内核状态或绕过校验。
 
 ## 目录索引
 
@@ -19,15 +16,16 @@
 | [`validate.py`](validate.py) | 解析结果与当前 `legal_actions` 逐项匹配 |
 | [`action_build.py`](action_build.py) | `LegalAction` → `Action` |
 | [`turns.py`](turns.py) | 当前待决策的 `seat` 列表（`CALL_RESPONSE` 为多席） |
-| [`runner.py`](runner.py) | `run_llm_match`：局间 `NOOP`+牌山、步数上限；可选简单日志 |
-| [`table_snapshot_text.py`](table_snapshot_text.py) | 全桌「读谱式」纯文本快照（简体中文）；合并摸打时标本巡摸牌，主串去重 |
+| [`runner.py`](runner.py) | `run_llm_match`：局间 `NOOP`+牌山、步数上限；支持实时观战回调 |
+| [`table_snapshot_text.py`](table_snapshot_text.py) | 全桌「读谱式」纯文本快照（简体中文） |
 | [`simple_log.py`](simple_log.py) | `--log-session` 时与内核事件配套的块级追加（调试用） |
 | [`cli.py`](cli.py) / [`__main__.py`](__main__.py) | `python -m llm` |
 
 ## 安装
 
 ```bash
-pip install -e ".[llm]"
+pip install -e ".[llm]"   # 仅 LLM 功能
+pip install -e ".[rich]"  # LLM + 终端观战（推荐）
 ```
 
 依赖为 `httpx` 与 `python-dotenv`；与 `kernel` 共用同一仓库时确保 `pythonpath` 含 `src`（可编辑安装已配置）。
@@ -53,52 +51,69 @@ pip install -e ".[llm]"
 
 ## 命令行
 
+### 实时观战（推荐）
+
 ```bash
-# 不调用 API：每步取 legal_actions 首项（确定性调试）
-python -m llm --dry-run --seed 0 --max-steps 200
+# Dry-run 模式（随机演示，无需 API Key）
+python -m llm --watch --dry-run --seed 0 --max-steps 200
 
-# 需已配置环境变量与 pip install -e ".[llm]"
-python -m llm --seed 1 --max-steps 300
+# 真实 LLM 对局（需配置 API Key）
+python -m llm --watch --seed 1 --max-steps 300
 
-# 牌谱：跑完后写入 JSON（含每步 Action wire + 内核事件镜像，可完整 replay_from_actions）
-python -m llm --dry-run --seed 0 --max-steps 200 --log-json match.json
-
-# 仅从牌谱 JSON 重放（不请求 API）
-python -m llm --replay match.json
-
-# 终端里看对局进度（每步 phase / 动作种类）；默认已压低 httpx 的 HTTP 访问 INFO
-python -m llm --seed 0 --max-steps 300 -v
-
-# 配对日志（项目根下）：对局牌谱 logs/replay/{STEM}.json + 调试文本 logs/debug/{STEM}.log
-python -m llm --dry-run --seed 0 --max-steps 100 --log-session
-python -m llm --dry-run --seed 0 --max-steps 100 --log-session my_run_01
+# 调整观战速度
+python -m llm --watch --dry-run --seed 0 --watch-delay 0.5
 ```
 
-**日志目录约定**（需在仓库根执行，以便 `logs/` 落在项目根；目录已在 `.gitignore` 中忽略）：
+### 从牌谱回放
 
-| 路径 | 内容 |
-|------|------|
-| `logs/replay/{stem}.json` | **整局结束后**一次性写入：供 `replay_from_actions` 的 `actions` + 内核事件 `events` wire（确定性回放，非战报） |
-| `logs/debug/{stem}.log` | **运行过程中**持续追加：`apply` 每步摘要、模型解析出的 `llm_choice`、仅写入本文件的 `httpx` HTTP 行（控制台仍隐藏） |
-| `logs/simple/{stem}.txt` | **`--log-session`**：简体中文全桌快照；风位旁有绝对座位 **`(S0)`–`(S3)`**；块内顺序为 **「执行：…」→ 本局和了/本局流局摘要（若有）→ 模型理由行**；统计行 **「和了次数/已终局数」** 分母含流局与和了终局（非「胜率」字面）。合并摸打时先把本步打出张加回再标本巡摸牌，使摸后打前门内为 14 枚（与主串去重一致） |
+```bash
+python -m llm --watch --replay logs/replay/xxx.json --watch-delay 0.2
+```
 
-`--log-session` 单独写可自动生成 `stem`（本地时间 `YYYYMMDD-HHMMSS`）；也可 `--log-session 自定义名`。仍可与 `--log-json 其它路径.json` 同时写入第二份牌谱。
+### 生成日志（后台模式）
 
-牌谱 JSON 的设计目标是**确定性回放**；人类读谱优先看 `logs/simple/*.txt` 或 Web UI（`observation(..., human)`）。
+```bash
+# 生成配对日志
+python -m llm --dry-run --seed 0 --max-steps 100 --log-session my_run_01
 
-牌谱字段与编解码见内核模块 `kernel.replay_json`；`RunResult.as_match_log()` 可程序化得到与 `--log-json` 相同结构的 dict。
+# 生成的文件：
+# logs/replay/my_run_01.json   - 完整牌谱
+# logs/debug/my_run_01.log     - 调试日志
+# logs/simple/my_run_01.txt    - 可读文本日志
+```
+
+### 完整 CLI 参考
+
+```bash
+python -m llm --help
+```
+
+常用参数：
+- `--watch` - 启用 Rich 实时观战
+- `--watch-delay SEC` - 观战步间延迟（默认 0.3）
+- `--dry-run` - 随机演示，不调用 API
+- `--seed INT` - 洗牌种子
+- `--max-steps INT` - 最大步数
+- `--log-session [STEM]` - 生成日志文件
+- `--replay PATH` - 从牌谱回放
 
 ## 程序调用
 
 ```python
 from llm import build_client, load_llm_config, run_llm_match
+from ui.terminal_rich import LiveMatchCallback
 
+# 带实时观战的 LLM 对局
 cfg = load_llm_config()
 if cfg:
     client = build_client(cfg)
-    rr = run_llm_match(seed=42, max_steps=500, client=client)
-else:
-    rr = run_llm_match(seed=42, max_steps=500, dry_run=True)
+    with LiveMatchCallback(delay=0.5) as callback:
+        rr = run_llm_match(
+            seed=42,
+            max_steps=500,
+            client=client,
+            on_step_callback=callback.on_step
+        )
 ```
 
 ## 测试
@@ -107,15 +122,6 @@ else:
 pip install -e ".[dev,llm]"
 pytest tests/test_llm_*.py -q
 ```
-
-## 下一阶段（编排层）
-
-维护者约定的**近期优先事项**（与 `AGENTS.md` / `idea.md` 同步）：
-
-1. **优化日志**：`logs/simple`、`logs/debug` 的可读性、噪声与体积控制。
-2. **可视化指标**：token 用量、HTTP 请求次数、按 seat/局次聚合等（便于观战或批跑分析）。
-3. **LLM 记忆化**：在公平对局与调试隔离前提下，探索上下文缓存或压缩策略。
-4. **架构检查**：`llm` 与 `kernel` 的分层、`runner`/CLI 职责、观测→解析→校验→`apply` 管线一致性。
 
 ## 说明
 

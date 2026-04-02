@@ -8,22 +8,78 @@
 |------|------|
 | `src/kernel/` | 日麻内核：状态机、`apply`、流局、点数、`legal_actions` / `observation` 等 |
 | `src/llm/` | 大模型适配：HTTP、提示拼装、解析校验、`run_llm_match` CLI（`python -m llm`） |
-| `src/ui/` | 终端 PNG 桌面渲染原型 |
-| `src/web/` | FastAPI + 浏览器 UI（见 `src/web/README.md`） |
+| `src/ui/` | **Rich 终端实时观战**（推荐） |
 | `assets/docs/` | 架构与对外 API 说明（给 AI / 编排层） |
 | `mahjong_rules/` | 规则子集 v1 对照（版本号以文件内为准） |
 
-**依赖方向**：`llm` / `web` → `kernel`；**禁止** `kernel` import `llm`。
+**依赖方向**：`llm` / `ui` → `kernel`；**禁止** `kernel` import `llm`。
 
-## 环境
+## 快速开始
+
+### 1. 环境准备
 
 ```bash
 conda env create -f environment.yml
 conda activate aima
-pip install -e ".[dev]"
+pip install -e ".[rich]"
 ```
 
-可选：`pip install -e ".[llm]"`（跑 LLM CLI）、`pip install -e ".[web]"`（Web）。
+### 2. 实时观战（推荐）
+
+**Dry-run 模式**（随机演示，无需 API Key）：
+```bash
+python -m llm --watch --dry-run --seed 42 --max-steps 100 --watch-delay 0.3
+```
+
+**真实 AI 对局**（需要配置 API Key）：
+```bash
+# 配置环境变量
+export AIMA_OPENAI_API_KEY="your-key"
+python -m llm --watch --seed 42 --max-steps 100 --watch-delay 0.5
+```
+
+### 3. 从牌谱回放
+
+```bash
+python -m llm --watch --replay logs/replay/xxx.json --watch-delay 0.2
+```
+
+### 4. 生成对局日志（后台模式）
+
+```bash
+# 不显示实时 UI，只生成日志文件
+python -m llm --seed 42 --max-steps 200 --log-session my_match
+```
+
+生成文件：
+- `logs/simple/my_match.txt` - 可读文本日志
+- `logs/replay/my_match.json` - 完整牌谱
+- `logs/debug/my_match.log` - 调试日志
+
+## CLI 参数说明
+
+```bash
+python -m llm --help
+```
+
+常用参数：
+- `--watch` - 启用 Rich 实时观战
+- `--watch-delay SEC` - 观战每步间隔秒数（默认 0.3）
+- `--dry-run` - 随机演示，不调用 LLM
+- `--seed INT` - 洗牌种子
+- `--max-steps INT` - 最大步数
+- `--log-session [STEM]` - 生成日志文件
+- `--replay PATH` - 从牌谱回放
+
+## 环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `AIMA_OPENAI_API_KEY` | OpenAI API Key |
+| `AIMA_OPENAI_BASE_URL` | 自定义 API 端点（可选） |
+| `AIMA_OPENAI_MODEL` | 模型名称（默认 gpt-4o-mini） |
+| `AIMA_ANTHROPIC_API_KEY` | Anthropic API Key |
+| `AIMA_ANTHROPIC_MODEL` | 模型名称（默认 claude-3-5-haiku） |
 
 ## 测试与检查
 
@@ -32,8 +88,6 @@ pytest
 ruff check .
 ruff format .
 ```
-
-`pyproject.toml` 已配置 `pythonpath = src`。
 
 ## 延伸阅读
 
