@@ -117,6 +117,31 @@ def _cmd_replay(path: str) -> int:
     return 0
 
 
+def _cmd_watch_replay(path: str, delay: float) -> int:
+    """从牌谱 JSON 实时观战（Rich）。"""
+    try:
+        from ui.terminal_rich import LiveMatchViewer
+    except ImportError as e:
+        print(f"需要 rich: pip install rich ({e})", file=sys.stderr)
+        return 2
+
+    viewer = LiveMatchViewer(delay=delay, show_reason=False)
+    viewer.run_from_replay_file(path, delay=delay)
+    return 0
+
+
+def _cmd_watch_dry_run(seed: int, steps: int, delay: float) -> int:
+    """实时观战演示（Rich + dry-run 模式）。"""
+    try:
+        from ui.terminal_rich import demo_dry_run
+    except ImportError as e:
+        print(f"需要 rich: pip install rich ({e})", file=sys.stderr)
+        return 2
+
+    demo_dry_run(seed=seed, steps=steps, delay=delay)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     _load_dotenv_if_available()
     logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(message)s")
@@ -167,7 +192,36 @@ def main(argv: list[str] | None = None) -> int:
         metavar="SEC",
         help="每次调用 LLM API 前的间隔秒数（减压控/减少连接被远端掐断）；默认 0.5；设为 0 可关闭；--dry-run 不请求 API，此项无效",
     )
+    p.add_argument(
+        "--watch",
+        action="store_true",
+        help="实时终端观战（需要 rich）；与 --dry-run 同用可看实时演示",
+    )
+    p.add_argument(
+        "--watch-delay",
+        type=float,
+        default=0.3,
+        metavar="SEC",
+        help="--watch 模式每步间隔秒数；默认 0.3",
+    )
     args = p.parse_args(argv)
+
+    # --watch 模式优先处理
+    if args.watch:
+        if args.replay:
+            # 从牌谱实时观战
+            return _cmd_watch_replay(args.replay, args.watch_delay)
+        elif args.dry_run:
+            # dry-run 演示观战
+            return _cmd_watch_dry_run(args.seed, args.max_steps, args.watch_delay)
+        else:
+            print(
+                "--watch 需要搭配 --replay 或 --dry-run 使用\n"
+                "  --watch --replay logs/replay/xxx.json\n"
+                "  --watch --dry-run --seed 42",
+                file=sys.stderr,
+            )
+            return 2
 
     if args.replay:
         return _cmd_replay(args.replay)
