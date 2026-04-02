@@ -184,19 +184,21 @@ class LiveMatchViewer:
 
         return main
 
-    def _render_player_tree(self, state: GameState) -> Tree:
-        """渲染四家手牌树（固定格式）。"""
-        from rich.tree import Tree
+    def _render_player_tree(self, state: GameState) -> Group:
+        """渲染四家手牌（使用 Group 实现更灵活的间距控制）。"""
+        from rich.columns import Columns
 
         board = state.board
         table = state.table
 
         if not board:
-            return Tree("未开始")
+            return Group(Text("未开始"))
 
         dealer = table.dealer_seat
-        root_label = Text(f"当前动作: {self._last_action_str}", style="bold bright_yellow")
-        tree = Tree(root_label)
+        lines = []
+
+        # 当前动作标题（无缩进）
+        lines.append(Text(f"当前动作: {self._last_action_str}", style="bold bright_yellow"))
 
         for seat in range(4):
             # 计算相对风位
@@ -211,7 +213,7 @@ class LiveMatchViewer:
             melds = board.melds[seat]
             melds_str = self._melds_to_str(melds, seat, dealer)
 
-            # 牌河（显示全部）
+            # 牌河
             river_str = self._river_to_str(board.river, seat)
 
             # 立直状态
@@ -220,25 +222,45 @@ class LiveMatchViewer:
             if board.double_riichi and seat in board.double_riichi:
                 riichi_mark = " [双立直]"
 
-            # 节点标签
-            label = Text.assemble(
+            # 判断是否是最后一家（用于树形符号）
+            is_last = (seat == 3)
+            branch_char = "└──" if is_last else "├──"
+
+            # 玩家行
+            player_text = Text.assemble(
+                (f"{branch_char} ", "bright_black"),
                 _wind_with_seat(rel_wind, seat, is_dealer),
                 (riichi_mark, "bold bright_red" if riichi_mark else ""),
-                ": ",
+                "  ",
                 self._hand_to_rich(hand_str),
             )
+            lines.append(player_text)
 
-            player_branch = tree.add(label)
-
-            # 副露子节点
+            # 副露行
             if melds:
-                player_branch.add(Text(f"副露: {melds_str}", style="bright_magenta"))
+                meld_text = Text.assemble(
+                    ("│   ├── " if not is_last else "    ├── ", "bright_black"),
+                    (f"副露: {melds_str}", "bright_magenta"),
+                )
+                lines.append(meld_text)
 
-            # 牌河子节点
+            # 牌河行
             if river_str:
-                player_branch.add(Text(f"牌河: {river_str}", style="dim"))
+                river_text = Text.assemble(
+                    ("│   └── " if not is_last else "    └── ", "bright_black"),
+                    (f"牌河: {river_str}", "dim"),
+                )
+                lines.append(river_text)
+            else:
+                # 如果没有牌河，也显示一个空行保持结构
+                lines.append(Text("│" + " " * 79 if not is_last else " " * 80, style="bright_black"))
 
-        return tree
+            # 空行分隔（除了最后一家）- 两行间距
+            if not is_last:
+                lines.append(Text("│", style="bright_black"))
+                lines.append(Text("│", style="bright_black"))
+
+        return Group(*lines)
 
     def _melds_to_str_compact(self, melds, owner_seat: int, dealer_seat: int) -> str:
         """副露列表 -> 紧凑字符串（每副露只显示牌型，省略鸣牌来源）。"""
@@ -413,8 +435,8 @@ class LiveMatchViewer:
             player_tree,
             title="手牌",
             border_style="green",
-            height=20,
-            padding=(0, 1),
+            height=26,  # 增加高度
+            padding=(0, 2),  # 增加水平边距
         )
 
         # 事件（底部）

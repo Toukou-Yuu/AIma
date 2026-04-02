@@ -130,15 +130,39 @@ def _cmd_watch_replay(path: str, delay: float) -> int:
     return 0
 
 
-def _cmd_watch_dry_run(seed: int, steps: int, delay: float) -> int:
-    """实时观战演示（Rich + dry-run 模式）。"""
+def _cmd_watch_dry_run(seed: int, steps: int, delay: float, dry_run: bool = True) -> int:
+    """实时观战（Rich + dry-run 或真实 LLM 模式）。"""
     try:
-        from ui.terminal_rich import demo_dry_run
+        from ui.terminal_rich import LiveMatchCallback
+        from llm.runner import run_llm_match
     except ImportError as e:
         print(f"需要 rich: pip install rich ({e})", file=sys.stderr)
         return 2
 
-    demo_dry_run(seed=seed, steps=steps, delay=delay)
+    client = None
+    if not dry_run:
+        cfg = load_llm_config()
+        if cfg is None:
+            print(
+                "未设置 API Key（见 AIMA_OPENAI_* / AIMA_ANTHROPIC_*）。"
+                "使用 --dry-run 可本地试跑。",
+                file=sys.stderr,
+            )
+            return 2
+        client = build_client(cfg)
+
+    with LiveMatchCallback(delay=delay, show_reason=not dry_run) as callback:
+        rr = run_llm_match(
+            seed=seed,
+            max_steps=steps,
+            client=client,
+            dry_run=dry_run,
+            verbose=False,
+            session_audit=False,
+            request_delay_seconds=0.0 if dry_run else delay,
+            on_step_callback=callback.on_step,
+        )
+        print(f"\nsteps={rr.steps} reason={rr.stopped_reason!r} phase={rr.final_state.phase.value}")
     return 0
 
 
@@ -211,17 +235,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.replay:
             # 从牌谱实时观战
             return _cmd_watch_replay(args.replay, args.watch_delay)
-        elif args.dry_run:
-            # dry-run 演示观战
-            return _cmd_watch_dry_run(args.seed, args.max_steps, args.watch_delay)
         else:
-            print(
-                "--watch 需要搭配 --replay 或 --dry-run 使用\n"
-                "  --watch --replay logs/replay/xxx.json\n"
-                "  --watch --dry-run --seed 42",
-                file=sys.stderr,
-            )
-            return 2
+            # 实时观战（dry-run 或真实 LLM）
+            return _cmd_watch_dry_run(args.seed, args.max_steps, args.watch_delay, dry_run=args.dry_run)
 
     if args.replay:
         return _cmd_replay(args.replay)

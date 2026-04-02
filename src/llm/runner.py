@@ -7,7 +7,7 @@ import logging
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any, TextIO
+from typing import Any, Callable, TextIO
 
 from kernel import (
     Action,
@@ -288,6 +288,7 @@ def run_llm_match(
     session_audit: bool = False,
     simple_log_file: TextIO | None = None,
     request_delay_seconds: float = 0.0,
+    on_step_callback: Callable[[GameState, tuple[GameEvent, ...], str, str | None], None] | None = None,
 ) -> RunResult:
     """
     从 ``PRE_DEAL`` 开局到 ``MATCH_END`` 或步数上限。
@@ -300,6 +301,7 @@ def run_llm_match(
       遇 ``ron`` / ``tsumo`` / ``hand_over`` / ``match_end`` 等时另写 ``settlement …`` 行。
     - ``simple_log_file``：若给定，按内核事件写简体中文可读对局（与 JSON 牌谱并行）。
     - ``request_delay_seconds``：每次调用 LLM 前休眠秒数（减压控/防连接被掐）；``dry_run`` 时不请求，不休眠。
+    - ``on_step_callback``：可选回调，每步 apply 后调用（用于实时 UI 观战）。
     """
     if simple_log_file is not None:
         simple_log_file.write(f"# AIma 对局可读日志（简体中文） seed={seed}\n\n")
@@ -518,6 +520,16 @@ def run_llm_match(
                 f"phase={state.phase.value} "
                 f"turn_seat={b.current_seat if b else None}",
             )
+            # 实时观战回调
+            if on_step_callback is not None:
+                try:
+                    action_str = f"{act.kind.value}"
+                    if act.seat is not None:
+                        action_str = f"家{act.seat} {action_str}"
+                    on_step_callback(state, step_out.events, action_str, llm_why)
+                except Exception:
+                    # 回调异常不应中断对局
+                    pass
             if session_audit:
                 wr = _live_wall_remaining_tiles(b)
                 log.info(
