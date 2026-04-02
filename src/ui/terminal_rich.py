@@ -245,12 +245,14 @@ class LiveMatchViewer:
                 lines.append(meld_text)
 
             # 牌河行
-            if river_str:
-                river_text = Text.assemble(
+            river_text_obj = self._river_to_str(board.river, seat)
+            if river_text_obj.plain.strip():  # 检查内容是否非空
+                river_line = Text.assemble(
                     ("│   └── " if not is_last else "    └── ", "bright_black"),
-                    (f"牌河: {river_str}", "dim"),
+                    ("牌河: ", "dim"),
                 )
-                lines.append(river_text)
+                river_line.append(river_text_obj)
+                lines.append(river_line)
             else:
                 # 如果没有牌河，也显示一个空行保持结构
                 lines.append(Text("│" + " " * 79 if not is_last else " " * 80, style="bright_black"))
@@ -291,19 +293,33 @@ class LiveMatchViewer:
             return "无"
         return " ".join(_meld_segment(m, owner_seat, dealer_seat) for m in melds)
 
-    def _river_to_str(self, river, seat: int) -> str:
-        """牌河 -> 可读字符串。"""
-        parts = []
+    def _river_to_str(self, river, seat: int) -> Text:
+        """牌河 -> 可读字符串（带颜色）。"""
+        from rich.text import Text
+
+        result = Text()
+        first = True
         for e in river:
             if e.seat != seat:
                 continue
+            if not first:
+                result.append(" ")
+            first = False
+
             tile_code = e.tile.to_code()
+            tile_text = _tile_to_rich(tile_code)
+
             if e.riichi:
-                tile_code = f"[{tile_code}]"  # 立直宣言打
+                result.append("[", style="dim")
+                result.append(tile_text)
+                result.append("]", style="dim")
             elif e.tsumogiri:
-                tile_code = f"<{tile_code}>"   # 摸切
-            parts.append(tile_code)
-        return " ".join(parts)
+                result.append("<", style="dim")
+                result.append(tile_text)
+                result.append(">", style="dim")
+            else:
+                result.append(tile_text)
+        return result
 
     def _render_stats(self) -> Text:
         """渲染统计信息面板（返回 Text）。"""
