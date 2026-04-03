@@ -52,12 +52,12 @@ if TYPE_CHECKING:
 
 # 炫彩虹宝牌颜色循环
 _DORA_RAINBOW = [
-    "bright_red",      # 红
-    "bright_yellow",   # 黄
-    "bright_green",    # 绿
-    "bright_cyan",     # 青
-    "bright_blue",     # 蓝
-    "bright_magenta",  # 紫
+    "red",      # 红
+    "yellow",   # 黄
+    "green",    # 绿
+    "cyan",     # 青
+    "blue",     # 蓝
+    "magenta",  # 紫
 ]
 _SUIT_COLORS = {
     "m": "bright_white",  # 万子
@@ -363,9 +363,10 @@ class LiveMatchViewer:
             if suit == "z":
                 honor_map = {"1": "東", "2": "南", "3": "西", "4": "北", "5": "白", "6": "發", "7": "中"}
                 display = honor_map.get(tile_code[0], tile_code[0])
-                tile_text = Text(display, style=f"bold {color}")
+                # 使用 on_<color> 背景色确保可见
+                tile_text = Text(display, style=f"bold {color} on black")
             else:
-                tile_text = Text(tile_code.replace("r", ""), style=f"bold {color}")
+                tile_text = Text(tile_code.replace("r", ""), style=f"bold {color} on black")
 
             result.append(tile_text)
         return result
