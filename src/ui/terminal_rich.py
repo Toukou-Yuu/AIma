@@ -486,10 +486,6 @@ class LiveMatchViewer:
                 result.append("[", style="dim")
                 result.append(tile_text)
                 result.append("]", style="dim")
-            elif e.tsumogiri:
-                result.append("<", style="dim")
-                result.append(tile_text)
-                result.append(">", style="dim")
             else:
                 result.append(tile_text)
         return result
