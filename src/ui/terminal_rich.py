@@ -104,10 +104,16 @@ def _parse_hand_tiles(hand_str: str) -> list[Text]:
     return tiles
 
 
-def _wind_with_seat(wind_idx: int, seat: int, is_dealer: bool = False) -> Text:
-    """生成带样式的风位+座位标签，如'东(S0)'。"""
+def _wind_with_seat(wind_idx: int, seat: int, is_active: bool = False) -> Text:
+    """生成带样式的风位+座位标签，如'东(S0)'。
+
+    Args:
+        wind_idx: 相对风位索引 (0=东, 1=南, 2=西, 3=北)
+        seat: 绝对座位号 (0-3)
+        is_active: 是否为当前操作席（高亮显示）
+    """
     wind = _WIND_NAMES[wind_idx]
-    style = "bold bright_cyan" if is_dealer else "bright_white"
+    style = "bold bright_cyan" if is_active else "bright_white"
     return Text.assemble(
         (wind, style),
         (f"(S{seat})", "dim")
@@ -132,6 +138,8 @@ class LiveMatchViewer:
         self._rounds = 0
         self._last_action_str: str = ""
         self._last_reason: str = ""
+        self._step = 0
+        self._last_actor_seat: int | None = None
 
     def _hand_to_rich(self, hand_str: str) -> Text:
         """将手牌字符串转为带空格分隔的 Rich Text。"""
@@ -159,6 +167,7 @@ class LiveMatchViewer:
         header.add_column("key", style="dim")
         header.add_column("value")
 
+        header.add_row("步数", str(self._step))
         header.add_row("局", f"{wind}風{round_num}局")
         header.add_row("本场", str(table.honba))
         header.add_row("供托", str(table.kyoutaku))
@@ -173,7 +182,9 @@ class LiveMatchViewer:
         scores.add_column(justify="right")
         for i, s in enumerate(table.scores):
             wind_name = _WIND_NAMES[i]
-            style = "bold bright_cyan" if i == table.dealer_seat else ""
+            # 高亮上一步执行动作的玩家点数
+            is_active = (i == self._last_actor_seat)
+            style = "bold bright_cyan" if is_active else ""
             scores.add_row(f"{wind_name}:", Text(str(s), style=style))
 
         # 合并
@@ -203,7 +214,8 @@ class LiveMatchViewer:
         for seat in range(4):
             # 计算相对风位
             rel_wind = (seat - dealer) % 4
-            is_dealer = (seat == dealer)
+            # 高亮上一步执行动作的玩家
+            is_active = (seat == self._last_actor_seat)
 
             # 手牌
             hand = board.hands[seat]
@@ -229,7 +241,7 @@ class LiveMatchViewer:
             # 玩家行
             player_text = Text.assemble(
                 (f"{branch_char} ", "bright_black"),
-                _wind_with_seat(rel_wind, seat, is_dealer),
+                _wind_with_seat(rel_wind, seat, is_active),
                 (riichi_mark, "bold bright_red" if riichi_mark else ""),
                 "  ",
                 self._hand_to_rich(hand_str),
@@ -471,8 +483,16 @@ class LiveMatchViewer:
         Returns:
             Panel 对象（可用于 Live 更新）
         """
+        self._step += 1
         self._last_action_str = action_str
         self._last_reason = reason
+        # 解析 action_str 获取上一步的行动者（格式: "家{seat} {action}"）
+        self._last_actor_seat = None
+        if action_str.startswith("家"):
+            try:
+                self._last_actor_seat = int(action_str[1])
+            except (ValueError, IndexError):
+                pass
         self._update_stats(events)
         return self._build_layout(state, events)
 
@@ -593,7 +613,6 @@ def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3):
     from llm.turns import pending_actor_seats
 
     viewer = LiveMatchViewer(delay=delay, show_reason=False)
-    step_count = 0
 
     with Live(console=viewer.console, refresh_per_second=4) as live:
         # 初始状态
@@ -610,7 +629,7 @@ def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3):
         time.sleep(delay)
 
         # 模拟摸打循环
-        while step_count < steps:
+        while viewer._step < steps:
             if state.phase.value != "in_round":
                 break
 
@@ -663,13 +682,12 @@ def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3):
                 state = outcome.new_state
                 viewer._update_stats(outcome.events)
                 live.update(viewer.step(state, outcome.events, action_str))
-                step_count += 1
                 time.sleep(delay)
             except Exception as e:
                 viewer.console.print(f"[red]错误: {e}[/]")
                 break
 
-    viewer.console.print(f"\n[bold green]演示结束[/] 步数: {step_count}, 终局状态: {state.phase.value}")
+    viewer.console.print(f"\n[bold green]演示结束[/] 步数: {viewer._step}, 终局状态: {state.phase.value}")
 
 
 if __name__ == "__main__":
