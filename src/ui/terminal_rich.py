@@ -169,7 +169,7 @@ class LiveMatchViewer:
         self._last_actor_seat: int | None = None
 
     def _hand_to_rich(self, hand_str: str) -> Text:
-        """将手牌字符串转为带空格分隔的 Rich Text，宝牌用 [] 包裹并高亮。"""
+        """将手牌字符串转为带空格分隔的 Rich Text，宝牌用 [] 包裹并高亮，摸牌用 <> 包裹。"""
         if not hand_str:
             return Text("（空）", style="dim")
 
@@ -194,8 +194,25 @@ class LiveMatchViewer:
                     if not first:
                         result.append(" ")
                     first = False
-                    # 宝牌使用金色高亮
+                    # 宝牌使用红色底色
                     tile_text = _tile_to_rich(tile_code, is_dora=True)
+                    result.append(tile_text)
+                    i = end + 1
+                    continue
+
+            # 检查是否是摸牌标记 <牌码>
+            if hand_str[i] == "<":
+                # 找到匹配的 >
+                end = hand_str.find(">", i + 1)
+                if end != -1:
+                    # 提取尖括号内的内容
+                    tile_code = hand_str[i + 1:end]
+                    # 添加分隔符
+                    if not first:
+                        result.append(" ")
+                    first = False
+                    # 摸牌使用正常颜色（不加底色）
+                    tile_text = _tile_to_rich(tile_code, is_dora=False)
                     result.append(tile_text)
                     i = end + 1
                     continue
@@ -307,13 +324,8 @@ class LiveMatchViewer:
                         del hand_without_draw[draw_tile]
                 hand_str = self._hand_to_str_with_dora(hand_without_draw, board.revealed_indicators)
                 draw_str = draw_tile.to_code()
-                # 检查摸牌是否是宝牌
-                from kernel.scoring.dora import dora_from_indicators
-                dora_tiles = set(dora_from_indicators(board.revealed_indicators)) if board.revealed_indicators else set()
-                is_draw_dora = draw_tile in dora_tiles
-                if is_draw_dora:
-                    draw_str = f"[{draw_str}]"
-                hand_str = f"{hand_str} [{draw_str}]"
+                # 摸牌用 <> 包裹，与宝牌的 [] 区分
+                hand_str = f"{hand_str} <{draw_str}>"
             else:
                 hand_str = self._hand_to_str_with_dora(hand, board.revealed_indicators)
 
