@@ -168,8 +168,12 @@ class LiveMatchViewer:
         self._step = 0
         self._last_actor_seat: int | None = None
 
-    def _hand_to_rich(self, hand_str: str) -> Text:
-        """将手牌字符串转为带空格分隔的 Rich Text，宝牌用 [] 包裹并高亮，摸牌用 <> 包裹。"""
+    def _hand_to_rich(self, hand: Counter, dora_tiles: set) -> Text:
+        """将手牌转为 Rich Text，宝牌显示为红色底色。"""
+        from llm.table_snapshot_text import _counter_sorted_str
+        from kernel.replay_json import tile_from_code
+
+        hand_str = _counter_sorted_str(hand)
         if not hand_str:
             return Text("（空）", style="dim")
 
@@ -183,41 +187,7 @@ class LiveMatchViewer:
                 i += 1
                 continue
 
-            # 检查是否是宝牌标记 [牌码]
-            if hand_str[i] == "[":
-                # 找到匹配的 ]
-                end = hand_str.find("]", i + 1)
-                if end != -1:
-                    # 提取方括号内的内容
-                    tile_code = hand_str[i + 1:end]
-                    # 添加分隔符
-                    if not first:
-                        result.append(" ")
-                    first = False
-                    # 宝牌使用红色底色
-                    tile_text = _tile_to_rich(tile_code, is_dora=True)
-                    result.append(tile_text)
-                    i = end + 1
-                    continue
-
-            # 检查是否是摸牌标记 <牌码>
-            if hand_str[i] == "<":
-                # 找到匹配的 >
-                end = hand_str.find(">", i + 1)
-                if end != -1:
-                    # 提取尖括号内的内容
-                    tile_code = hand_str[i + 1:end]
-                    # 添加分隔符
-                    if not first:
-                        result.append(" ")
-                    first = False
-                    # 摸牌使用正常颜色（不加底色）
-                    tile_text = _tile_to_rich(tile_code, is_dora=False)
-                    result.append(tile_text)
-                    i = end + 1
-                    continue
-
-            # 读取普通牌
+            # 读取牌（可能是 '5sr' 或 '1m' 或 '7z'）
             if i + 1 < len(hand_str) and hand_str[i + 1] in "mpsz":
                 if i + 2 < len(hand_str) and hand_str[i + 2] == "r":
                     tile_code = hand_str[i:i + 3]
@@ -229,7 +199,15 @@ class LiveMatchViewer:
                 if not first:
                     result.append(" ")
                 first = False
-                result.append(_tile_to_rich(tile_code))
+
+                # 检查是否是宝牌
+                try:
+                    tile = tile_from_code(tile_code)
+                    is_dora = tile in dora_tiles
+                except:
+                    is_dora = False
+
+                result.append(_tile_to_rich(tile_code, is_dora=is_dora))
             else:
                 i += 1
 
@@ -307,6 +285,10 @@ class LiveMatchViewer:
 
             # 手牌
             hand = board.hands[seat]
+            # 计算宝牌集合
+            from kernel.scoring.dora import dora_from_indicators
+            dora_tiles = set(dora_from_indicators(board.revealed_indicators)) if board.revealed_indicators else set()
+
             # 在 MUST_DISCARD 阶段，当前玩家把摸牌单独显示
             is_must_discard = (
                 board.turn_phase == TurnPhase.MUST_DISCARD
@@ -322,12 +304,15 @@ class LiveMatchViewer:
                     hand_without_draw[draw_tile] -= 1
                     if hand_without_draw[draw_tile] == 0:
                         del hand_without_draw[draw_tile]
-                hand_str = self._hand_to_str_with_dora(hand_without_draw, board.revealed_indicators)
-                draw_str = draw_tile.to_code()
-                # 摸牌用 <> 包裹，与宝牌的 [] 区分
-                hand_str = f"{hand_str} <{draw_str}>"
+                # 渲染手牌（不含摸牌）
+                hand_rich = self._hand_to_rich(hand_without_draw, dora_tiles)
+                # 渲染摸牌
+                draw_is_dora = draw_tile in dora_tiles
+                draw_rich = _tile_to_rich(draw_tile.to_code(), is_dora=draw_is_dora)
+                # 合并：手牌 + 摸牌（用空格分隔）
+                hand_text = Text.assemble(hand_rich, " ", draw_rich)
             else:
-                hand_str = self._hand_to_str_with_dora(hand, board.revealed_indicators)
+                hand_text = self._hand_to_rich(hand, dora_tiles)
 
             # 副露
             melds = board.melds[seat]
@@ -352,7 +337,7 @@ class LiveMatchViewer:
                 _wind_with_seat(rel_wind, seat, is_active),
                 (riichi_mark, "bold bright_red" if riichi_mark else ""),
                 "  ",
-                self._hand_to_rich(hand_str),
+                hand_text,
             )
             lines.append(player_text)
 
