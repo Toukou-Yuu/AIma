@@ -82,15 +82,20 @@ def _tile_to_rich(tile_code: str, is_dora: bool = False) -> Text:
     suit = tile_code[0] if tile_code[0] in "mpsz" else tile_code[-1]
     color = _SUIT_COLORS.get(suit, "white")
 
-    # 赤宝牌标红
-    if "r" in tile_code:
-        color = "bright_red"
-
-    # 宝牌使用亮青色高亮（兼容性考虑，避免使用真彩色）
+    # 宝牌使用红色底色，字体回归正常颜色
     if is_dora:
-        style = "bold bright_cyan"
+        # 获取正常颜色（字牌用 bright_yellow，其他用 suit color）
+        if suit == "z":
+            fg_color = "bright_yellow"
+        else:
+            fg_color = color
+        style = f"bold {fg_color} on bright_red"
     else:
         style = color
+
+    # 赤宝牌标红（覆盖普通样式）
+    if "r" in tile_code:
+        style = "bright_red"
 
     # 字牌用汉字
     if suit == "z":
