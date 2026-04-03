@@ -86,9 +86,9 @@ def _tile_to_rich(tile_code: str, is_dora: bool = False) -> Text:
     if "r" in tile_code:
         color = "bright_red"
 
-    # 宝牌使用金色高亮
+    # 宝牌使用真彩色金色高亮
     if is_dora:
-        style = "bold bright_yellow"
+        style = "bold rgb(255, 215, 0)"
     else:
         style = color
 
