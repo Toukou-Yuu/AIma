@@ -1,0 +1,27 @@
+# 完整 AI 对局配置（需配置 API Key）
+# 用法: python -m llm --config configs/full_match.yaml
+
+match:
+  seed: 42
+  max_steps: 1000
+
+llm:
+  timeout_sec: 120
+  max_tokens: 1024
+  request_delay: 0.5
+  max_history_rounds: 10
+  clear_history_per_hand: false
+
+logging:
+  session: ""             # 自动生成时间戳文件名
+  json: null
+  session_audit: true     # 启用审计日志
+
+watch:
+  enabled: false
+  delay: 0.5
+  show_reason: true
+
+debug:
+  verbose: true           # 显示详细进度
+  dry_run: false

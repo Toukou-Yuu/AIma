@@ -1,0 +1,27 @@
+# 实时观战配置（带 Rich UI）
+# 用法: python -m llm --config configs/watch_mode.yaml
+
+match:
+  seed: 42
+  max_steps: 500
+
+llm:
+  timeout_sec: 120
+  max_tokens: 1024
+  request_delay: 0.5
+  max_history_rounds: 10
+  clear_history_per_hand: false
+
+logging:
+  session: null           # 不生成日志文件
+  json: null
+  session_audit: false
+
+watch:
+  enabled: true
+  delay: 0.5
+  show_reason: true       # 显示 AI 思考理由
+
+debug:
+  verbose: false
+  dry_run: false

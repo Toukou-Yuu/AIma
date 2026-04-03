@@ -9,6 +9,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from kernel.replay import ReplayError, replay_from_actions
 from kernel.replay_json import actions_from_match_log
@@ -95,6 +96,74 @@ def _load_dotenv_if_available() -> None:
     load_dotenv()
 
 
+def _load_yaml_config(path: str | None) -> dict[str, Any]:
+    """加载 YAML 配置文件，若路径为空或文件不存在返回空 dict。"""
+    if path is None:
+        return {}
+    p = Path(path)
+    if not p.exists():
+        print(f"配置文件不存在: {p}", file=sys.stderr)
+        return {}
+    try:
+        import yaml
+    except ImportError:
+        print("需要 PyYAML: pip install pyyaml", file=sys.stderr)
+        return {}
+    try:
+        content = p.read_text(encoding="utf-8")
+        cfg = yaml.safe_load(content)
+        return cfg if isinstance(cfg, dict) else {}
+    except Exception as e:
+        print(f"配置文件解析失败: {e}", file=sys.stderr)
+        return {}
+
+
+def _merge_config(
+    yaml_cfg: dict[str, Any],
+    cli_args: argparse.Namespace,
+) -> argparse.Namespace:
+    """合并 YAML 配置与 CLI 参数，CLI 优先级更高。
+
+    只合并 CLI 显式指定的参数（非 None 或布尔值已设置）。
+    """
+    # YAML 默认值映射
+    defaults = {
+        "seed": yaml_cfg.get("match", {}).get("seed", 0),
+        "max_steps": yaml_cfg.get("match", {}).get("max_steps", 500),
+        "dry_run": yaml_cfg.get("debug", {}).get("dry_run", False),
+        "log_json": yaml_cfg.get("logging", {}).get("json"),
+        "log_session": yaml_cfg.get("logging", {}).get("session"),
+        "verbose": yaml_cfg.get("debug", {}).get("verbose", False),
+        "request_delay": yaml_cfg.get("llm", {}).get("request_delay", 0.5),
+        "watch": yaml_cfg.get("watch", {}).get("enabled", False),
+        "watch_delay": yaml_cfg.get("watch", {}).get("delay", 0.3),
+        "max_history_rounds": yaml_cfg.get("llm", {}).get("max_history_rounds", 10),
+        "clear_history_per_hand": yaml_cfg.get("llm", {}).get("clear_history_per_hand", False),
+        "session_audit": yaml_cfg.get("logging", {}).get("session_audit", False),
+        "show_reason": yaml_cfg.get("watch", {}).get("show_reason", True),
+    }
+
+    # 显式指定的 CLI 参数覆盖 YAML
+    result = argparse.Namespace()
+    for key, default_val in defaults.items():
+        cli_val = getattr(cli_args, key, None)
+        # 对于布尔值，需要检查是否通过命令行显式设置（argparse 无法直接区分）
+        # 这里简化处理：CLI 非 None 值覆盖
+        if cli_val is not None or (isinstance(default_val, bool) and key in sys.argv):
+            setattr(result, key, cli_val)
+        else:
+            setattr(result, key, default_val)
+
+    # 特殊处理：若 log_session 非 null，自动启用 session_audit
+    if result.log_session is not None:
+        result.session_audit = True
+
+    # 特殊处理 replay（没有默认值，CLI 显式指定才覆盖）
+    result.replay = getattr(cli_args, "replay", None)
+
+    return result
+
+
 def _cmd_replay(path: str) -> int:
     """从牌谱 JSON 执行 ``replay_from_actions``，打印终局摘要。"""
     raw = Path(path).read_text(encoding="utf-8")
@@ -130,7 +199,17 @@ def _cmd_watch_replay(path: str, delay: float) -> int:
     return 0
 
 
-def _cmd_watch_dry_run(seed: int, steps: int, delay: float, dry_run: bool = True, max_history_rounds: int = 10, clear_history_per_hand: bool = False) -> int:
+def _cmd_watch_dry_run(
+    seed: int,
+    steps: int,
+    delay: float,
+    dry_run: bool = True,
+    max_history_rounds: int = 10,
+    clear_history_per_hand: bool = False,
+    show_reason: bool = True,
+    timeout_sec: float | None = None,
+    max_tokens: int | None = None,
+) -> int:
     """实时观战（Rich + dry-run 或真实 LLM 模式）。"""
     try:
         from ui.terminal_rich import LiveMatchCallback
@@ -141,17 +220,20 @@ def _cmd_watch_dry_run(seed: int, steps: int, delay: float, dry_run: bool = True
 
     client = None
     if not dry_run:
-        cfg = load_llm_config()
-        if cfg is None:
+        llm_cfg = load_llm_config(
+            timeout_sec=timeout_sec,
+            max_tokens=max_tokens,
+        )
+        if llm_cfg is None:
             print(
                 "未设置 API Key（见 AIMA_OPENAI_* / AIMA_ANTHROPIC_*）。"
                 "使用 --dry-run 可本地试跑。",
                 file=sys.stderr,
             )
             return 2
-        client = build_client(cfg)
+        client = build_client(llm_cfg)
 
-    with LiveMatchCallback(delay=delay, show_reason=not dry_run) as callback:
+    with LiveMatchCallback(delay=delay, show_reason=show_reason and not dry_run) as callback:
         rr = run_llm_match(
             seed=seed,
             max_steps=steps,
@@ -176,23 +258,36 @@ def main(argv: list[str] | None = None) -> int:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
+    # 第一遍解析：只取 --config（帮助信息会在第二遍完整显示）
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config", metavar="PATH", help="YAML 配置文件路径")
+    pre_args, remaining = pre_parser.parse_known_args(argv)
+
+    # 加载 YAML 配置
+    yaml_cfg = _load_yaml_config(pre_args.config)
+
+    # 第二遍解析：完整参数列表
     p = argparse.ArgumentParser(description="AIma LLM 牌手跑局（内核闭环）")
-    p.add_argument("--seed", type=int, default=0, help="首局洗牌种子")
-    p.add_argument("--max-steps", type=int, default=500, help="最大 apply 步数（含局间 NOOP）")
+    p.add_argument("--config", metavar="PATH", help="YAML 配置文件路径")
+    p.add_argument("--seed", type=int, default=None, help="首局洗牌种子（默认 0）")
+    p.add_argument("--max-steps", type=int, default=None, help="最大 apply 步数（默认 500）")
     p.add_argument(
         "--dry-run",
         action="store_true",
+        default=None,
         help="不调用 API；每步取 legal_actions 首项（确定性）",
     )
     p.add_argument(
         "--log-json",
         metavar="PATH",
+        default=None,
         help="跑局结束后将牌谱写入指定路径的 JSON（与 --log-session 可同用）",
     )
     p.add_argument(
         "--log-session",
         nargs="?",
         const="",
+        default=None,
         metavar="STEM",
         help=(
             "写入配对日志：logs/replay/{STEM}.json（对局/牌谱）、"
@@ -209,62 +304,71 @@ def main(argv: list[str] | None = None) -> int:
         "-v",
         "--verbose",
         action="store_true",
+        default=None,
         help="每步 apply 后向 stderr 打印阶段摘要（对局进度）",
     )
     p.add_argument(
         "--request-delay",
         type=float,
-        default=0.5,
+        default=None,
         metavar="SEC",
-        help="每次调用 LLM API 前的间隔秒数（减压控/减少连接被远端掐断）；默认 0.5；设为 0 可关闭；--dry-run 不请求 API，此项无效",
+        help="每次调用 LLM API 前的间隔秒数（默认 0.5）",
     )
     p.add_argument(
         "--watch",
         action="store_true",
+        default=None,
         help="实时终端观战（需要 rich）；与 --dry-run 同用可看实时演示",
     )
     p.add_argument(
         "--watch-delay",
         type=float,
-        default=0.3,
+        default=None,
         metavar="SEC",
-        help="--watch 模式每步间隔秒数；默认 0.3",
+        help="--watch 模式每步间隔秒数（默认 0.3）",
     )
     p.add_argument(
         "--max-history-rounds",
         type=int,
-        default=10,
+        default=None,
         metavar="N",
         help="LLM 每席保留的最大对话轮数（默认 10，设为 0 则禁用历史）",
     )
     p.add_argument(
         "--clear-history-per-hand",
         action="store_true",
+        default=None,
         help="每局开始时清空该席的历史消息（默认跨局保留）",
     )
     args = p.parse_args(argv)
 
+    # 合并配置（CLI 覆盖 YAML）
+    cfg = _merge_config(yaml_cfg, args)
+
     # --watch 模式优先处理
-    if args.watch:
-        if args.replay:
+    if cfg.watch:
+        if cfg.replay:
             # 从牌谱实时观战
-            return _cmd_watch_replay(args.replay, args.watch_delay)
+            return _cmd_watch_replay(cfg.replay, cfg.watch_delay)
         else:
             # 实时观战（dry-run 或真实 LLM）
             return _cmd_watch_dry_run(
-                args.seed,
-                args.max_steps,
-                args.watch_delay,
-                dry_run=args.dry_run,
-                max_history_rounds=args.max_history_rounds,
-                clear_history_per_hand=args.clear_history_per_hand,
+                cfg.seed,
+                cfg.max_steps,
+                cfg.watch_delay,
+                dry_run=cfg.dry_run,
+                max_history_rounds=cfg.max_history_rounds,
+                clear_history_per_hand=cfg.clear_history_per_hand,
+                show_reason=cfg.show_reason,
+                timeout_sec=yaml_cfg.get("llm", {}).get("timeout_sec"),
+                max_tokens=yaml_cfg.get("llm", {}).get("max_tokens"),
             )
 
-    if args.replay:
-        return _cmd_replay(args.replay)
+    if cfg.replay:
+        return _cmd_replay(cfg.replay)
 
     try:
-        log_stem = _resolve_log_stem(args.log_session)
+        log_stem = _resolve_log_stem(cfg.log_session)
     except ValueError as e:
         print(str(e), file=sys.stderr)
         return 2
@@ -290,43 +394,46 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     client = None
-    if not args.dry_run:
-        cfg = load_llm_config()
-        if cfg is None:
+    if not cfg.dry_run:
+        llm_cfg = load_llm_config(
+            timeout_sec=yaml_cfg.get("llm", {}).get("timeout_sec"),
+            max_tokens=yaml_cfg.get("llm", {}).get("max_tokens"),
+        )
+        if llm_cfg is None:
             print(
                 "未设置 API Key（见 AIMA_OPENAI_* / AIMA_ANTHROPIC_*）。"
                 "使用 --dry-run 可本地试跑。",
                 file=sys.stderr,
             )
             return 2
-        client = build_client(cfg)
+        client = build_client(llm_cfg)
 
     if simple_session_path is not None:
         with simple_session_path.open("w", encoding="utf-8") as simple_fp:
             rr = run_llm_match(
-                seed=args.seed,
-                max_steps=args.max_steps,
+                seed=cfg.seed,
+                max_steps=cfg.max_steps,
                 client=client,
-                dry_run=args.dry_run,
-                verbose=args.verbose,
-                session_audit=log_stem is not None,
+                dry_run=cfg.dry_run,
+                verbose=cfg.verbose,
+                session_audit=cfg.session_audit or log_stem is not None,
                 simple_log_file=simple_fp,
-                request_delay_seconds=0.0 if args.dry_run else args.request_delay,
-                max_history_rounds=args.max_history_rounds,
-                clear_history_on_new_hand=args.clear_history_per_hand,
+                request_delay_seconds=0.0 if cfg.dry_run else cfg.request_delay,
+                max_history_rounds=cfg.max_history_rounds,
+                clear_history_on_new_hand=cfg.clear_history_per_hand,
             )
     else:
         rr = run_llm_match(
-            seed=args.seed,
-            max_steps=args.max_steps,
+            seed=cfg.seed,
+            max_steps=cfg.max_steps,
             client=client,
-            dry_run=args.dry_run,
-            verbose=args.verbose,
-            session_audit=log_stem is not None,
+            dry_run=cfg.dry_run,
+            verbose=cfg.verbose,
+            session_audit=cfg.session_audit or log_stem is not None,
             simple_log_file=None,
-            request_delay_seconds=0.0 if args.dry_run else args.request_delay,
-            max_history_rounds=args.max_history_rounds,
-            clear_history_on_new_hand=args.clear_history_per_hand,
+            request_delay_seconds=0.0 if cfg.dry_run else cfg.request_delay,
+            max_history_rounds=cfg.max_history_rounds,
+            clear_history_on_new_hand=cfg.clear_history_per_hand,
         )
     print(f"steps={rr.steps} reason={rr.stopped_reason!r} phase={rr.final_state.phase.value}")
     if log_stem is not None:
@@ -339,8 +446,8 @@ def main(argv: list[str] | None = None) -> int:
             len(rr.events_wire),
         )
     payload = json.dumps(rr.as_match_log(), ensure_ascii=False, indent=2)
-    if args.log_json:
-        pth = Path(args.log_json)
+    if cfg.log_json:
+        pth = Path(cfg.log_json)
         pth.parent.mkdir(parents=True, exist_ok=True)
         pth.write_text(payload, encoding="utf-8")
     if replay_session_path is not None:

@@ -26,7 +26,12 @@ def _env(name: str, default: str | None = None) -> str | None:
     return default
 
 
-def load_llm_config(*, seat: int | None = None) -> LLMClientConfig | None:
+def load_llm_config(
+    *,
+    seat: int | None = None,
+    timeout_sec: float | None = None,
+    max_tokens: int | None = None,
+) -> LLMClientConfig | None:
     """
     读取配置。未设置任何 key 时返回 ``None``（调用方应用 dry-run / 跳过）。
 
@@ -40,6 +45,12 @@ def load_llm_config(*, seat: int | None = None) -> LLMClientConfig | None:
     按席覆盖（可选）::
 
         AIMA_OPENAI_API_KEY_SEAT0=...
+
+    参数::
+
+        seat: 按席覆盖 key
+        timeout_sec: 覆盖超时时间（秒）
+        max_tokens: 覆盖最大 token 数
     """
     provider_s = (_env("AIMA_LLM_PROVIDER", "openai") or "openai").lower()
     if provider_s not in ("openai", "anthropic"):
@@ -62,6 +73,13 @@ def load_llm_config(*, seat: int | None = None) -> LLMClientConfig | None:
 
     timeout_s = float(_env("AIMA_LLM_TIMEOUT_SEC", "120") or "120")
     max_tok = int(_env("AIMA_LLM_MAX_TOKENS", "1024") or "1024")
+
+    # YAML 配置覆盖环境变量
+    if timeout_sec is not None:
+        timeout_s = timeout_sec
+    if max_tokens is not None:
+        max_tok = max_tokens
+
     return LLMClientConfig(
         provider=provider,
         base_url=base or "",

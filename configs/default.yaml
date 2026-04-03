@@ -1,0 +1,86 @@
+# AIma LLM 对局配置
+# 用法: python -m llm --config configs/default.yaml
+# CLI 参数优先级高于本配置文件
+
+# ==================== 对局基本设置 ====================
+match:
+  # 洗牌种子，整数（0 ~ 2^31-1）
+  # 示例: 0, 42, 20240315
+  seed: 42
+
+  # 最大 apply 步数（含局间 NOOP），正整数
+  # 建议: 测试用 50-100，完整对局 500-1000
+  max_steps: 500
+
+# ==================== LLM 行为设置 ====================
+llm:
+  # API 请求超时时间（秒），正数
+  # 建议: 30-300，网络不稳定时增大
+  timeout_sec: 120
+
+  # 最大生成 token 数，正整数
+  # 建议: 512-2048，一般 1024 足够
+  max_tokens: 1024
+
+  # 每次 API 调用前的间隔（秒），非负数
+  # 用途: 减压控/防连接被掐断
+  # 建议: 0（dry-run）~ 1.0（生产环境）
+  request_delay: 0.5
+
+  # 每席保留的历史对话轮数，非负整数
+  # 0: 禁用历史，仅当前观测
+  # 10: 默认保留 10 轮对话
+  max_history_rounds: 10
+
+  # 新一局开始时是否清空历史，布尔值
+  # false: 跨局保留（AI 记得之前的打法）
+  # true: 每局清空（AI 只记忆当前局）
+  clear_history_per_hand: false
+
+# ==================== 日志设置 ====================
+logging:
+  # 会话日志文件名，可选以下值:
+  # - null: 不生成会话日志
+  # - "": 空字符串，自动生成时间戳文件名（如 20240324-153045）
+  # - "自定义名称": 使用指定名称（如 my_match）
+  # 生成文件: logs/replay/{name}.json, logs/debug/{name}.log, logs/simple/{name}.txt
+  session: null
+
+  # 额外 JSON 牌谱输出路径，可选:
+  # - null: 不额外输出
+  # - "path/to/file.json": 输出到指定路径
+  json: null
+
+  # 是否启用审计日志，布尔值
+  # 与 session 关联: 若 session 非 null，自动启用
+  # 作用: 向 logs/debug/*.log 写入每步内核动作摘要和模型解析结果
+  session_audit: false
+
+# ==================== 实时观战设置 ====================
+watch:
+  # 是否启用 Rich 实时终端观战，布尔值
+  # true: 启用（需要安装 rich: pip install rich）
+  # false: 后台运行（仅生成日志）
+  enabled: false
+
+  # 观战每步间隔（秒），非负数
+  # 建议: 0.1-1.0，值越小动画越快
+  delay: 0.3
+
+  # 是否显示 AI 决策理由，布尔值
+  # 仅在非 dry-run 且 watch.enabled=true 时有效
+  # true: 显示 "why" 字段（如 "现物且维持一向听"）
+  # false: 仅显示动作（如 "discard 3m"）
+  show_reason: true
+
+# ==================== 调试选项 ====================
+debug:
+  # 详细模式，布尔值
+  # true: 每步 apply 后向 stderr 打印阶段摘要（适合调试进度）
+  # false: 静默运行
+  verbose: false
+
+  # Dry-run 模式，布尔值
+  # true: 不调用 API，每步取 legal_actions 首项（确定性，快速测试）
+  # false: 真实调用 LLM API（需要配置 API Key）
+  dry_run: false
