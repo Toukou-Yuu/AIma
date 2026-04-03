@@ -86,10 +86,9 @@ def _tile_to_rich(tile_code: str, is_dora: bool = False) -> Text:
     if "r" in tile_code:
         color = "bright_red"
 
-    # 宝牌使用炫彩高亮（非赤宝牌时）- 使用亮品红色加粗
-    if is_dora and "r" not in tile_code:
-        # 炫彩效果：使用 bright_magenta + bold + reverse
-        style = "bold bright_magenta"
+    # 宝牌使用金色高亮
+    if is_dora:
+        style = "bold bright_yellow"
     else:
         style = color
 
@@ -165,17 +164,54 @@ class LiveMatchViewer:
         self._last_actor_seat: int | None = None
 
     def _hand_to_rich(self, hand_str: str) -> Text:
-        """将手牌字符串转为带空格分隔的 Rich Text。"""
-        tiles = _parse_hand_tiles(hand_str)
-        if not tiles:
+        """将手牌字符串转为带空格分隔的 Rich Text，宝牌用 [] 包裹并高亮。"""
+        if not hand_str:
             return Text("（空）", style="dim")
 
         result = Text()
-        for i, t in enumerate(tiles):
-            if i > 0:
-                result.append(" ")
-            result.append(t)
-        return result
+        i = 0
+        first = True
+
+        while i < len(hand_str):
+            # 跳过空格
+            if hand_str[i] == " ":
+                i += 1
+                continue
+
+            # 检查是否是宝牌标记 [牌码]
+            if hand_str[i] == "[":
+                # 找到匹配的 ]
+                end = hand_str.find("]", i + 1)
+                if end != -1:
+                    # 提取方括号内的内容
+                    tile_code = hand_str[i + 1:end]
+                    # 添加分隔符
+                    if not first:
+                        result.append(" ")
+                    first = False
+                    # 宝牌使用金色高亮
+                    tile_text = _tile_to_rich(tile_code, is_dora=True)
+                    result.append(tile_text)
+                    i = end + 1
+                    continue
+
+            # 读取普通牌
+            if i + 1 < len(hand_str) and hand_str[i + 1] in "mpsz":
+                if i + 2 < len(hand_str) and hand_str[i + 2] == "r":
+                    tile_code = hand_str[i:i + 3]
+                    i += 3
+                else:
+                    tile_code = hand_str[i:i + 2]
+                    i += 2
+
+                if not first:
+                    result.append(" ")
+                first = False
+                result.append(_tile_to_rich(tile_code))
+            else:
+                i += 1
+
+        return result if result.plain else Text("（空）", style="dim")
 
     def _render_header(self, state: GameState) -> Table:
         """渲染顶部场况信息表。"""
@@ -264,11 +300,17 @@ class LiveMatchViewer:
                     hand_without_draw[draw_tile] -= 1
                     if hand_without_draw[draw_tile] == 0:
                         del hand_without_draw[draw_tile]
-                hand_str = self._hand_to_str(hand_without_draw)
+                hand_str = self._hand_to_str_with_dora(hand_without_draw, board.revealed_indicators)
                 draw_str = draw_tile.to_code()
+                # 检查摸牌是否是宝牌
+                from kernel.scoring.dora import dora_from_indicators
+                dora_tiles = set(dora_from_indicators(board.revealed_indicators)) if board.revealed_indicators else set()
+                is_draw_dora = draw_tile in dora_tiles
+                if is_draw_dora:
+                    draw_str = f"[{draw_str}]"
                 hand_str = f"{hand_str} [{draw_str}]"
             else:
-                hand_str = self._hand_to_str(hand)
+                hand_str = self._hand_to_str_with_dora(hand, board.revealed_indicators)
 
             # 副露
             melds = board.melds[seat]
@@ -342,10 +384,61 @@ class LiveMatchViewer:
                 parts.append(f"加[{tiles_s}]")
         return " ".join(parts) if parts else "无"
 
-    def _hand_to_str(self, hand) -> str:
-        """Counter[Tile] -> 排序后的牌码字符串。"""
+    def _hand_to_str_with_dora(self, hand, revealed_indicators: tuple) -> str:
+        """手牌 -> 字符串，宝牌用 [] 包裹高亮。"""
+        from kernel.scoring.dora import dora_from_indicators
+
+        dora_tiles = set()
+        if revealed_indicators:
+            dora_tiles = set(dora_from_indicators(revealed_indicators))
+
+        # 获取排序后的手牌列表
         from llm.table_snapshot_text import _counter_sorted_str
-        return _counter_sorted_str(hand)
+        hand_str = _counter_sorted_str(hand)
+
+        # 如果手牌为空
+        if not hand_str:
+            return ""
+
+        # 解析手牌并标记宝牌
+        parts = []
+        i = 0
+        while i < len(hand_str):
+            # 跳过空格
+            if hand_str[i] == " ":
+                i += 1
+                continue
+            # 读取牌（可能是 '5sr' 或 '1m' 或 '7z'）
+            if i + 1 < len(hand_str) and hand_str[i + 1] in "mpsz":
+                if i + 2 < len(hand_str) and hand_str[i + 2] == "r":
+                    tile_code = hand_str[i:i + 3]
+                    i += 3
+                else:
+                    tile_code = hand_str[i:i + 2]
+                    i += 2
+
+                # 检查是否是宝牌
+                from kernel.replay_json import tile_from_code
+                try:
+                    tile = tile_from_code(tile_code)
+                    is_dora = tile in dora_tiles
+                    # 赤五也算宝牌（当宝牌是5时）
+                    if not is_dora and tile.is_red:
+                        for d in dora_tiles:
+                            if d.suit == tile.suit and d.rank == 5:
+                                is_dora = True
+                                break
+
+                    if is_dora:
+                        parts.append(f"[{tile_code}]")
+                    else:
+                        parts.append(tile_code)
+                except:
+                    parts.append(tile_code)
+            else:
+                i += 1
+
+        return " ".join(parts)
 
     def _dora_indicators_to_rich(self, indicators: tuple) -> list:
         """宝牌指示器列表 -> Rich Text 列表（炫彩效果）。"""
