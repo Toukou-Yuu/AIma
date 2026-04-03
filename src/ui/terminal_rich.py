@@ -61,8 +61,13 @@ _SUIT_COLORS = {
 _WIND_NAMES = ["东", "南", "西", "北"]
 
 
-def _tile_to_rich(tile_code: str) -> Text:
-    """将牌码（如'1m'、'5sr'、'7z'）渲染为带颜色的 Text。"""
+def _tile_to_rich(tile_code: str, is_dora: bool = False) -> Text:
+    """将牌码（如'1m'、'5sr'、'7z'）渲染为带颜色的 Text。
+
+    Args:
+        tile_code: 牌码
+        is_dora: 是否为宝牌（使用金色高亮）
+    """
     if not tile_code:
         return Text("")
 
@@ -73,13 +78,20 @@ def _tile_to_rich(tile_code: str) -> Text:
     if "r" in tile_code:
         color = "bright_red"
 
+    # 宝牌使用金色高亮（非赤宝牌时）
+    if is_dora and "r" not in tile_code:
+        color = "bright_yellow"
+        style = f"bold {color}"
+    else:
+        style = color
+
     # 字牌用汉字
     if suit == "z":
         honor_map = {"1": "東", "2": "南", "3": "西", "4": "北", "5": "白", "6": "發", "7": "中"}
         display = honor_map.get(tile_code[0], tile_code[0])
-        return Text(display, style=f"bold {color}")
+        return Text(display, style=style)
 
-    return Text(tile_code.replace("r", ""), style=color)
+    return Text(tile_code.replace("r", ""), style=style)
 
 
 def _parse_hand_tiles(hand_str: str) -> list[Text]:
@@ -178,6 +190,13 @@ class LiveMatchViewer:
         if board:
             remaining = len(board.live_wall) - board.live_draw_index
             header.add_row("余牌", str(remaining))
+
+            # 宝牌指示器
+            if board.revealed_indicators:
+                dora_text = Text.assemble(
+                    *(self._dora_indicators_to_rich(board.revealed_indicators))
+                )
+                header.add_row("宝牌", dora_text)
 
         # 点数
         scores = Table(show_header=False, box=None, padding=(0, 1))
@@ -320,6 +339,16 @@ class LiveMatchViewer:
         from llm.table_snapshot_text import _counter_sorted_str
         return _counter_sorted_str(hand)
 
+    def _dora_indicators_to_rich(self, indicators: tuple) -> list:
+        """宝牌指示器列表 -> Rich Text 列表。"""
+        result = []
+        for i, tile in enumerate(indicators):
+            if i > 0:
+                result.append((" ", ""))
+            # 宝牌指示器使用特殊高亮
+            result.append(_tile_to_rich(tile.to_code(), is_dora=True))
+        return result
+
     def _melds_to_str(self, melds, owner_seat: int, dealer_seat: int) -> str:
         """副露列表 -> 可读字符串。"""
         from llm.table_snapshot_text import _meld_segment
@@ -385,7 +414,7 @@ class LiveMatchViewer:
             return Text.assemble(
                 ("配牌 ", "dim"),
                 ("宝牌: ", "dim"),
-                _tile_to_rich(ev.dora_indicator.to_code()),
+                _tile_to_rich(ev.dora_indicator.to_code(), is_dora=True),
             )
 
         if isinstance(ev, DrawTileEvent):
