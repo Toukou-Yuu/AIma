@@ -355,9 +355,18 @@ class LiveMatchViewer:
                 result.append((" ", ""))
             # 宝牌指示器使用炫彩虹色（每个指示器不同颜色）
             color = _DORA_RAINBOW[i % len(_DORA_RAINBOW)]
-            tile_text = _tile_to_rich(tile.to_code(), is_dora=False)
-            # 覆盖样式为炫彩色
-            tile_text.stylize(f"bold {color}")
+            # 直接创建带炫彩样式的 Text，不经过 _tile_to_rich
+            tile_code = tile.to_code()
+            suit = tile_code[0] if tile_code[0] in "mpsz" else tile_code[-1]
+
+            # 字牌用汉字
+            if suit == "z":
+                honor_map = {"1": "東", "2": "南", "3": "西", "4": "北", "5": "白", "6": "發", "7": "中"}
+                display = honor_map.get(tile_code[0], tile_code[0])
+                tile_text = Text(display, style=f"bold {color}")
+            else:
+                tile_text = Text(tile_code.replace("r", ""), style=f"bold {color}")
+
             result.append(tile_text)
         return result
 
