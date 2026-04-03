@@ -1,5 +1,6 @@
-# AIma LLM 对局配置
-# 用法: python -m llm --config configs/default.yaml
+# AIma LLM 对局配置（完整参考模板）
+# 用法: python -m llm --config configs/watch_mode.yaml  （推荐）
+#       python -m llm --config configs/quick_test.yaml   （快速测试）
 # CLI 参数优先级高于本配置文件
 
 # ==================== 对局基本设置 ====================
@@ -44,7 +45,7 @@ logging:
   # - "": 空字符串，自动生成时间戳文件名（如 20240324-153045）
   # - "自定义名称": 使用指定名称（如 my_match）
   # 生成文件: logs/replay/{name}.json, logs/debug/{name}.log, logs/simple/{name}.txt
-  session: null
+  session: ""
 
   # 额外 JSON 牌谱输出路径，可选:
   # - null: 不额外输出
@@ -54,14 +55,14 @@ logging:
   # 是否启用审计日志，布尔值
   # 与 session 关联: 若 session 非 null，自动启用
   # 作用: 向 logs/debug/*.log 写入每步内核动作摘要和模型解析结果
-  session_audit: false
+  session_audit: true
 
 # ==================== 实时观战设置 ====================
 watch:
   # 是否启用 Rich 实时终端观战，布尔值
   # true: 启用（需要安装 rich: pip install rich）
   # false: 后台运行（仅生成日志）
-  enabled: false
+  enabled: true
 
   # 观战每步间隔（秒），非负数
   # 建议: 0.1-1.0，值越小动画越快
