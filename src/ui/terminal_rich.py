@@ -240,7 +240,7 @@ class LiveMatchViewer:
                 dora_text = Text.assemble(
                     *(self._dora_indicators_to_rich(board.revealed_indicators))
                 )
-                header.add_row("宝牌", dora_text)
+                header.add_row("宝牌指示器", dora_text)
 
         # 点数
         scores = Table(show_header=False, box=None, padding=(0, 1))
