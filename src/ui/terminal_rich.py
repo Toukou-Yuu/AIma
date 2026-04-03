@@ -317,7 +317,7 @@ class LiveMatchViewer:
             melds_str = self._melds_to_str(melds, seat, dealer)
 
             # 牌河
-            river_str = self._river_to_str(board.river, seat)
+            river_str = self._river_to_str(board.river, seat, board.revealed_indicators)
 
             # 立直状态
             is_riichi = board.riichi[seat] if board.riichi else False
@@ -348,7 +348,7 @@ class LiveMatchViewer:
                 lines.append(meld_text)
 
             # 牌河行
-            river_text_obj = self._river_to_str(board.river, seat)
+            river_text_obj = self._river_to_str(board.river, seat, board.revealed_indicators)
             if river_text_obj.plain.strip():  # 检查内容是否非空
                 river_line = Text.assemble(
                     ("│   └── " if not is_last else "    └── ", "bright_black"),
@@ -441,27 +441,13 @@ class LiveMatchViewer:
         return " ".join(parts)
 
     def _dora_indicators_to_rich(self, indicators: tuple) -> list:
-        """宝牌指示器列表 -> Rich Text 列表（炫彩效果）。"""
+        """宝牌指示器列表 -> Rich Text 列表（正常颜色，不特殊处理）。"""
         result = []
         for i, tile in enumerate(indicators):
             if i > 0:
                 result.append((" ", ""))
-            # 宝牌指示器使用炫彩虹色（每个指示器不同颜色）
-            color = _DORA_RAINBOW[i % len(_DORA_RAINBOW)]
-            # 直接创建带炫彩样式的 Text，不经过 _tile_to_rich
-            tile_code = tile.to_code()
-            suit = tile_code[0] if tile_code[0] in "mpsz" else tile_code[-1]
-
-            # 字牌用汉字
-            if suit == "z":
-                honor_map = {"1": "東", "2": "南", "3": "西", "4": "北", "5": "白", "6": "發", "7": "中"}
-                display = honor_map.get(tile_code[0], tile_code[0])
-                # 使用反转色确保可见
-                tile_text = Text(display, style=f"bold {color} reverse")
-            else:
-                tile_text = Text(tile_code.replace("r", ""), style=f"bold {color} reverse")
-
-            result.append(tile_text)
+            # 宝牌指示器使用正常颜色，不特殊处理
+            result.append(_tile_to_rich(tile.to_code()))
         return result
 
     def _melds_to_str(self, melds, owner_seat: int, dealer_seat: int) -> str:
@@ -471,12 +457,17 @@ class LiveMatchViewer:
             return "无"
         return " ".join(_meld_segment(m, owner_seat, dealer_seat) for m in melds)
 
-    def _river_to_str(self, river, seat: int) -> Text:
-        """牌河 -> 可读字符串（带颜色）。"""
+    def _river_to_str(self, river, seat: int, revealed_indicators: tuple = ()) -> Text:
+        """牌河 -> 可读字符串（带颜色），宝牌显示为亮青色。"""
         from rich.text import Text
+        from kernel.scoring.dora import dora_from_indicators
 
         result = Text()
         first = True
+
+        # 计算宝牌集合
+        dora_tiles = set(dora_from_indicators(revealed_indicators)) if revealed_indicators else set()
+
         for e in river:
             if e.seat != seat:
                 continue
@@ -485,7 +476,9 @@ class LiveMatchViewer:
             first = False
 
             tile_code = e.tile.to_code()
-            tile_text = _tile_to_rich(tile_code)
+            # 检查是否是宝牌
+            is_dora = e.tile in dora_tiles
+            tile_text = _tile_to_rich(tile_code, is_dora=is_dora)
 
             if e.riichi:
                 result.append("[", style="dim")
