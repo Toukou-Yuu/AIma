@@ -14,7 +14,7 @@ def test_singleton_pass_call_does_not_invoke_client() -> None:
     client.complete.side_effect = AssertionError("complete should not be called")
     lone = (LegalAction(kind=ActionKind.PASS_CALL, seat=2),)
     with patch("llm.runner.legal_actions", return_value=lone):
-        la, why = choose_legal_action(
+        la, why, history = choose_legal_action(
             MagicMock(),
             2,
             client=client,
@@ -24,6 +24,7 @@ def test_singleton_pass_call_does_not_invoke_client() -> None:
     assert why is None
     assert la.kind == ActionKind.PASS_CALL
     assert la.seat == 2
+    assert history == []  # 未调用 API 时历史为空列表
     client.complete.assert_not_called()
 
 
@@ -42,11 +43,13 @@ def test_pass_and_ron_still_invokes_client() -> None:
         patch("llm.runner.observation", return_value=MagicMock()),
         patch("llm.runner.build_user_prompt", return_value="{}"),
     ):
-        choose_legal_action(
+        la, why, history = choose_legal_action(
             MagicMock(),
             1,
             client=client,
             dry_run=False,
             session_audit=False,
-        )[0]
+        )
+    assert la == acts[0]
+    assert isinstance(history, list)
     client.complete.assert_called_once()

@@ -38,9 +38,12 @@ def test_choose_legal_action_uses_client_json() -> None:
     w = dict(legal_action_to_wire(acts[0]))
     w["why"] = "测试：固定选首项合法动作"
     payload = json.dumps(w, ensure_ascii=False)
-    la, why = choose_legal_action(state, seat, client=_ScriptedClient(payload), dry_run=False)
+    la, why, history = choose_legal_action(state, seat, client=_ScriptedClient(payload), dry_run=False)
     assert la == acts[0]
     assert why == "测试：固定选首项合法动作"
+    assert isinstance(history, list)
+    # 历史应包含 user + assistant 两条消息
+    assert len(history) == 2
 
 
 def test_choose_fallback_when_json_invalid() -> None:
@@ -49,6 +52,8 @@ def test_choose_fallback_when_json_invalid() -> None:
     state = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=w)).new_state
     seat = pending_actor_seats(state)[0]
     acts = legal_actions(state, seat)
-    la, why = choose_legal_action(state, seat, client=_ScriptedClient("not json"), dry_run=False)
+    la, why, history = choose_legal_action(state, seat, client=_ScriptedClient("not json"), dry_run=False)
     assert la == acts[0]
     assert why is None
+    # 即使解析失败也应记录历史
+    assert isinstance(history, list)

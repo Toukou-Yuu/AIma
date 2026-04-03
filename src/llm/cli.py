@@ -130,7 +130,7 @@ def _cmd_watch_replay(path: str, delay: float) -> int:
     return 0
 
 
-def _cmd_watch_dry_run(seed: int, steps: int, delay: float, dry_run: bool = True) -> int:
+def _cmd_watch_dry_run(seed: int, steps: int, delay: float, dry_run: bool = True, max_history_rounds: int = 10, clear_history_per_hand: bool = False) -> int:
     """实时观战（Rich + dry-run 或真实 LLM 模式）。"""
     try:
         from ui.terminal_rich import LiveMatchCallback
@@ -161,6 +161,8 @@ def _cmd_watch_dry_run(seed: int, steps: int, delay: float, dry_run: bool = True
             session_audit=False,
             request_delay_seconds=0.0 if dry_run else delay,
             on_step_callback=callback.on_step,
+            max_history_rounds=max_history_rounds,
+            clear_history_on_new_hand=clear_history_per_hand,
         )
         print(f"\nsteps={rr.steps} reason={rr.stopped_reason!r} phase={rr.final_state.phase.value}")
     return 0
@@ -228,6 +230,18 @@ def main(argv: list[str] | None = None) -> int:
         metavar="SEC",
         help="--watch 模式每步间隔秒数；默认 0.3",
     )
+    p.add_argument(
+        "--max-history-rounds",
+        type=int,
+        default=10,
+        metavar="N",
+        help="LLM 每席保留的最大对话轮数（默认 10，设为 0 则禁用历史）",
+    )
+    p.add_argument(
+        "--clear-history-per-hand",
+        action="store_true",
+        help="每局开始时清空该席的历史消息（默认跨局保留）",
+    )
     args = p.parse_args(argv)
 
     # --watch 模式优先处理
@@ -237,7 +251,14 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_watch_replay(args.replay, args.watch_delay)
         else:
             # 实时观战（dry-run 或真实 LLM）
-            return _cmd_watch_dry_run(args.seed, args.max_steps, args.watch_delay, dry_run=args.dry_run)
+            return _cmd_watch_dry_run(
+                args.seed,
+                args.max_steps,
+                args.watch_delay,
+                dry_run=args.dry_run,
+                max_history_rounds=args.max_history_rounds,
+                clear_history_per_hand=args.clear_history_per_hand,
+            )
 
     if args.replay:
         return _cmd_replay(args.replay)
@@ -291,6 +312,8 @@ def main(argv: list[str] | None = None) -> int:
                 session_audit=log_stem is not None,
                 simple_log_file=simple_fp,
                 request_delay_seconds=0.0 if args.dry_run else args.request_delay,
+                max_history_rounds=args.max_history_rounds,
+                clear_history_on_new_hand=args.clear_history_per_hand,
             )
     else:
         rr = run_llm_match(
@@ -302,6 +325,8 @@ def main(argv: list[str] | None = None) -> int:
             session_audit=log_stem is not None,
             simple_log_file=None,
             request_delay_seconds=0.0 if args.dry_run else args.request_delay,
+            max_history_rounds=args.max_history_rounds,
+            clear_history_on_new_hand=args.clear_history_per_hand,
         )
     print(f"steps={rr.steps} reason={rr.stopped_reason!r} phase={rr.final_state.phase.value}")
     if log_stem is not None:

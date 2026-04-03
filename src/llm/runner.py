@@ -231,8 +231,10 @@ def choose_legal_action(
     dry_run: bool,
     session_audit: bool = False,
     request_delay_seconds: float = 0.0,
-) -> tuple[LegalAction, str | None]:
-    """返回「所选合法动作」与「模型 JSON 中的 why 说明」（无请求时为 ``None``）。"""
+    history: list[ChatMessage] | None = None,
+    max_history_rounds: int = 10,
+) -> tuple[LegalAction, str | None, list[ChatMessage]]:
+    """返回「所选合法动作」、「模型 JSON 中的 why 说明」（无请求时为 ``None``）和「更新后的历史消息列表」。"""
     acts = legal_actions(state, seat)
     if not acts:
         msg = f"no legal_actions for seat {seat}"
@@ -242,40 +244,64 @@ def choose_legal_action(
     if len(acts) == 1 and acts[0].kind == ActionKind.PASS_CALL:
         if session_audit:
             log.info("llm_skipped singleton pass_call seat=%s", seat)
-        return acts[0], None
+        return acts[0], None, history or []
 
     if dry_run or client is None:
-        return acts[0], None
+        return acts[0], None, history or []
 
     obs = observation(state, seat, mode="human")
     user_content = build_user_prompt(obs, acts)
-    messages = [
-        ChatMessage(role="system", content=SYSTEM_PROMPT),
-        ChatMessage(role="user", content=user_content),
-    ]
+    current_user_msg = ChatMessage(role="user", content=user_content)
+
+    # 合并历史 + 当前消息
+    messages = [ChatMessage(role="system", content=SYSTEM_PROMPT)]
+    if history:
+        messages.extend(history)
+    messages.append(current_user_msg)
+
     if request_delay_seconds > 0:
         time.sleep(request_delay_seconds)
     raw = client.complete(messages)
     if session_audit:
         head = raw if len(raw) <= 600 else raw[:600] + "…"
         log.debug("llm raw_head seat=%s %r", seat, head)
+        # 记录历史消息数量（方便确认记忆功能在工作）
+        hist_len = len(history) if history else 0
+        log.debug("llm_history seat=%s history_msgs=%s", seat, hist_len)
     try:
         choice = extract_json_object(raw)
     except (ValueError, TypeError) as e:
         log.warning("parse failed, fallback first legal: %s", e)
-        return acts[0], None
+        return acts[0], None, history or []
     why = explain_text_from_choice(choice)
     la = find_matching_legal_action(acts, choice)
+
+    # 构建 assistant 消息内容（使用模型返回的原始 JSON）
+    assistant_content = json.dumps(choice, ensure_ascii=False)
+
     if la is None:
         log.warning("choice not in legal_actions, fallback first: %s", choice)
-        return acts[0], None
+        # 即使失败也记录这次对话到历史
+        new_history = (history or []) + [current_user_msg, ChatMessage(role="assistant", content=assistant_content)]
+        max_history_msgs = max_history_rounds * 2
+        if len(new_history) > max_history_msgs:
+            new_history = new_history[-max_history_msgs:]
+        return acts[0], None, new_history
+
     if session_audit:
         log.info(
             "llm_choice seat=%s %s",
             seat,
             json.dumps(legal_action_to_wire(la), ensure_ascii=False),
         )
-    return la, why
+
+    # 更新历史：追加 user + assistant
+    new_history = (history or []) + [current_user_msg, ChatMessage(role="assistant", content=assistant_content)]
+    max_history_msgs = max_history_rounds * 2
+    if len(new_history) > max_history_msgs:
+        new_history = new_history[-max_history_msgs:]
+
+    return la, why, new_history
 
 
 def run_llm_match(
@@ -289,6 +315,8 @@ def run_llm_match(
     simple_log_file: TextIO | None = None,
     request_delay_seconds: float = 0.0,
     on_step_callback: Callable[[GameState, tuple[GameEvent, ...], str, str | None], None] | None = None,
+    max_history_rounds: int = 10,
+    clear_history_on_new_hand: bool = False,
 ) -> RunResult:
     """
     从 ``PRE_DEAL`` 开局到 ``MATCH_END`` 或步数上限。
@@ -299,6 +327,8 @@ def run_llm_match(
     - ``session_audit``：向 logging 写每步内核动作摘要；
       非 dry-run 时另写模型解析结果（CLI ``--log-session``）；
       遇 ``ron`` / ``tsumo`` / ``hand_over`` / ``match_end`` 等时另写 ``settlement …`` 行。
+    - ``max_history_rounds``：每席 LLM 保留的最大对话轮数（默认 10，设为 0 则禁用历史）。
+    - ``clear_history_on_new_hand``：新一局开始时是否清空历史（默认 False，跨局保留）。
     - ``simple_log_file``：若给定，按内核事件写简体中文可读对局（与 JSON 牌谱并行）。
     - ``request_delay_seconds``：每次调用 LLM 前休眠秒数（减压控/防连接被掐）；``dry_run`` 时不请求，不休眠。
     - ``on_step_callback``：可选回调，每步 apply 后调用（用于实时 UI 观战）。
@@ -309,6 +339,8 @@ def run_llm_match(
     hand_number = 0
     win_counts: list[int] = [0, 0, 0, 0]
     hands_finished: list[int] = [0]
+    # 每席 LLM 历史消息
+    seat_histories: dict[int, list[ChatMessage]] = {0: [], 1: [], 2: [], 3: []}
     state = initial_game_state()
     wall_seed = seed
     wall = tuple(shuffle_deck(build_deck(), seed=wall_seed))
@@ -389,6 +421,10 @@ def run_llm_match(
                     GamePhase.FLOWN,
                 ):
                     hand_number += 1
+                    # 新一局开始时，根据配置清空历史
+                    if clear_history_on_new_hand:
+                        for s in seat_histories:
+                            seat_histories[s] = []
                 _write_simple_snapshot(
                     simple_log_file,
                     state,
@@ -473,14 +509,18 @@ def run_llm_match(
                     continue
 
             seat = pending[0]
-            la, llm_why = choose_legal_action(
+            la, llm_why, new_hist = choose_legal_action(
                 state,
                 seat,
                 client=client,
                 dry_run=dry_run,
                 session_audit=session_audit,
                 request_delay_seconds=request_delay_seconds,
+                history=seat_histories.get(seat, []),
+                max_history_rounds=max_history_rounds,
             )
+            # 更新该席历史
+            seat_histories[seat] = new_hist
             act = legal_action_to_action(la)
             turn_draw_tile: Tile | None = None
             discard_seat_for_log: int | None = None
