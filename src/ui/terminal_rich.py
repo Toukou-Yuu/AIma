@@ -50,7 +50,15 @@ if TYPE_CHECKING:
     from llm.runner import RunResult
 
 
-# 牌面颜色映射
+# 炫彩虹宝牌颜色循环
+_DORA_RAINBOW = [
+    "bright_red",      # 红
+    "bright_yellow",   # 黄
+    "bright_green",    # 绿
+    "bright_cyan",     # 青
+    "bright_blue",     # 蓝
+    "bright_magenta",  # 紫
+]
 _SUIT_COLORS = {
     "m": "bright_white",  # 万子
     "p": "bright_green",  # 筒子
@@ -66,7 +74,7 @@ def _tile_to_rich(tile_code: str, is_dora: bool = False) -> Text:
 
     Args:
         tile_code: 牌码
-        is_dora: 是否为宝牌（使用金色高亮）
+        is_dora: 是否为宝牌（使用炫彩高亮）
     """
     if not tile_code:
         return Text("")
@@ -78,10 +86,10 @@ def _tile_to_rich(tile_code: str, is_dora: bool = False) -> Text:
     if "r" in tile_code:
         color = "bright_red"
 
-    # 宝牌使用金色高亮（非赤宝牌时）
+    # 宝牌使用炫彩高亮（非赤宝牌时）- 使用亮品红色加粗
     if is_dora and "r" not in tile_code:
-        color = "bright_yellow"
-        style = f"bold {color}"
+        # 炫彩效果：使用 bright_magenta + bold + reverse
+        style = "bold bright_magenta"
     else:
         style = color
 
@@ -340,13 +348,17 @@ class LiveMatchViewer:
         return _counter_sorted_str(hand)
 
     def _dora_indicators_to_rich(self, indicators: tuple) -> list:
-        """宝牌指示器列表 -> Rich Text 列表。"""
+        """宝牌指示器列表 -> Rich Text 列表（炫彩效果）。"""
         result = []
         for i, tile in enumerate(indicators):
             if i > 0:
                 result.append((" ", ""))
-            # 宝牌指示器使用特殊高亮
-            result.append(_tile_to_rich(tile.to_code(), is_dora=True))
+            # 宝牌指示器使用炫彩虹色（每个指示器不同颜色）
+            color = _DORA_RAINBOW[i % len(_DORA_RAINBOW)]
+            tile_text = _tile_to_rich(tile.to_code(), is_dora=False)
+            # 覆盖样式为炫彩色
+            tile_text.stylize(f"bold {color}")
+            result.append(tile_text)
         return result
 
     def _melds_to_str(self, melds, owner_seat: int, dealer_seat: int) -> str:
