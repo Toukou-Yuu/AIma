@@ -2,11 +2,13 @@
 
 本包实现 **HTTP 适配、观测与合法动作的提示拼装、模型输出解析与校验、``apply`` 闭环跑局**。**牌桌规则与状态机仅在 `kernel`**；本包通过 `legal_actions` / `observation(..., mode="human")` / `apply` 接入，**禁止**改写内核状态或绕过校验。
 
+> **配置规范**：所有运行时配置统一通过 **YAML 配置文件** 管理（`configs/*.yaml`），不再新增零散 CLI 参数或硬编码常量。
+
 ## 目录索引
 
 | 模块 | 说明 |
 |------|------|
-| [`config.py`](config.py) | 从环境变量读取 API Key、base URL、model、超时等 |
+| [`config.py`](config.py) | 从环境变量/YAML 读取 API Key、base URL、model、超时等 |
 | [`protocol.py`](protocol.py) | `ChatMessage`、`CompletionClient` 协议、`build_client` |
 | [`adapters/openai_chat.py`](adapters/openai_chat.py) | OpenAI 兼容 `POST .../chat/completions`（`httpx`） |
 | [`adapters/anthropic_messages.py`](adapters/anthropic_messages.py) | Anthropic `POST .../v1/messages` |
@@ -26,9 +28,10 @@
 ```bash
 pip install -e ".[llm]"   # 仅 LLM 功能
 pip install -e ".[rich]"  # LLM + 终端观战（推荐）
+pip install pyyaml         # YAML 配置支持
 ```
 
-依赖为 `httpx` 与 `python-dotenv`；与 `kernel` 共用同一仓库时确保 `pythonpath` 含 `src`（可编辑安装已配置）。
+依赖为 `httpx`、`python-dotenv`、`pyyaml`；与 `kernel` 共用同一仓库时确保 `pythonpath` 含 `src`（可编辑安装已配置）。
 
 ## 环境变量
 
@@ -51,7 +54,61 @@ pip install -e ".[rich]"  # LLM + 终端观战（推荐）
 
 ## 命令行
 
-### 实时观战（推荐）
+### 使用配置文件（推荐）
+
+```bash
+# 正式对局（实时观战 + 自动记录）
+python -m llm --config configs/watch_mode.yaml
+
+# 快速测试（Dry-run，无需 API Key）
+python -m llm --config configs/quick_test.yaml
+
+# CLI 覆盖配置参数
+python -m llm --config configs/watch_mode.yaml --seed 100 --max-steps 800
+```
+
+### 配置文件说明
+
+配置文件位于 `configs/` 目录：
+
+| 配置文件 | 用途 |
+|---------|------|
+| `default.yaml` | 完整参考模板（所有选项及枚举值注释） |
+| `watch_mode.yaml` | **正式对局**（观战 + 自动记录日志） |
+| `quick_test.yaml` | 快速测试（dry-run，无 API 调用） |
+
+**配置结构**（所有配置项均带枚举值注释）：
+
+```yaml
+match:
+  seed: 42                    # 整数 (0 ~ 2^31-1)
+  max_steps: 500              # 正整数
+
+llm:
+  timeout_sec: 120            # 正数 (30-300)
+  max_tokens: 1024            # 正整数 (512-2048)
+  request_delay: 0.5          # 非负数
+  max_history_rounds: 10      # 非负整数 (0=禁用历史)
+  clear_history_per_hand: false   # true/false
+
+logging:
+  session: ""                 # null | "" | "自定义名称"
+  json: null                  # null | "path/to/file.json"
+  session_audit: true         # true/false
+
+watch:
+  enabled: true               # true/false
+  delay: 0.5                  # 非负数
+  show_reason: true           # true/false
+
+debug:
+  verbose: false              # true/false
+  dry_run: false              # true/false
+```
+
+**优先级**：CLI 参数 > YAML 配置 > 代码默认值
+
+### 传统 CLI 方式（向后兼容）
 
 ```bash
 # Dry-run 模式（随机演示，无需 API Key）
@@ -74,6 +131,9 @@ python -m llm --watch --replay logs/replay/xxx.json --watch-delay 0.2
 
 ```bash
 # 生成配对日志
+python -m llm --config configs/quick_test.yaml --log-session my_run_01
+
+# 或传统方式
 python -m llm --dry-run --seed 0 --max-steps 100 --log-session my_run_01
 
 # 生成的文件：
@@ -89,6 +149,7 @@ python -m llm --help
 ```
 
 常用参数：
+- `--config PATH` - **YAML 配置文件路径（推荐）**
 - `--watch` - 启用 Rich 实时观战
 - `--watch-delay SEC` - 观战步间延迟（默认 0.3）
 - `--dry-run` - 随机演示，不调用 API
@@ -104,9 +165,9 @@ from llm import build_client, load_llm_config, run_llm_match
 from ui.terminal_rich import LiveMatchCallback
 
 # 带实时观战的 LLM 对局
-cfg = load_llm_config()
-if cfg:
-    client = build_client(cfg)
+llm_cfg = load_llm_config()
+if llm_cfg:
+    client = build_client(llm_cfg)
     with LiveMatchCallback(delay=0.5) as callback:
         rr = run_llm_match(
             seed=42,

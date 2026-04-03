@@ -11,8 +11,11 @@
 | `src/ui/` | **Rich 终端实时观战**（推荐） |
 | `assets/docs/` | 架构与对外 API 说明（给 AI / 编排层） |
 | `mahjong_rules/` | 规则子集 v1 对照（版本号以文件内为准） |
+| `configs/` | **YAML 配置文件**（推荐用法） |
 
 **依赖方向**：`llm` / `ui` → `kernel`；**禁止** `kernel` import `llm`。
+
+**配置规范**：所有运行时配置统一通过 YAML 文件管理（`configs/*.yaml`），不再新增零散 CLI 参数或硬编码常量。
 
 ## 快速开始
 
@@ -24,7 +27,20 @@ conda activate aima
 pip install -e ".[rich]"
 ```
 
-### 2. 实时观战（推荐）
+### 2. 使用配置文件运行（推荐）
+
+```bash
+# 正式对局（实时观战 + 自动记录）
+python -m llm --config configs/watch_mode.yaml
+
+# 快速测试（Dry-run，无需 API Key）
+python -m llm --config configs/quick_test.yaml
+
+# CLI 覆盖配置参数
+python -m llm --config configs/watch_mode.yaml --seed 100 --max-steps 800
+```
+
+### 3. 传统 CLI 方式（向后兼容）
 
 **Dry-run 模式**（随机演示，无需 API Key）：
 ```bash
@@ -38,23 +54,52 @@ export AIMA_OPENAI_API_KEY="your-key"
 python -m llm --watch --seed 42 --max-steps 100 --watch-delay 0.5
 ```
 
-### 3. 从牌谱回放
+### 4. 从牌谱回放
 
 ```bash
 python -m llm --watch --replay logs/replay/xxx.json --watch-delay 0.2
 ```
 
-### 4. 生成对局日志（后台模式）
+## 配置文件说明
 
-```bash
-# 不显示实时 UI，只生成日志文件
-python -m llm --seed 42 --max-steps 200 --log-session my_match
+配置文件位于 `configs/` 目录，所有配置项均带枚举值注释：
+
+| 配置文件 | 用途 |
+|---------|------|
+| `default.yaml` | 完整参考模板（所有选项及注释） |
+| `watch_mode.yaml` | **正式对局**（观战 + 自动记录日志） |
+| `quick_test.yaml` | 快速测试（dry-run，无 API 调用） |
+
+**配置结构示例**（`configs/watch_mode.yaml`）：
+
+```yaml
+match:
+  seed: 42                    # 整数 (0 ~ 2^31-1)
+  max_steps: 500              # 正整数
+
+llm:
+  timeout_sec: 120            # 正数 (30-300)
+  max_tokens: 1024            # 正整数 (512-2048)
+  request_delay: 0.5          # 非负数
+  max_history_rounds: 10      # 非负整数 (0=禁用历史)
+  clear_history_per_hand: false   # true/false
+
+logging:
+  session: ""                 # null | "" | "自定义名称"
+  json: null                  # null | "path/to/file.json"
+  session_audit: true         # true/false
+
+watch:
+  enabled: true               # true/false
+  delay: 0.5                  # 非负数
+  show_reason: true           # true/false
+
+debug:
+  verbose: false              # true/false
+  dry_run: false              # true/false
 ```
 
-生成文件：
-- `logs/simple/my_match.txt` - 可读文本日志
-- `logs/replay/my_match.json` - 完整牌谱
-- `logs/debug/my_match.log` - 调试日志
+**优先级**：CLI 参数 > YAML 配置 > 代码默认值
 
 ## CLI 参数说明
 
@@ -63,6 +108,7 @@ python -m llm --help
 ```
 
 常用参数：
+- `--config PATH` - **YAML 配置文件路径（推荐）**
 - `--watch` - 启用 Rich 实时观战
 - `--watch-delay SEC` - 观战每步间隔秒数（默认 0.3）
 - `--dry-run` - 随机演示，不调用 LLM
