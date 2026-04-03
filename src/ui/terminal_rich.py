@@ -39,6 +39,7 @@ from kernel.event_log import (
     RoundBeginEvent,
     TsumoEvent,
 )
+from kernel.deal.model import TurnPhase
 from kernel.flow.model import FlowKind
 from kernel.hand.melds import MeldKind
 from kernel.table.model import PrevailingWind
@@ -221,7 +222,26 @@ class LiveMatchViewer:
 
             # 手牌
             hand = board.hands[seat]
-            hand_str = self._hand_to_str(hand)
+            # 在 MUST_DISCARD 阶段，当前玩家把摸牌单独显示
+            is_must_discard = (
+                board.turn_phase == TurnPhase.MUST_DISCARD
+                and seat == board.current_seat
+                and board.last_draw_tile is not None
+            )
+            if is_must_discard:
+                # 从手牌中分离出摸牌
+                from collections import Counter
+                draw_tile = board.last_draw_tile
+                hand_without_draw = Counter(hand)
+                if hand_without_draw[draw_tile] > 0:
+                    hand_without_draw[draw_tile] -= 1
+                    if hand_without_draw[draw_tile] == 0:
+                        del hand_without_draw[draw_tile]
+                hand_str = self._hand_to_str(hand_without_draw)
+                draw_str = draw_tile.to_code()
+                hand_str = f"{hand_str} [{draw_str}]"
+            else:
+                hand_str = self._hand_to_str(hand)
 
             # 副露
             melds = board.melds[seat]
