@@ -363,10 +363,10 @@ class LiveMatchViewer:
             if suit == "z":
                 honor_map = {"1": "東", "2": "南", "3": "西", "4": "北", "5": "白", "6": "發", "7": "中"}
                 display = honor_map.get(tile_code[0], tile_code[0])
-                # 使用 on_<color> 背景色确保可见
-                tile_text = Text(display, style=f"bold {color} on black")
+                # 使用反转色确保可见
+                tile_text = Text(display, style=f"bold {color} reverse")
             else:
-                tile_text = Text(tile_code.replace("r", ""), style=f"bold {color} on black")
+                tile_text = Text(tile_code.replace("r", ""), style=f"bold {color} reverse")
 
             result.append(tile_text)
         return result
