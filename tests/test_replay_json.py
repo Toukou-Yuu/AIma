@@ -106,7 +106,7 @@ def test_match_end_event_round_trip() -> None:
 
 
 def test_run_llm_match_log_replays_same_phase() -> None:
-    rr = run_llm_match(seed=5, max_steps=120, dry_run=True)
+    rr = run_llm_match(seed=5, max_player_steps=120, dry_run=True)
     assert rr.actions_wire
     doc = rr.as_match_log()
     actions = actions_from_match_log(doc)

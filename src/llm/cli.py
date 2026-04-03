@@ -129,7 +129,7 @@ def _merge_config(
     # YAML 默认值映射
     defaults = {
         "seed": yaml_cfg.get("match", {}).get("seed", 0),
-        "max_steps": yaml_cfg.get("match", {}).get("max_steps", 500),
+        "max_player_steps": yaml_cfg.get("match", {}).get("max_player_steps", 500),
         "dry_run": yaml_cfg.get("debug", {}).get("dry_run", False),
         "log_json": yaml_cfg.get("logging", {}).get("json"),
         "log_session": yaml_cfg.get("logging", {}).get("session"),
@@ -201,7 +201,7 @@ def _cmd_watch_replay(path: str, delay: float) -> int:
 
 def _cmd_watch_dry_run(
     seed: int,
-    steps: int,
+    max_player_steps: int,
     delay: float,
     dry_run: bool = True,
     max_history_rounds: int = 10,
@@ -233,10 +233,14 @@ def _cmd_watch_dry_run(
             return 2
         client = build_client(llm_cfg)
 
-    with LiveMatchCallback(delay=delay, show_reason=show_reason and not dry_run) as callback:
+    with LiveMatchCallback(
+        delay=delay,
+        show_reason=show_reason and not dry_run,
+        max_player_steps=max_player_steps,
+    ) as callback:
         rr = run_llm_match(
             seed=seed,
-            max_steps=steps,
+            max_player_steps=max_player_steps,
             client=client,
             dry_run=dry_run,
             verbose=False,
@@ -246,7 +250,10 @@ def _cmd_watch_dry_run(
             max_history_rounds=max_history_rounds,
             clear_history_on_new_hand=clear_history_per_hand,
         )
-        print(f"\nsteps={rr.steps} reason={rr.stopped_reason!r} phase={rr.final_state.phase.value}")
+        print(
+            f"\nplayer_steps={rr.player_steps} kernel_steps={rr.kernel_steps} "
+            f"reason={rr.stopped_reason!r} phase={rr.final_state.phase.value}"
+        )
     return 0
 
 
@@ -270,7 +277,12 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="AIma LLM 牌手跑局（内核闭环）")
     p.add_argument("--config", metavar="PATH", help="YAML 配置文件路径")
     p.add_argument("--seed", type=int, default=None, help="首局洗牌种子（默认 0）")
-    p.add_argument("--max-steps", type=int, default=None, help="最大 apply 步数（默认 500）")
+    p.add_argument(
+        "--max-player-steps",
+        type=int,
+        default=None,
+        help="最大玩家决策步数（默认 500，不含局间洗牌和自动过）",
+    )
     p.add_argument(
         "--dry-run",
         action="store_true",
@@ -354,7 +366,7 @@ def main(argv: list[str] | None = None) -> int:
             # 实时观战（dry-run 或真实 LLM）
             return _cmd_watch_dry_run(
                 cfg.seed,
-                cfg.max_steps,
+                cfg.max_player_steps,
                 cfg.watch_delay,
                 dry_run=cfg.dry_run,
                 max_history_rounds=cfg.max_history_rounds,
@@ -412,7 +424,7 @@ def main(argv: list[str] | None = None) -> int:
         with simple_session_path.open("w", encoding="utf-8") as simple_fp:
             rr = run_llm_match(
                 seed=cfg.seed,
-                max_steps=cfg.max_steps,
+                max_player_steps=cfg.max_player_steps,
                 client=client,
                 dry_run=cfg.dry_run,
                 verbose=cfg.verbose,
@@ -425,7 +437,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         rr = run_llm_match(
             seed=cfg.seed,
-            max_steps=cfg.max_steps,
+            max_player_steps=cfg.max_player_steps,
             client=client,
             dry_run=cfg.dry_run,
             verbose=cfg.verbose,
@@ -435,11 +447,15 @@ def main(argv: list[str] | None = None) -> int:
             max_history_rounds=cfg.max_history_rounds,
             clear_history_on_new_hand=cfg.clear_history_per_hand,
         )
-    print(f"steps={rr.steps} reason={rr.stopped_reason!r} phase={rr.final_state.phase.value}")
+    print(
+        f"player_steps={rr.player_steps} kernel_steps={rr.kernel_steps} "
+        f"reason={rr.stopped_reason!r} phase={rr.final_state.phase.value}"
+    )
     if log_stem is not None:
         logging.info(
-            "run_finished steps=%s reason=%s phase=%s actions=%s events=%s",
-            rr.steps,
+            "run_finished player_steps=%s kernel_steps=%s reason=%s phase=%s actions=%s events=%s",
+            rr.player_steps,
+            rr.kernel_steps,
             rr.stopped_reason,
             rr.final_state.phase.value,
             len(rr.actions_wire),

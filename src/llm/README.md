@@ -64,7 +64,7 @@ python -m llm --config configs/watch_mode.yaml
 python -m llm --config configs/quick_test.yaml
 
 # CLI 覆盖配置参数
-python -m llm --config configs/watch_mode.yaml --seed 100 --max-steps 800
+python -m llm --config configs/watch_mode.yaml --seed 100 --max-player-steps 800
 ```
 
 ### 配置文件说明
@@ -82,7 +82,7 @@ python -m llm --config configs/watch_mode.yaml --seed 100 --max-steps 800
 ```yaml
 match:
   seed: 42                    # 整数 (0 ~ 2^31-1)
-  max_steps: 500              # 正整数
+  max_player_steps: 500       # 正整数（玩家决策步数，不含局间洗牌和自动过）
 
 llm:
   timeout_sec: 120            # 正数 (30-300)
@@ -112,10 +112,10 @@ debug:
 
 ```bash
 # Dry-run 模式（随机演示，无需 API Key）
-python -m llm --watch --dry-run --seed 0 --max-steps 200
+python -m llm --watch --dry-run --seed 0 --max-player-steps 200
 
 # 真实 LLM 对局（需配置 API Key）
-python -m llm --watch --seed 1 --max-steps 300
+python -m llm --watch --seed 1 --max-player-steps 300
 
 # 调整观战速度
 python -m llm --watch --dry-run --seed 0 --watch-delay 0.5
@@ -134,7 +134,7 @@ python -m llm --watch --replay logs/replay/xxx.json --watch-delay 0.2
 python -m llm --config configs/quick_test.yaml --log-session my_run_01
 
 # 或传统方式
-python -m llm --dry-run --seed 0 --max-steps 100 --log-session my_run_01
+python -m llm --dry-run --seed 0 --max-player-steps 100 --log-session my_run_01
 
 # 生成的文件：
 # logs/replay/my_run_01.json   - 完整牌谱
@@ -154,7 +154,7 @@ python -m llm --help
 - `--watch-delay SEC` - 观战步间延迟（默认 0.3）
 - `--dry-run` - 随机演示，不调用 API
 - `--seed INT` - 洗牌种子
-- `--max-steps INT` - 最大步数
+- `--max-player-steps INT` - 最大玩家决策步数（不含局间洗牌和自动过）
 - `--log-session [STEM]` - 生成日志文件
 - `--replay PATH` - 从牌谱回放
 
@@ -171,7 +171,7 @@ if llm_cfg:
     with LiveMatchCallback(delay=0.5) as callback:
         rr = run_llm_match(
             seed=42,
-            max_steps=500,
+            max_player_steps=500,
             client=client,
             on_step_callback=callback.on_step
         )

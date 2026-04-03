@@ -16,7 +16,7 @@ def caplog_for_runner(caplog: pytest.LogCaptureFixture) -> pytest.LogCaptureFixt
 
 
 def test_session_audit_logs_apply_lines(caplog_for_runner: pytest.LogCaptureFixture) -> None:
-    run_llm_match(seed=2, max_steps=8, dry_run=True, session_audit=True)
+    run_llm_match(seed=2, max_player_steps=8, dry_run=True, session_audit=True)
     texts = [r.message for r in caplog_for_runner.records]
     assert any("begin_round" in t for t in texts)
     assert any("apply step=" in t for t in texts)

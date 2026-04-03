@@ -3,7 +3,7 @@
 
 match:
   seed: 42
-  max_steps: 500
+  max_player_steps: 500
 
 llm:
   timeout_sec: 120

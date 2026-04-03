@@ -205,7 +205,8 @@ class RunResult:
     """一轮跑局结果。"""
 
     final_state: GameState
-    steps: int
+    kernel_steps: int
+    player_steps: int
     stopped_reason: str
     seed: int = 0
     actions_wire: tuple[dict[str, Any], ...] = ()
@@ -216,7 +217,7 @@ class RunResult:
         return match_log_document(
             seed=self.seed,
             stopped_reason=self.stopped_reason,
-            steps=self.steps,
+            steps=self.kernel_steps,
             final_phase=self.final_state.phase.value,
             actions_wire=self.actions_wire,
             events_wire=self.events_wire,
@@ -307,7 +308,7 @@ def choose_legal_action(
 def run_llm_match(
     *,
     seed: int,
-    max_steps: int,
+    max_player_steps: int,
     client: CompletionClient | None = None,
     dry_run: bool = False,
     verbose: bool = False,
@@ -331,7 +332,8 @@ def run_llm_match(
     - ``clear_history_on_new_hand``：新一局开始时是否清空历史（默认 False，跨局保留）。
     - ``simple_log_file``：若给定，按内核事件写简体中文可读对局（与 JSON 牌谱并行）。
     - ``request_delay_seconds``：每次调用 LLM 前休眠秒数（减压控/防连接被掐）；``dry_run`` 时不请求，不休眠。
-    - ``on_step_callback``：可选回调，每步 apply 后调用（用于实时 UI 观战）。
+    - ``on_step_callback``：可选回调，每步玩家决策后调用（用于实时 UI 观战）。
+    - ``max_player_steps``：最大玩家决策步数（不含局间 NOOP 和 PASS 合并）。
     """
     if simple_log_file is not None:
         simple_log_file.write(f"# AIma 对局可读日志（简体中文） seed={seed}\n\n")
@@ -386,16 +388,18 @@ def run_llm_match(
     except IllegalActionError as e:
         return RunResult(
             state,
-            0,
-            f"begin_round_failed:{e}",
+            kernel_steps=0,
+            player_steps=0,
+            stopped_reason=f"begin_round_failed:{e}",
             seed=seed,
             actions_wire=(),
             events_wire=(),
         )
 
-    steps = 0
-    reason = "max_steps"
-    while steps < max_steps:
+    kernel_steps = 0
+    player_steps = 0
+    reason = "max_player_steps"
+    while player_steps < max_player_steps:
         if state.phase == GamePhase.MATCH_END:
             reason = "match_end"
             break
@@ -436,18 +440,18 @@ def run_llm_match(
                 )
                 _stderr_progress(
                     verbose,
-                    f"[match] step={steps + 1} noop+wall phase={state.phase.value}",
+                    f"[match] step={kernel_steps + 1} noop+wall phase={state.phase.value}",
                 )
                 if session_audit:
                     log.info(
                         "apply step=%s noop wall_next_phase=%s",
-                        steps + 1,
+                        kernel_steps + 1,
                         state.phase.value,
                     )
             except IllegalActionError as e:
                 reason = f"noop_wall_failed:{e}"
                 break
-            steps += 1
+            kernel_steps += 1
             continue
 
         pending = pending_actor_seats(state)
@@ -489,7 +493,7 @@ def run_llm_match(
                     n = step_out.drained_pass_calls
                     _stderr_progress(
                         verbose,
-                        f"[match] step={steps + 1} {drain_act.kind.value} drained={n} "
+                        f"[match] step={kernel_steps + 1} {drain_act.kind.value} drained={n} "
                         f"phase={state.phase.value} "
                         f"turn_seat={b.current_seat if b else None}",
                     )
@@ -498,14 +502,14 @@ def run_llm_match(
                         log.info(
                             "apply step=%s action=%s drained=%s phase=%s turn_seat=%s "
                             "wall_remaining=%s",
-                            steps + 1,
+                            kernel_steps + 1,
                             drain_act.kind.value,
                             n,
                             state.phase.value,
                             b.current_seat if b else None,
                             wr,
                         )
-                    steps += n
+                    kernel_steps += n
                     continue
 
             seat = pending[0]
@@ -556,7 +560,7 @@ def run_llm_match(
             b = state.board
             _stderr_progress(
                 verbose,
-                f"[match] step={steps + 1} {act.kind.value} seat={act.seat} "
+                f"[match] step={kernel_steps + 1} {act.kind.value} seat={act.seat} "
                 f"phase={state.phase.value} "
                 f"turn_seat={b.current_seat if b else None}",
             )
@@ -570,12 +574,13 @@ def run_llm_match(
                 except Exception:
                     # 回调异常不应中断对局
                     pass
+            player_steps += 1  # 玩家决策步数递增（无论回调是否成功）
             if session_audit:
                 wr = _live_wall_remaining_tiles(b)
                 log.info(
                     "apply step=%s action=%s seat=%s phase=%s turn_seat=%s "
                     "wall_remaining=%s wire=%s",
-                    steps + 1,
+                    kernel_steps + 1,
                     act.kind.value,
                     act.seat,
                     state.phase.value,
@@ -586,14 +591,15 @@ def run_llm_match(
         except (IllegalActionError, ValueError, RuntimeError) as e:
             reason = f"step_failed:{e}"
             if session_audit:
-                log.error("apply failed step=%s err=%s", steps + 1, e)
+                log.error("apply failed step=%s err=%s", kernel_steps + 1, e)
             break
-        steps += 1
+        kernel_steps += 1
 
     return RunResult(
         state,
-        steps,
-        reason,
+        kernel_steps=kernel_steps,
+        player_steps=player_steps,
+        stopped_reason=reason,
         seed=seed,
         actions_wire=tuple(actions_acc),
         events_wire=tuple(events_acc),

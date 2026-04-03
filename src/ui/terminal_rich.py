@@ -123,16 +123,18 @@ def _wind_with_seat(wind_idx: int, seat: int, is_active: bool = False) -> Text:
 class LiveMatchViewer:
     """Rich 实时观战器。"""
 
-    def __init__(self, delay: float = 0.5, show_reason: bool = True):
+    def __init__(self, delay: float = 0.5, show_reason: bool = True, max_player_steps: int = 500):
         """
         初始化观战器。
 
         Args:
             delay: 每步之间的延迟（秒）
             show_reason: 是否显示模型的决策理由
+            max_player_steps: 最大玩家决策步数（用于显示步数进度）
         """
         self.delay = delay
         self.show_reason = show_reason
+        self.max_player_steps = max_player_steps
         self.console = Console()
         self._wins = [0, 0, 0, 0]
         self._rounds = 0
@@ -167,7 +169,7 @@ class LiveMatchViewer:
         header.add_column("key", style="dim")
         header.add_column("value")
 
-        header.add_row("步数", str(self._step))
+        header.add_row("步数", f"{self._step}/{self.max_player_steps}")
         header.add_row("局", f"{wind}風{round_num}局")
         header.add_row("本场", str(table.honba))
         header.add_row("供托", str(table.kyoutaku))
@@ -579,8 +581,8 @@ class LiveMatchViewer:
 class LiveMatchCallback:
     """用于集成到 runner 的实时回调类。"""
 
-    def __init__(self, delay: float = 0.5, show_reason: bool = True):
-        self.viewer = LiveMatchViewer(delay=delay, show_reason=show_reason)
+    def __init__(self, delay: float = 0.5, show_reason: bool = True, max_player_steps: int = 500):
+        self.viewer = LiveMatchViewer(delay=delay, show_reason=show_reason, max_player_steps=max_player_steps)
         self.live: Live | None = None
         self._start_sequence: int = 0
 

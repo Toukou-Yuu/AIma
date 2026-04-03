@@ -75,7 +75,7 @@ python -m llm --watch --replay logs/replay/xxx.json --watch-delay 0.2
 ```yaml
 match:
   seed: 42                    # 整数 (0 ~ 2^31-1)
-  max_steps: 500              # 正整数
+  max_player_steps: 500       # 正整数（玩家决策步数，不含局间洗牌和自动过）
 
 llm:
   timeout_sec: 120            # 正数 (30-300)
@@ -113,7 +113,7 @@ python -m llm --help
 - `--watch-delay SEC` - 观战每步间隔秒数（默认 0.3）
 - `--dry-run` - 随机演示，不调用 LLM
 - `--seed INT` - 洗牌种子
-- `--max-steps INT` - 最大步数
+- `--max-player-steps INT` - 最大玩家决策步数（不含局间洗牌和自动过）
 - `--log-session [STEM]` - 生成日志文件
 - `--replay PATH` - 从牌谱回放
 

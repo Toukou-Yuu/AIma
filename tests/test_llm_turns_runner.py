@@ -26,8 +26,8 @@ def test_pending_after_begin_round() -> None:
 
 
 def test_run_llm_match_dry_run_advances() -> None:
-    rr = run_llm_match(seed=7, max_steps=80, dry_run=True)
-    assert rr.steps > 0
+    rr = run_llm_match(seed=7, max_player_steps=80, dry_run=True)
+    assert rr.player_steps > 0
     assert rr.final_state.phase in (
         GamePhase.IN_ROUND,
         GamePhase.HAND_OVER,
