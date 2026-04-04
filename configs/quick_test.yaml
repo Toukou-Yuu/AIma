@@ -1,26 +1,20 @@
 # 快速测试配置（Dry-run，无 API 调用）
 # 用法: python -m llm --config configs/quick_test.yaml
+#
+# 注意：LLM 配置请在 aima_kernel.yaml 中设置
 
 match:
   seed: 0
   max_player_steps: 100
 
-llm:
-  timeout_sec: 120
-  max_tokens: 1024
-  request_delay: 0        # dry-run 不需要延迟
-  max_history_rounds: 5   # 测试用较少历史
-  clear_history_per_hand: false
-
 logging:
   session: null
-  json: null
   session_audit: false
 
 watch:
   enabled: true
-  delay: 0.1              # 快速播放
-  show_reason: false      # dry-run 无 reason 可显示
+  delay: 0.1
+  show_reason: false
 
 debug:
   verbose: false

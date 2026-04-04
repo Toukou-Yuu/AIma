@@ -1,27 +1,21 @@
 # 本地大模型测试配置
 # 用法: python -m llm --config configs/local_model.yaml
+#
+# 注意：LLM 配置请在 aima_kernel.yaml 中设置（base_url 指向本地服务）
 
 match:
   seed: 42
   max_player_steps: 20
 
-llm:
-  timeout_sec: 300      # 20B模型推理慢，需要更长的超时
-  max_tokens: 1024
-  request_delay: 0
-  max_history_rounds: 5
-  clear_history_per_hand: false
-
 logging:
   session: "local_test"
-  json: null
   session_audit: true
 
 watch:
   enabled: true
-  delay: 1.0            # 每步间隔1秒，方便观察
-  show_reason: true     # 显示模型思考
+  delay: 1.0
+  show_reason: true
 
 debug:
-  verbose: true         # 显示详细日志
-  dry_run: false        # 真实调用API
+  verbose: true
+  dry_run: false

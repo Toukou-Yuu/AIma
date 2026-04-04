@@ -248,6 +248,8 @@ def _cmd_watch_dry_run(
     max_tokens: int | None = None,
     players: list[dict[str, Any]] | None = None,
     kernel_config_path: str = "configs/aima_kernel.yaml",
+    log_session: str | None = None,
+    session_audit: bool = False,
 ) -> int:
     """实时观战（Rich + dry-run 或真实 LLM 模式）。"""
     # 观战模式下，控制台只显示 WARNING 及以上级别日志，避免干扰 Rich UI
@@ -255,12 +257,32 @@ def _cmd_watch_dry_run(
         if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
             h.setLevel(logging.WARNING)
 
+    # 设置日志文件
+    simple_log_file: TextIO | None = None
+    if log_session is not None:
+        log_stem = _resolve_log_stem(log_session)
+        if log_stem:
+            _LOG_REPLAY_DIR.mkdir(parents=True, exist_ok=True)
+            _LOG_SIMPLE_DIR.mkdir(parents=True, exist_ok=True)
+            _LOG_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+            debug_session_path = _LOG_DEBUG_DIR / f"{log_stem}.log"
+            _setup_session_file_logging(debug_session_path)
+            simple_session_path = _LOG_SIMPLE_DIR / f"{log_stem}.txt"
+            simple_log_file = simple_session_path.open("w", encoding="utf-8")
+            logging.info(
+                "观战日志：调试 logs/debug/%s.log | 可读 logs/simple/%s.txt",
+                log_stem,
+                log_stem,
+            )
+
     try:
         from ui.terminal_rich import LiveMatchCallback
         from llm.runner import run_llm_match
         from llm.agent.profile import load_profile
     except ImportError as e:
         print(f"需要 rich: pip install rich ({e})", file=sys.stderr)
+        if simple_log_file:
+            simple_log_file.close()
         return 2
 
     # 加载玩家名字
@@ -305,7 +327,8 @@ def _cmd_watch_dry_run(
             client=client,
             dry_run=dry_run,
             verbose=False,
-            session_audit=True,  # 启用审计日志以查看 prompt
+            session_audit=session_audit,
+            simple_log_file=simple_log_file,
             request_delay_seconds=0.0 if dry_run else delay,
             on_step_callback=callback.on_step,
             max_history_rounds=max_history_rounds,
@@ -316,6 +339,10 @@ def _cmd_watch_dry_run(
             f"\nplayer_steps={rr.player_steps} kernel_steps={rr.kernel_steps} "
             f"reason={rr.stopped_reason!r} phase={rr.final_state.phase.value}"
         )
+
+    if simple_log_file:
+        simple_log_file.close()
+
     return 0
 
 
@@ -459,6 +486,8 @@ def main(argv: list[str] | None = None) -> int:
                 max_tokens=yaml_cfg.get("llm", {}).get("max_tokens"),
                 players=cfg.players,
                 kernel_config_path=kernel_config_path,
+                log_session=cfg.log_session,
+                session_audit=cfg.session_audit,
             )
 
     if cfg.replay:

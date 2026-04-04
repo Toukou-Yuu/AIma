@@ -171,14 +171,7 @@ class PlayerAgent:
 
         messages.append(current_user_msg)
 
-        # DEBUG: 记录完整 prompt
-        if session_audit:
-            full_prompt = "\n\n".join([f"[{m.role}]\n{m.content}" for m in messages])
-            log.debug("llm_full_prompt seat=%s:\n%s", seat, full_prompt)
-            # 同时写入文件确保能看到
-            debug_file = Path("logs/debug/last_prompt.txt")
-            debug_file.parent.mkdir(parents=True, exist_ok=True)
-            debug_file.write_text(full_prompt, encoding="utf-8")
+        # 调用 LLM
         if request_delay_seconds > 0:
             time.sleep(request_delay_seconds)
         raw = client.complete(messages)
