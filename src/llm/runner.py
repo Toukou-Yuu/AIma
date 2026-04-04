@@ -74,6 +74,37 @@ def _accumulate_simple_stats(
             hands_finished[0] += 1
 
 
+def _update_agent_stats(
+    events: tuple[GameEvent, ...],
+    seat_agents: dict[int, PlayerAgent],
+) -> None:
+    """更新 Agent 的 episode 统计（Ron/Tsumo/DealIn）。"""
+    for ev in events:
+        if isinstance(ev, RonEvent):
+            # 和了者记录 win
+            if ev.seat in seat_agents:
+                seat_agents[ev.seat].record_win(ev.win_tile.to_code(), is_ron=True)
+            # 放铳者记录 deal_in
+            if ev.discard_seat in seat_agents:
+                seat_agents[ev.discard_seat].record_deal_in(ev.win_tile.to_code())
+        elif isinstance(ev, TsumoEvent):
+            if ev.seat in seat_agents:
+                seat_agents[ev.seat].record_win(ev.win_tile.to_code(), is_ron=False)
+
+
+def _finalize_agents_episode(
+    events: tuple[GameEvent, ...],
+    seat_agents: dict[int, PlayerAgent],
+) -> None:
+    """局结束时更新所有 Agent 的 memory。"""
+    for ev in events:
+        if isinstance(ev, HandOverEvent):
+            for seat in range(4):
+                if seat in seat_agents:
+                    points = ev.payments[seat]
+                    seat_agents[seat].end_episode(points)
+
+
 def _write_simple_snapshot(
     fp: TextIO | None,
     state: GameState,
@@ -384,6 +415,9 @@ def run_llm_match(
         )
         _accumulate_simple_stats(begin_out.events, win_counts, hands_finished)
         hand_number = 1
+        # Phase 3: 第一局开始时初始化 episode 统计
+        for seat, agent in seat_agents.items():
+            agent.start_episode(seat)
         _write_simple_snapshot(
             simple_log_file,
             begin_out.new_state,
@@ -450,6 +484,9 @@ def run_llm_match(
                     if clear_history_on_new_hand:
                         for agent in seat_agents.values():
                             agent.clear_history()
+                    # Phase 3: 新一局开始时初始化 episode 统计
+                    for seat, agent in seat_agents.items():
+                        agent.start_episode(seat)
                 _write_simple_snapshot(
                     simple_log_file,
                     state,
@@ -545,6 +582,9 @@ def run_llm_match(
             )
             la, llm_why = decision.action, decision.why
             act = legal_action_to_action(la)
+            # Phase 3: 记录立直
+            if act.kind == ActionKind.DISCARD and act.declare_riichi:
+                agent.record_riichi()
             turn_draw_tile: Tile | None = None
             discard_seat_for_log: int | None = None
             discarded_tile_for_log: Tile | None = None
@@ -561,6 +601,10 @@ def run_llm_match(
                 verbose=verbose,
             )
             _accumulate_simple_stats(step_out.events, win_counts, hands_finished)
+            # Phase 3: 更新 Agent 统计
+            _update_agent_stats(step_out.events, seat_agents)
+            # Phase 3: 局结束时更新 Agent memory
+            _finalize_agents_episode(step_out.events, seat_agents)
             state = step_out.new_state
             _write_simple_snapshot(
                 simple_log_file,

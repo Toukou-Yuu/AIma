@@ -28,21 +28,23 @@ class Decision:
 class PlayerAgent:
     """玩家代理 - 封装 LLM 调用和状态管理.
 
-    Phase 2: 支持从 profile.json 加载个性化配置.
+    Phase 3: 支持从 memory.json 加载长期记忆.
     """
 
     def __init__(
         self,
         player_id: str | None = None,
         profile: "PlayerProfile | None" = None,
+        memory: "PlayerMemory | None" = None,
         max_history_rounds: int = 10,
     ):
         """初始化 Agent.
 
         Args:
-            player_id: 玩家 ID（用于从 configs/players/{id}/profile.json 加载配置）
-            profile: 直接传入的 profile（优先级高于 player_id）
-            max_history_rounds: 最大历史对话轮数
+            player_id: 玩家 ID
+            profile: 直接传入的 profile
+            memory: 直接传入的 memory
+            max_history_rounds: 最大历史轮数
         """
         self.player_id = player_id
         self.max_history_rounds = max_history_rounds
@@ -58,6 +60,19 @@ class PlayerAgent:
         else:
             self.profile = self._default_profile()
 
+        # 加载 memory
+        if memory is not None:
+            self.memory = memory
+        elif player_id is not None:
+            from llm.agent.memory import load_memory
+            self.memory = load_memory(player_id)
+        else:
+            from llm.agent.memory import PlayerMemory
+            self.memory = PlayerMemory()
+
+        # 局内统计收集器
+        self._episode_stats: "EpisodeStats | None" = None
+
     def _default_profile(self) -> "PlayerProfile":
         """返回默认 profile."""
         from llm.agent.profile import PlayerProfile
@@ -72,6 +87,55 @@ class PlayerAgent:
             persona_prompt="",
             strategy_prompt="",
         )
+
+    def start_episode(self, seat: int) -> None:
+        """开始新一局，初始化统计收集器."""
+        from llm.agent.memory import EpisodeStats
+        self._episode_stats = EpisodeStats(
+            player_id=self.player_id or "default",
+            seat=seat,
+        )
+
+    def record_riichi(self) -> None:
+        """记录立直宣言."""
+        if self._episode_stats is None:
+            return
+        self._episode_stats.riichi_count += 1
+
+    def record_win(self, win_tile: str, is_ron: bool = False) -> None:
+        """记录和了."""
+        if self._episode_stats is None:
+            return
+        self._episode_stats.wins += 1
+        self._episode_stats.win_tiles.append(win_tile)
+        if self._episode_stats.riichi_count > 0:
+            self._episode_stats.riichi_win += 1
+
+    def record_deal_in(self, deal_in_tile: str) -> None:
+        """记录放铳."""
+        if self._episode_stats is None:
+            return
+        self._episode_stats.deal_ins += 1
+        self._episode_stats.deal_in_tiles.append(deal_in_tile)
+        if self._episode_stats.riichi_count > 0:
+            self._episode_stats.riichi_deal_in += 1
+
+    def end_episode(self, points: int) -> None:
+        """结束本局，更新 memory."""
+        if self._episode_stats is None or self.player_id is None:
+            return
+        self._episode_stats.total_points = points
+        self._episode_stats.hands_played = 1
+
+        # 生成新 memory
+        from llm.agent.memory import EpisodeSummarizer, save_memory
+        summarizer = EpisodeSummarizer()
+        new_memory = summarizer.summarize(self._episode_stats, self.memory)
+        self.memory = new_memory
+
+        # 保存到文件
+        save_memory(self.player_id, new_memory)
+        self._episode_stats = None
 
     def decide(
         self,
@@ -127,8 +191,8 @@ class PlayerAgent:
         user_content = build_decision_prompt(obs, acts)
         current_user_msg = ChatMessage(role="user", content=user_content)
 
-        # 5. 拼装消息（使用 profile 的 persona/strategy）
-        messages = [ChatMessage(role="system", content=build_system_prompt(self.profile))]
+        # 5. 拼装消息（使用 profile 的 persona/strategy + memory）
+        messages = [ChatMessage(role="system", content=build_system_prompt(self.profile, self.memory))]
         if self._history:
             messages.extend(self._history)
         messages.append(current_user_msg)
