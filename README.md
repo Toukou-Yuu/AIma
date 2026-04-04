@@ -9,6 +9,7 @@
 | `src/kernel/` | 日麻内核：状态机、`apply`、流局、点数、`legal_actions` / `observation` 等 |
 | `src/llm/` | 大模型适配：HTTP、提示拼装、解析校验、`run_llm_match` CLI（`python -m llm`） |
 | `src/ui/` | **Rich 终端实时观战**（推荐） |
+| `demo/` | 演示牌谱和运行脚本 |
 | `assets/docs/` | 架构与对外 API 说明（给 AI / 编排层） |
 | `mahjong_rules/` | 规则子集 v1 对照（版本号以文件内为准） |
 | `configs/` | **YAML 配置文件**（推荐用法） |
@@ -37,21 +38,21 @@ python -m llm --config configs/watch_mode.yaml
 python -m llm --config configs/quick_test.yaml
 
 # CLI 覆盖配置参数
-python -m llm --config configs/watch_mode.yaml --seed 100 --max-steps 800
+python -m llm --config configs/watch_mode.yaml --seed 100 --max-player-steps 800
 ```
 
 ### 3. 传统 CLI 方式（向后兼容）
 
 **Dry-run 模式**（随机演示，无需 API Key）：
 ```bash
-python -m llm --watch --dry-run --seed 42 --max-steps 100 --watch-delay 0.3
+python -m llm --watch --dry-run --seed 42 --max-player-steps 100 --watch-delay 0.3
 ```
 
 **真实 AI 对局**（需要配置 API Key）：
 ```bash
 # 配置环境变量
 export AIMA_OPENAI_API_KEY="your-key"
-python -m llm --watch --seed 42 --max-steps 100 --watch-delay 0.5
+python -m llm --watch --seed 42 --max-player-steps 100 --watch-delay 0.5
 ```
 
 ### 4. 从牌谱回放
