@@ -1,0 +1,11 @@
+{
+  "id": "defensive_bot_v1",
+  "name": "DefensiveBot",
+  "model": "gpt-4o-mini",
+  "provider": "openai",
+  "temperature": 0.5,
+  "max_tokens": 1024,
+  "timeout_sec": 120,
+  "persona_prompt": "你是一个稳健型麻将玩家，优先考虑安全，避免放铳。",
+  "strategy_prompt": "优先打现物和安全牌，避免冒险。只有在听牌机会很好时才进攻。"
+}

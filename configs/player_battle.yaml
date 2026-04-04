@@ -1,0 +1,36 @@
+# 多玩家对战配置示例
+# 用法: python -m llm --config configs/player_battle.yaml
+
+match:
+  seed: 42
+  max_player_steps: 500
+  # 指定对战玩家（座位 0-3）
+  players:
+    - id: aggressive_bot_v1
+      seat: 0
+    - id: defensive_bot_v1
+      seat: 1
+    - id: default
+      seat: 2
+    - id: default
+      seat: 3
+
+llm:
+  timeout_sec: 120
+  max_tokens: 1024
+  request_delay: 0.5
+  max_history_rounds: 10
+  clear_history_per_hand: false
+
+logging:
+  session: ""
+  session_audit: true
+
+watch:
+  enabled: true
+  delay: 0.5
+  show_reason: true
+
+debug:
+  verbose: false
+  dry_run: false

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +18,15 @@ class LLMClientConfig:
     model: str
     timeout_sec: float = 120.0
     max_tokens: int = 1024
+
+
+@dataclass(frozen=True, slots=True)
+class MatchConfig:
+    """对局配置。"""
+
+    seed: int = 42
+    max_player_steps: int = 500
+    players: list[dict[str, Any]] | None = None
 
 
 def _env(name: str, default: str | None = None) -> str | None:
@@ -83,8 +93,33 @@ def load_llm_config(
     return LLMClientConfig(
         provider=provider,
         base_url=base or "",
-        api_key=key,
+        api_key=key or "",
         model=model or "",
         timeout_sec=timeout_s,
         max_tokens=max_tok,
+    )
+
+
+def load_match_config(config_path: Path | str) -> MatchConfig:
+    """从 YAML 加载对局配置。
+
+    Args:
+        config_path: YAML 配置文件路径
+
+    Returns:
+        MatchConfig
+    """
+    try:
+        import yaml
+    except ImportError:
+        raise ImportError("加载 YAML 配置需要安装 PyYAML: pip install pyyaml")
+
+    with open(config_path, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+
+    match_data = data.get("match", {})
+    return MatchConfig(
+        seed=match_data.get("seed", 42),
+        max_player_steps=match_data.get("max_player_steps", 500),
+        players=match_data.get("players"),
     )

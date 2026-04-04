@@ -141,6 +141,7 @@ def _merge_config(
         "clear_history_per_hand": yaml_cfg.get("llm", {}).get("clear_history_per_hand", False),
         "session_audit": yaml_cfg.get("logging", {}).get("session_audit", False),
         "show_reason": yaml_cfg.get("watch", {}).get("show_reason", True),
+        "players": yaml_cfg.get("match", {}).get("players"),
     }
 
     # 显式指定的 CLI 参数覆盖 YAML
@@ -160,6 +161,18 @@ def _merge_config(
 
     # 特殊处理 replay（没有默认值，CLI 显式指定才覆盖）
     result.replay = getattr(cli_args, "replay", None)
+
+    # 特殊处理 players：CLI 字符串格式转为列表
+    if isinstance(result.players, str) and result.players:
+        # CLI 格式: "id0,id1,id2,id3"
+        player_ids = result.players.split(",")
+        result.players = [
+            {"id": pid.strip() if pid.strip() else "default", "seat": i}
+            for i, pid in enumerate(player_ids[:4])
+        ]
+        # 补充剩余座位为 default
+        for i in range(len(result.players), 4):
+            result.players.append({"id": "default", "seat": i})
 
     return result
 
@@ -249,6 +262,7 @@ def _cmd_watch_dry_run(
             on_step_callback=callback.on_step,
             max_history_rounds=max_history_rounds,
             clear_history_on_new_hand=clear_history_per_hand,
+            players=None,
         )
         print(
             f"\nplayer_steps={rr.player_steps} kernel_steps={rr.kernel_steps} "
@@ -352,6 +366,13 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="每局开始时清空该席的历史消息（默认跨局保留）",
     )
+    p.add_argument(
+        "--players",
+        type=str,
+        default=None,
+        metavar="ID_LIST",
+        help="指定对战玩家，格式: id0,id1,id2,id3（对应座位0-3），如: aggressive_bot_v1,defensive_bot_v1,default,default",
+    )
     args = p.parse_args(argv)
 
     # 合并配置（CLI 覆盖 YAML）
@@ -433,6 +454,7 @@ def main(argv: list[str] | None = None) -> int:
                 request_delay_seconds=0.0 if cfg.dry_run else cfg.request_delay,
                 max_history_rounds=cfg.max_history_rounds,
                 clear_history_on_new_hand=cfg.clear_history_per_hand,
+                players=cfg.players,
             )
     else:
         rr = run_llm_match(
@@ -446,6 +468,7 @@ def main(argv: list[str] | None = None) -> int:
             request_delay_seconds=0.0 if cfg.dry_run else cfg.request_delay,
             max_history_rounds=cfg.max_history_rounds,
             clear_history_on_new_hand=cfg.clear_history_per_hand,
+            players=cfg.players,
         )
     print(
         f"player_steps={rr.player_steps} kernel_steps={rr.kernel_steps} "

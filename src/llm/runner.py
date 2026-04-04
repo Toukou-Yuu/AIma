@@ -35,6 +35,7 @@ from kernel.event_log import (
 from kernel.replay_json import action_to_wire, game_event_to_wire, match_log_document
 from kernel.tiles.model import Tile
 from llm.action_build import legal_action_to_action
+from llm.agent import PlayerAgent
 from llm.observation_format import SYSTEM_PROMPT, build_user_prompt
 from llm.parse import extract_json_object
 from llm.protocol import ChatMessage, CompletionClient
@@ -318,6 +319,7 @@ def run_llm_match(
     on_step_callback: Callable[[GameState, tuple[GameEvent, ...], str, str | None], None] | None = None,
     max_history_rounds: int = 10,
     clear_history_on_new_hand: bool = False,
+    players: list[dict[str, Any]] | None = None,
 ) -> RunResult:
     """
     从 ``PRE_DEAL`` 开局到 ``MATCH_END`` 或步数上限。
@@ -334,6 +336,7 @@ def run_llm_match(
     - ``request_delay_seconds``：每次调用 LLM 前休眠秒数（减压控/防连接被掐）；``dry_run`` 时不请求，不休眠。
     - ``on_step_callback``：可选回调，每步玩家决策后调用（用于实时 UI 观战）。
     - ``max_player_steps``：最大玩家决策步数（不含局间 NOOP 和 PASS 合并）。
+    - ``players``：可选，指定对战玩家列表，格式 [{"id": "player_id", "seat": 0}, ...]。
     """
     if simple_log_file is not None:
         simple_log_file.write(f"# AIma 对局可读日志（简体中文） seed={seed}\n\n")
@@ -341,8 +344,26 @@ def run_llm_match(
     hand_number = 0
     win_counts: list[int] = [0, 0, 0, 0]
     hands_finished: list[int] = [0]
-    # 每席 LLM 历史消息
-    seat_histories: dict[int, list[ChatMessage]] = {0: [], 1: [], 2: [], 3: []}
+    # 每席 Agent 实例（支持 players 配置）
+    if players:
+        # 按配置创建指定玩家
+        seat_agents: dict[int, PlayerAgent] = {}
+        for p in players:
+            seat = p["seat"]
+            player_id = p.get("id")
+            seat_agents[seat] = PlayerAgent(
+                player_id=player_id,
+                max_history_rounds=max_history_rounds,
+            )
+        # 未指定的座位使用默认
+        for s in range(4):
+            if s not in seat_agents:
+                seat_agents[s] = PlayerAgent(max_history_rounds=max_history_rounds)
+    else:
+        # 全部使用默认
+        seat_agents: dict[int, PlayerAgent] = {
+            s: PlayerAgent(max_history_rounds=max_history_rounds) for s in range(4)
+        }
     state = initial_game_state()
     wall_seed = seed
     wall = tuple(shuffle_deck(build_deck(), seed=wall_seed))
@@ -427,8 +448,8 @@ def run_llm_match(
                     hand_number += 1
                     # 新一局开始时，根据配置清空历史
                     if clear_history_on_new_hand:
-                        for s in seat_histories:
-                            seat_histories[s] = []
+                        for agent in seat_agents.values():
+                            agent.clear_history()
                 _write_simple_snapshot(
                     simple_log_file,
                     state,
@@ -513,18 +534,16 @@ def run_llm_match(
                     continue
 
             seat = pending[0]
-            la, llm_why, new_hist = choose_legal_action(
+            agent = seat_agents[seat]
+            decision = agent.decide(
                 state,
                 seat,
                 client=client,
                 dry_run=dry_run,
                 session_audit=session_audit,
                 request_delay_seconds=request_delay_seconds,
-                history=seat_histories.get(seat, []),
-                max_history_rounds=max_history_rounds,
             )
-            # 更新该席历史
-            seat_histories[seat] = new_hist
+            la, llm_why = decision.action, decision.why
             act = legal_action_to_action(la)
             turn_draw_tile: Tile | None = None
             discard_seat_for_log: int | None = None
