@@ -1,5 +1,5 @@
 {
-  "id": "balanced_bot_v1",
+  "id": "kavi",
   "name": "卡维",
   "model": "gpt-4o-mini",
   "provider": "openai",

@@ -1,5 +1,5 @@
 {
-  "id": "defensive_bot_v1",
+  "id": "yui",
   "name": "八木唯",
   "model": "gpt-4o-mini",
   "provider": "openai",

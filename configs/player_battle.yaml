@@ -6,13 +6,13 @@ match:
   max_player_steps: 500
   # 指定对战玩家（座位 0-3）：四位 Phase 2 创建的 Bot
   players:
-    - id: aggressive_bot_v1
+    - id: ichihime
       seat: 0
-    - id: defensive_bot_v1
+    - id: yui
       seat: 1
-    - id: balanced_bot_v1
+    - id: kavi
       seat: 2
-    - id: opportunistic_bot_v1
+    - id: kana
       seat: 3
 
 llm:
