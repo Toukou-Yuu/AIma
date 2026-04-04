@@ -277,11 +277,6 @@ class LiveMatchViewer:
         # 当前动作标题（无缩进）
         lines.append(Text(f"当前动作: {self._last_action_str}", style="bold bright_yellow"))
 
-        # 显示决策理由
-        if self.show_reason and self._last_reason:
-            reason_text = Text(f"决策理由: {self._last_reason}", style="italic dim")
-            lines.append(reason_text)
-
         for seat in range(4):
             # 计算相对风位
             rel_wind = (seat - dealer) % 4
@@ -346,25 +341,40 @@ class LiveMatchViewer:
             )
             lines.append(player_text)
 
-            # 副露行
-            if melds:
-                meld_text = Text.assemble(
-                    ("│   ├── " if not is_last else "    ├── ", "bright_black"),
-                    (f"副露: {melds_str}", "bright_magenta"),
-                )
-                lines.append(meld_text)
+            # 副露行（固定渲染）
+            meld_prefix = "│   ├── " if not is_last else "    ├── "
+            meld_content = melds_str if melds_str and melds_str != "无" else "（无）"
+            meld_text = Text.assemble(
+                (meld_prefix, "bright_black"),
+                ("副露: ", "dim"),
+                (meld_content, "bright_magenta" if melds else "dim"),
+            )
+            lines.append(meld_text)
 
-            # 牌河行
-            river_text_obj = self._river_to_str(board.river, seat, board.revealed_indicators)
-            if river_text_obj.plain.strip():  # 检查内容是否非空
-                river_line = Text.assemble(
-                    ("│   └── " if not is_last else "    └── ", "bright_black"),
-                    ("牌河: ", "dim"),
-                )
-                river_line.append(river_text_obj)
-                lines.append(river_line)
+            # 牌河行（固定渲染）
+            river_prefix = "│   ├── " if not is_last else "    ├── "
+            river_content = river_str if river_str else "（无）"
+            river_line = Text.assemble(
+                (river_prefix, "bright_black"),
+                ("牌河: ", "dim"),
+            )
+            if river_str:
+                river_line.append(river_str)
             else:
-                # 如果没有牌河，也显示一个空行保持结构
+                river_line.append(("（无）", "dim"))
+            lines.append(river_line)
+
+            # 决策理由行（只在上一步行动的座位显示）
+            if seat == self._last_actor_seat and self._last_reason:
+                reason_prefix = "│   └── " if not is_last else "    └── "
+                reason_text = Text.assemble(
+                    (reason_prefix, "bright_black"),
+                    ("决策理由: ", "dim cyan"),
+                    (self._last_reason, "italic bright_cyan"),
+                )
+                lines.append(reason_text)
+            else:
+                # 占位行保持结构
                 lines.append(Text("│" + " " * 79 if not is_last else " " * 80, style="bright_black"))
 
             # 空行分隔（除了最后一家）- 两行间距
