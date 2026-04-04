@@ -167,6 +167,7 @@ class LiveMatchViewer:
         self._last_reason: str = ""
         self._step = 0
         self._last_actor_seat: int | None = None
+        self._seat_reasons: dict[int, str] = {}  # 每席的决策理由
 
     def _hand_to_rich(self, hand: Counter, dora_tiles: set) -> Text:
         """将手牌转为 Rich Text，宝牌显示为红色底色。"""
@@ -364,13 +365,16 @@ class LiveMatchViewer:
                 river_line.append(("（无）", "dim"))
             lines.append(river_line)
 
-            # 决策理由行（只在上一步行动的座位显示）
-            if seat == self._last_actor_seat and self._last_reason:
+            # 决策理由行（显示该席位的最后一次理由）
+            seat_reason = self._seat_reasons.get(seat)
+            if seat_reason and self.show_reason:
                 reason_prefix = "│   └── " if not is_last else "    └── "
+                # 高亮当前行动席
+                reason_style = "bold italic bright_cyan" if seat == self._last_actor_seat else "italic bright_cyan"
                 reason_text = Text.assemble(
                     (reason_prefix, "bright_black"),
                     ("决策理由: ", "dim cyan"),
-                    (self._last_reason, "italic bright_cyan"),
+                    (seat_reason, reason_style),
                 )
                 lines.append(reason_text)
             else:
@@ -665,6 +669,9 @@ class LiveMatchViewer:
                 self._last_actor_seat = int(action_str[1])
             except (ValueError, IndexError):
                 pass
+        # 更新对应席位的决策理由
+        if self._last_actor_seat is not None and reason:
+            self._seat_reasons[self._last_actor_seat] = reason
         self._update_stats(events)
         return self._build_layout(state, events)
 
@@ -759,6 +766,9 @@ class LiveMatchCallback:
     def __enter__(self):
         self.live = Live(console=self.viewer.console, refresh_per_second=4)
         self.live.__enter__()
+        # 显示初始加载提示
+        from rich.panel import Panel
+        self.live.update(Panel("[dim]正在初始化对局，等待 LLM 响应...", title="AIma", border_style="bright_blue"))
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
