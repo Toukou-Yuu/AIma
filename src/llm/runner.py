@@ -438,6 +438,9 @@ def run_llm_match(
             verbose,
             f"[match] begin_round phase={state.phase.value} dealer={state.table.dealer_seat}",
         )
+        # 初始状态显示（让 UI 先渲染配牌结果）
+        if on_step_callback is not None:
+            on_step_callback(state, begin_out.events, "开局配牌", None)
         if session_audit:
             br = _live_wall_remaining_tiles(state.board)
             log.info(
