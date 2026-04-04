@@ -157,8 +157,17 @@ class PlayerAgent:
 
         # 5. 拼装消息（使用 profile 的 persona/strategy + memory + stats）
         messages = [ChatMessage(role="system", content=build_system_prompt(self.profile, self.memory, self.stats))]
+
+        # 注入本局决策历史（纯文本格式）
         if episode_ctx.decision_history:
-            messages.extend(episode_ctx.decision_history)
+            history_text = episode_ctx.format_history_for_prompt()
+            if history_text:
+                history_msg = ChatMessage(
+                    role="user",
+                    content=f"本局前期决策历史：\n{history_text}\n---"
+                )
+                messages.append(history_msg)
+
         messages.append(current_user_msg)
 
         # 6. 调用 LLM

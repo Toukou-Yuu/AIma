@@ -62,6 +62,61 @@ class EpisodeContext:
         """记录决策到历史."""
         self.decision_history.append(decision)
 
+    def format_history_for_prompt(self) -> str:
+        """将决策历史格式化为纯文本.
+
+        Returns:
+            纯文本格式的决策历史，每行一条记录
+        """
+        if not self.decision_history:
+            return ""
+
+        lines = []
+        for i, d in enumerate(self.decision_history, 1):
+            action_desc = self._describe_action(d.action)
+            reason = d.why if d.why else "未说明"
+            lines.append(f"第{i}巡: {action_desc} (理由: {reason})")
+
+        return "\n".join(lines)
+
+    def _describe_action(self, action) -> str:
+        """将 action 描述为可读文本."""
+        from kernel.engine.actions import ActionKind
+
+        kind = action.kind
+
+        if kind == ActionKind.DISCARD:
+            tile_code = action.tile.to_code() if action.tile else "?"
+            riichi_str = "并立直" if action.declare_riichi else ""
+            return f"打{tile_code}{riichi_str}"
+
+        if kind == ActionKind.CALL_CHII:
+            tiles = "/".join(t.to_code() for t in action.tiles) if action.tiles else "?"
+            called = action.called_tile.to_code() if action.called_tile else "?"
+            return f"吃 {tiles} (叫{called})"
+
+        if kind == ActionKind.CALL_PON:
+            tiles = "/".join(t.to_code() for t in action.tiles) if action.tiles else "?"
+            called = action.called_tile.to_code() if action.called_tile else "?"
+            return f"碰 {tiles} (叫{called})"
+
+        if kind == ActionKind.CALL_KAN:
+            tiles = "/".join(t.to_code() for t in action.tiles) if action.tiles else "?"
+            called = action.called_tile.to_code() if action.called_tile else "?"
+            return f"杠 {tiles} (叫{called})"
+
+        if kind == ActionKind.CALL_RON:
+            tile_code = action.win_tile.to_code() if action.win_tile else "?"
+            return f"荣和 {tile_code}"
+
+        if kind == ActionKind.CALL_TSUMO:
+            return "自摸"
+
+        if kind == ActionKind.PASS_CALL:
+            return "跳过"
+
+        return kind.value
+
     def end_episode(self, points: int) -> None:
         """结束本局，更新统计."""
         self.episode_stats.total_points = points

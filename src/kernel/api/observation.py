@@ -45,6 +45,7 @@ class Observation:
         phase: 对局阶段（``IN_ROUND`` / ``HAND_OVER`` / ``MATCH_END`` 等）
         hand: 自家手牌（人类模式：门清时完整，副露后含副露；全知模式：完整）
         melds: 自家副露
+        all_melds: 四家副露（公开信息）
         river: 全局河（按时间序）
         dora_indicators: 表宝指示牌
         ura_indicators: 里宝指示牌（仅全知模式或自家立直后）
@@ -64,6 +65,7 @@ class Observation:
     phase: GamePhase
     hand: Counter[Tile] | None
     melds: tuple[Meld, ...]
+    all_melds: tuple[tuple[Meld, ...], ...]  # 四家副露，公开信息
     river: tuple[RiverEntry, ...]
     dora_indicators: tuple[Tile, ...]
     ura_indicators: tuple[Tile, ...] | None
@@ -115,10 +117,12 @@ def observation(
     # 手牌信息
     hand = None
     melds = ()
+    all_melds: tuple[tuple[Meld, ...], ...] = ()
     hands_by_seat: tuple[Counter[Tile], Counter[Tile], Counter[Tile], Counter[Tile]] | None = None
     if board is not None:
         hand = Counter(board.hands[seat].elements())
         melds = tuple(board.melds[seat])
+        all_melds = tuple(tuple(board.melds[s]) for s in range(4))  # 四家副露，公开可见
         if mode == "debug":
             hands_by_seat = tuple(Counter(board.hands[s].elements()) for s in range(4))
 
@@ -184,6 +188,7 @@ def observation(
         phase=phase,
         hand=hand,
         melds=melds,
+        all_melds=all_melds,
         river=river,
         dora_indicators=dora_indicators,
         ura_indicators=ura_indicators,

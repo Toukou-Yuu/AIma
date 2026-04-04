@@ -32,7 +32,7 @@ def _river_entries(river: tuple[RiverEntry, ...]) -> list[dict[str, Any]]:
 
 
 def observation_to_prompt_dict(obs: Observation) -> dict[str, Any]:
-    """人类观测 → 可 JSON 序列化的 dict（不含 debug 王牌等敏感扩展给模型时可裁剪）。"""
+    """人类观测 → 可 JSON 序列化的 dict（不含 debug 王牌等敏感扩展给模型时可裁剪）."""
     out: dict[str, Any] = {
         "seat": obs.seat,
         "phase": obs.phase.value,
@@ -45,6 +45,18 @@ def observation_to_prompt_dict(obs: Observation) -> dict[str, Any]:
                 **({"from_seat": m.from_seat} if m.from_seat is not None else {}),
             }
             for m in obs.melds
+        ],
+        "melds_by_seat": [
+            [
+                {
+                    "kind": m.kind.value,
+                    "tiles": [t.to_code() for t in m.tiles],
+                    **({"called_tile": m.called_tile.to_code()} if m.called_tile is not None else {}),
+                    **({"from_seat": m.from_seat} if m.from_seat is not None else {}),
+                }
+                for m in seat_melds
+            ]
+            for seat_melds in obs.all_melds
         ],
         "river": _river_entries(obs.river),
         "dora_indicators": [t.to_code() for t in obs.dora_indicators],
