@@ -177,6 +177,30 @@ def _merge_config(
     return result
 
 
+def _cmd_show_stats(player_id: str) -> int:
+    """显示玩家统计."""
+    from llm.agent.stats import load_stats
+    stats = load_stats(player_id)
+
+    print(f"\n【{player_id} 统计数据】")
+    print(f"累计对局: {stats.total_games}场")
+    print(f"累计局数: {stats.total_hands}局")
+    print(f"\n和了: {stats.wins}次 ({stats.win_rate:.1%})")
+    print(f"放铳: {stats.deal_ins}次 ({stats.deal_in_rate:.1%})")
+    print(f"立直: {stats.riichi_count}次 ({stats.riichi_rate:.1%})")
+    if stats.riichi_count > 0:
+        print(f"  └ 立直成功: {stats.riichi_wins}次 ({stats.riichi_success_rate:.1%})")
+        print(f"  └ 立直放铳: {stats.riichi_deal_ins}次 ({stats.riichi_deal_in_rate:.1%})")
+    print(f"\n平均顺位: {stats.avg_placement:.2f}")
+    print(f"场均得点: {stats.avg_points_per_game:+.1f}")
+    print(f"\n顺位分布:")
+    print(f"  一位: {stats.first_place_count} ({stats.first_place_count/stats.total_games:.1%})")
+    print(f"  二位: {stats.second_place_count} ({stats.second_place_count/stats.total_games:.1%})")
+    print(f"  三位: {stats.third_place_count} ({stats.third_place_count/stats.total_games:.1%})")
+    print(f"  四位: {stats.fourth_place_count} ({stats.fourth_place_count/stats.total_games:.1%})")
+    return 0
+
+
 def _cmd_replay(path: str) -> int:
     """从牌谱 JSON 执行 ``replay_from_actions``，打印终局摘要。"""
     raw = Path(path).read_text(encoding="utf-8")
@@ -373,10 +397,21 @@ def main(argv: list[str] | None = None) -> int:
         metavar="ID_LIST",
         help="指定对战玩家，格式: id0,id1,id2,id3（对应座位0-3），如: aggressive_bot_v1,defensive_bot_v1,default,default",
     )
+    p.add_argument(
+        "--show-stats",
+        type=str,
+        default=None,
+        metavar="PLAYER_ID",
+        help="显示指定玩家的统计数据",
+    )
     args = p.parse_args(argv)
 
     # 合并配置（CLI 覆盖 YAML）
     cfg = _merge_config(yaml_cfg, args)
+
+    # Phase 4: --show-stats 模式
+    if getattr(args, "show_stats", None):
+        return _cmd_show_stats(args.show_stats)
 
     # --watch 模式优先处理
     if cfg.watch:

@@ -28,7 +28,7 @@ class Decision:
 class PlayerAgent:
     """玩家代理 - 封装 LLM 调用和状态管理.
 
-    Phase 3: 支持从 memory.json 加载长期记忆.
+    Phase 4: 支持从 stats.json 加载长期统计.
     """
 
     def __init__(
@@ -36,6 +36,7 @@ class PlayerAgent:
         player_id: str | None = None,
         profile: "PlayerProfile | None" = None,
         memory: "PlayerMemory | None" = None,
+        stats: "PlayerStats | None" = None,
         max_history_rounds: int = 10,
     ):
         """初始化 Agent.
@@ -44,6 +45,7 @@ class PlayerAgent:
             player_id: 玩家 ID
             profile: 直接传入的 profile
             memory: 直接传入的 memory
+            stats: 直接传入的 stats
             max_history_rounds: 最大历史轮数
         """
         self.player_id = player_id
@@ -70,8 +72,20 @@ class PlayerAgent:
             from llm.agent.memory import PlayerMemory
             self.memory = PlayerMemory()
 
+        # Phase 4: 加载 stats
+        if stats is not None:
+            self.stats = stats
+        elif player_id is not None:
+            from llm.agent.stats import load_stats
+            self.stats = load_stats(player_id)
+        else:
+            from llm.agent.stats import PlayerStats
+            self.stats = PlayerStats()
+
         # 局内统计收集器
         self._episode_stats: "EpisodeStats | None" = None
+        # Phase 4: 本局统计收集器
+        self._match_stats: "MatchStats | None" = None
 
     def _default_profile(self) -> "PlayerProfile":
         """返回默认 profile."""
@@ -95,47 +109,76 @@ class PlayerAgent:
             player_id=self.player_id or "default",
             seat=seat,
         )
+        # Phase 4: 初始化本局统计
+        if self._match_stats is None:
+            from llm.agent.stats import MatchStats
+            self._match_stats = MatchStats()
 
     def record_riichi(self) -> None:
         """记录立直宣言."""
-        if self._episode_stats is None:
-            return
-        self._episode_stats.riichi_count += 1
+        if self._episode_stats is not None:
+            self._episode_stats.riichi_count += 1
+        # Phase 4: 更新 match stats
+        if self._match_stats is not None:
+            self._match_stats.riichi_count += 1
 
     def record_win(self, win_tile: str, is_ron: bool = False) -> None:
         """记录和了."""
-        if self._episode_stats is None:
-            return
-        self._episode_stats.wins += 1
-        self._episode_stats.win_tiles.append(win_tile)
-        if self._episode_stats.riichi_count > 0:
-            self._episode_stats.riichi_win += 1
+        if self._episode_stats is not None:
+            self._episode_stats.wins += 1
+            self._episode_stats.win_tiles.append(win_tile)
+            if self._episode_stats.riichi_count > 0:
+                self._episode_stats.riichi_win += 1
+        # Phase 4: 更新 match stats
+        if self._match_stats is not None:
+            self._match_stats.wins += 1
+            if self._match_stats.riichi_count > 0:
+                self._match_stats.riichi_wins += 1
 
     def record_deal_in(self, deal_in_tile: str) -> None:
         """记录放铳."""
-        if self._episode_stats is None:
-            return
-        self._episode_stats.deal_ins += 1
-        self._episode_stats.deal_in_tiles.append(deal_in_tile)
-        if self._episode_stats.riichi_count > 0:
-            self._episode_stats.riichi_deal_in += 1
+        if self._episode_stats is not None:
+            self._episode_stats.deal_ins += 1
+            self._episode_stats.deal_in_tiles.append(deal_in_tile)
+            if self._episode_stats.riichi_count > 0:
+                self._episode_stats.riichi_deal_in += 1
+        # Phase 4: 更新 match stats
+        if self._match_stats is not None:
+            self._match_stats.deal_ins += 1
+            if self._match_stats.riichi_count > 0:
+                self._match_stats.riichi_deal_ins += 1
 
     def end_episode(self, points: int) -> None:
         """结束本局，更新 memory."""
-        if self._episode_stats is None or self.player_id is None:
+        if self._episode_stats is not None and self.player_id is not None:
+            self._episode_stats.total_points = points
+            self._episode_stats.hands_played = 1
+            from llm.agent.memory import EpisodeSummarizer, save_memory
+            summarizer = EpisodeSummarizer()
+            new_memory = summarizer.summarize(self._episode_stats, self.memory)
+            self.memory = new_memory
+            save_memory(self.player_id, new_memory)
+            self._episode_stats = None
+
+        # Phase 4: 累计本局统计（但不保存，等整场比赛结束）
+        if self._match_stats is not None:
+            self._match_stats.points += points
+            self._match_stats.hands += 1
+
+    def end_match(self, placement: int) -> None:
+        """结束整场比赛，更新 stats."""
+        if self._match_stats is None or self.player_id is None:
             return
-        self._episode_stats.total_points = points
-        self._episode_stats.hands_played = 1
 
-        # 生成新 memory
-        from llm.agent.memory import EpisodeSummarizer, save_memory
-        summarizer = EpisodeSummarizer()
-        new_memory = summarizer.summarize(self._episode_stats, self.memory)
-        self.memory = new_memory
+        self._match_stats.placement = placement
 
-        # 保存到文件
-        save_memory(self.player_id, new_memory)
-        self._episode_stats = None
+        # 更新长期统计
+        from llm.agent.stats import StatsAggregator, save_stats
+        aggregator = StatsAggregator()
+        new_stats = aggregator.update(self.stats, self._match_stats)
+        self.stats = new_stats
+        save_stats(self.player_id, new_stats)
+        self._match_stats = None
 
     def decide(
         self,
@@ -191,8 +234,8 @@ class PlayerAgent:
         user_content = build_decision_prompt(obs, acts)
         current_user_msg = ChatMessage(role="user", content=user_content)
 
-        # 5. 拼装消息（使用 profile 的 persona/strategy + memory）
-        messages = [ChatMessage(role="system", content=build_system_prompt(self.profile, self.memory))]
+        # 5. 拼装消息（使用 profile 的 persona/strategy + memory + stats）
+        messages = [ChatMessage(role="system", content=build_system_prompt(self.profile, self.memory, self.stats))]
         if self._history:
             messages.extend(self._history)
         messages.append(current_user_msg)

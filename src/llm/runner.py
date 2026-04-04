@@ -457,6 +457,22 @@ def run_llm_match(
     while player_steps < max_player_steps:
         if state.phase == GamePhase.MATCH_END:
             reason = "match_end"
+            # Phase 4: 更新所有 Agent 的 stats
+            final_scores = state.table.scores
+            # 计算排名（按分数降序，同分同排名）
+            sorted_seats = sorted(range(4), key=lambda s: -final_scores[s])
+            placements = {}
+            current_rank = 1
+            for i, seat in enumerate(sorted_seats):
+                if i > 0 and final_scores[seat] == final_scores[sorted_seats[i-1]]:
+                    placements[seat] = placements[sorted_seats[i-1]]
+                else:
+                    placements[seat] = current_rank
+                current_rank += 1
+            # 更新每个 agent 的 stats
+            for seat, agent in seat_agents.items():
+                if agent.player_id is not None:
+                    agent.end_match(placements[seat])
             break
 
         if state.phase in (GamePhase.HAND_OVER, GamePhase.FLOWN):

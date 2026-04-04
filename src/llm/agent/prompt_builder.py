@@ -1,6 +1,6 @@
 """Prompt 拼装 - 整合 persona + observation + legal_actions.
 
-Phase 3: 支持从 memory 注入历史表现.
+Phase 4: 支持从 stats 注入统计数据.
 """
 
 from __future__ import annotations
@@ -14,19 +14,22 @@ from llm.observation_format import SYSTEM_PROMPT, build_user_prompt
 if TYPE_CHECKING:
     from llm.agent.memory import PlayerMemory
     from llm.agent.profile import PlayerProfile
+    from llm.agent.stats import PlayerStats
 
 
 def build_system_prompt(
     profile: PlayerProfile | None = None,
     memory: PlayerMemory | None = None,
+    stats: PlayerStats | None = None,
 ) -> str:
     """构建系统提示.
 
-    整合 SYSTEM_PROMPT + persona + strategy + memory.
+    整合 SYSTEM_PROMPT + persona + strategy + memory + stats.
 
     Args:
         profile: 玩家配置（包含 persona_prompt 和 strategy_prompt）
         memory: 玩家记忆（包含 play_bias 和 recent_patterns）
+        stats: 玩家统计（包含胜率、放铳率等）
 
     Returns:
         系统提示字符串
@@ -45,6 +48,13 @@ def build_system_prompt(
         memory_text = format_memory_for_prompt(memory)
         if memory_text:
             sections.append(f"\n【历史表现】\n{memory_text}")
+
+    # Phase 4: 注入 stats
+    if stats and stats.total_games > 0:
+        from llm.agent.stats import format_stats_for_prompt
+        stats_text = format_stats_for_prompt(stats)
+        if stats_text:
+            sections.append(f"\n【统计数据】\n{stats_text}")
 
     return "\n".join(sections)
 
