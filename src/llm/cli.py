@@ -298,7 +298,7 @@ def _cmd_watch_dry_run(
             client=client,
             dry_run=dry_run,
             verbose=False,
-            session_audit=False,
+            session_audit=True,  # 启用审计日志以查看 prompt
             request_delay_seconds=0.0 if dry_run else delay,
             on_step_callback=callback.on_step,
             max_history_rounds=max_history_rounds,
