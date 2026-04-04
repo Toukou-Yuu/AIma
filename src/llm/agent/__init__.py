@@ -170,7 +170,10 @@ class PlayerAgent:
 
         messages.append(current_user_msg)
 
-        # 6. 调用 LLM
+        # DEBUG: 记录完整 prompt
+        if session_audit:
+            full_prompt = "\n\n".join([f"[{m.role}]\n{m.content}" for m in messages])
+            log.debug("llm_full_prompt seat=%s:\n%s", seat, full_prompt)
         if request_delay_seconds > 0:
             time.sleep(request_delay_seconds)
         raw = client.complete(messages)
