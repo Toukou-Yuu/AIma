@@ -148,14 +148,23 @@ class PlayerAgent:
             if self._match_stats.riichi_count > 0:
                 self._match_stats.riichi_deal_ins += 1
 
-    def end_episode(self, points: int) -> None:
+    def end_episode(self, points: int, client: CompletionClient | None = None) -> None:
         """结束本局，更新 memory."""
         if self._episode_stats is not None and self.player_id is not None:
             self._episode_stats.total_points = points
             self._episode_stats.hands_played = 1
-            from llm.agent.memory import EpisodeSummarizer, save_memory
-            summarizer = EpisodeSummarizer()
-            new_memory = summarizer.summarize(self._episode_stats, self.memory)
+
+            # Phase 5: 可选使用 LLM 润色
+            if client is not None:
+                from llm.agent.llm_summarizer import LLMSummarizer
+                from llm.agent.memory import save_memory
+                summarizer = LLMSummarizer(client)
+                new_memory = summarizer.polish(self.memory, self._episode_stats)
+            else:
+                from llm.agent.memory import EpisodeSummarizer, save_memory
+                summarizer = EpisodeSummarizer()
+                new_memory = summarizer.summarize(self._episode_stats, self.memory)
+
             self.memory = new_memory
             save_memory(self.player_id, new_memory)
             self._episode_stats = None
