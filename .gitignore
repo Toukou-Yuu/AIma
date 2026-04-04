@@ -28,7 +28,7 @@ Thumbs.db
 *.swo
 
 # Claude：本机覆盖
-.claude/settings.local.json
+.claude/
 
 # --- 私密 / 仅本机（不推送、不给人看）：Agent 约定、人设、设计备忘、IDE 规则、Codex 配置 ---
 AGENTS.md
