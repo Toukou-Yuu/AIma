@@ -303,7 +303,7 @@ def _cmd_watch_dry_run(
             on_step_callback=callback.on_step,
             max_history_rounds=max_history_rounds,
             clear_history_on_new_hand=clear_history_per_hand,
-            players=None,
+            players=players,
         )
         print(
             f"\nplayer_steps={rr.player_steps} kernel_steps={rr.kernel_steps} "
