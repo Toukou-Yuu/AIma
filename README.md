@@ -1,10 +1,10 @@
 # AIma
 
-让大语言模型打日式麻将。支持 OpenAI 与 Anthropic API，提供实时终端观战、牌谱记录与回放。
+让大语言模型打日式麻将。支持四位魂天神社角色（一姬、八木唯、卡维、藤田佳奈）实时对战，提供 Rich 终端观战、牌谱记录与回放。
 
 ## 快速开始
 
-### 环境准备
+### 1. 环境准备
 
 ```bash
 conda env create -f environment.yml
@@ -12,109 +12,134 @@ conda activate aima
 pip install -e ".[rich]"
 ```
 
-### 使用配置文件运行（推荐）
+### 2. 创建配置文件
 
 ```bash
-# 正式对局（实时观战 + 自动记录）
-python -m llm --config configs/watch_mode.yaml
+cp configs/aima_kernel_template.yaml configs/aima_kernel.yaml
+```
+
+编辑 `configs/aima_kernel.yaml`，填入你的 API Key：
+
+```yaml
+llm:
+  provider: openai
+  api_key: "sk-你的-api-key"      # 必填：填入你的 API Key
+  base_url: "https://api.openai.com/v1"
+  model: "gpt-4o-mini"
+```
+
+支持任意 OpenAI 兼容接口（DeepSeek、本地 Ollama 等）。
+
+### 3. 运行对局
+
+```bash
+# 四位魂天神社角色对战（实时观战）
+python -m llm --config configs/player_battle.yaml
 
 # 快速测试（Dry-run，无需 API Key）
 python -m llm --config configs/quick_test.yaml
-
-# CLI 覆盖配置参数
-python -m llm --config configs/watch_mode.yaml --seed 100 --max-player-steps 800
 ```
 
-### 传统 CLI 方式（向后兼容）
+## 四位角色
 
-**Dry-run 模式**（随机演示，无需 API Key）：
-```bash
-python -m llm --watch --dry-run --seed 42 --max-player-steps 100 --watch-delay 0.3
+| 座位 | 名字 | 性格 | 口头禅 |
+|------|------|------|--------|
+| 东 | 一姬 | 活泼猫耳巫女 | "喵~大胜利！" |
+| 南 | 八木唯 | 冷淡天才 | "...我不明白" |
+| 西 | 卡维 | 神秘占卜师 | "命运无法改变" |
+| 北 | 藤田佳奈 | 元气偶像 | "牌效好麻烦喵" |
+
+## 配置说明
+
+### 内核配置（aima_kernel.yaml）
+
+```yaml
+llm:
+  provider: openai              # openai 或 anthropic
+  api_key: "your-key"           # API 密钥（必填）
+  base_url: "https://..."       # API 地址
+  model: "gpt-4o-mini"          # 模型名称
+
+players:                        # 默认玩家配置
+  - id: ichihime     # 一姬
+    seat: 0
+  - id: yui          # 八木唯
+    seat: 1
+  - id: kavi         # 卡维
+    seat: 2
+  - id: kana         # 藤田佳奈
+    seat: 3
 ```
 
-**真实 AI 对局**（需要配置 API Key）：
-```bash
-# 配置环境变量
-export AIMA_OPENAI_API_KEY="your-key"
-python -m llm --watch --seed 42 --max-player-steps 100 --watch-delay 0.5
-```
-
-### 从牌谱回放
-
-```bash
-python -m llm --watch --replay logs/replay/xxx.json --watch-delay 0.2
-```
-
-## 配置文件说明
-
-配置文件位于 `configs/` 目录：
-
-| 配置文件 | 用途 |
-|---------|------|
-| `default.yaml` | 完整参考模板（所有选项及注释） |
-| `watch_mode.yaml` | **正式对局**（观战 + 自动记录日志） |
-| `quick_test.yaml` | 快速测试（dry-run，无 API 调用） |
-
-**配置结构示例**（`configs/watch_mode.yaml`）：
+### 对局配置（player_battle.yaml）
 
 ```yaml
 match:
-  seed: 42                    # 整数 (0 ~ 2^31-1)
-  max_player_steps: 500       # 正整数（玩家决策步数）
-
-llm:
-  timeout_sec: 120            # 正数 (30-300)
-  max_tokens: 1024            # 正整数 (512-2048)
-  request_delay: 0.5          # 非负数（每次请求间隔）
-  max_history_rounds: 10      # 非负整数 (0=禁用历史)
-  clear_history_per_hand: false   # 新一局是否清空历史
+  seed: 42
+  max_player_steps: 500
 
 logging:
-  session: ""                 # null | "" | "自定义名称"
-  json: null                  # null | "path/to/file.json"
-  session_audit: true         # true/false
+  session: ""           # 生成时间戳命名的日志
+  session_audit: true
 
 watch:
-  enabled: true               # true/false
-  delay: 0.5                  # 非负数（观战延迟）
-  show_reason: true           # true/false（显示模型思考）
-
-debug:
-  verbose: false              # true/false
-  dry_run: false              # true/false（随机演示，不调用 API）
+  enabled: true
+  delay: 0.5
+  show_reason: true     # 显示决策理由
 ```
 
-**优先级**：CLI 参数 > YAML 配置 > 代码默认值
-
-## CLI 参数说明
+## 常用命令
 
 ```bash
-python -m llm --help
+# 实时观战
+python -m llm --config configs/player_battle.yaml
+
+# 生成日志文件
+python -m llm --config configs/player_battle.yaml --log-session my_match
+
+# 从牌谱回放
+python -m llm --watch --replay logs/replay/xxx.json
+
+# 快速测试（无需 API Key）
+python -m llm --config configs/quick_test.yaml
 ```
 
-常用参数：
-- `--config PATH` - **YAML 配置文件路径（推荐）**
-- `--watch` - 启用 Rich 实时观战
-- `--watch-delay SEC` - 观战每步间隔秒数（默认 0.3）
-- `--dry-run` - 随机演示，不调用 LLM
-- `--seed INT` - 洗牌种子
-- `--max-player-steps INT` - 最大玩家决策步数
-- `--log-session [STEM]` - 生成日志文件
-- `--replay PATH` - 从牌谱回放
+## 生成的日志
 
-## 环境变量
+运行后自动生成：
+- `logs/replay/{timestamp}.json` - 完整牌谱
+- `logs/debug/{timestamp}.log` - 调试日志
+- `logs/simple/{timestamp}.txt` - 可读文本日志
 
-| 变量 | 说明 |
-|------|------|
-| `AIMA_LLM_PROVIDER` | `openai`（默认）或 `anthropic` |
-| `AIMA_OPENAI_API_KEY` | OpenAI API Key |
-| `AIMA_OPENAI_BASE_URL` | 自定义 API 端点（可选） |
-| `AIMA_OPENAI_MODEL` | 模型名称（默认 gpt-4o-mini） |
-| `AIMA_ANTHROPIC_API_KEY` | Anthropic API Key |
-| `AIMA_ANTHROPIC_BASE_URL` | Anthropic API 端点（可选） |
-| `AIMA_ANTHROPIC_MODEL` | 模型名称（默认 claude-3-5-haiku） |
-| `AIMA_OPENAI_API_KEY_SEAT0` … `SEAT3` | 可选：为特定座位指定不同密钥 |
-| `AIMA_LLM_TIMEOUT_SEC` | 请求超时秒数（默认 120） |
-| `AIMA_LLM_MAX_TOKENS` | 最大生成长度（默认 1024） |
+## 项目结构
 
-仓库根目录 `.env.example` 提供模板；**勿将真实密钥提交版本库**。
+```
+configs/
+  aima_kernel_template.yaml    # 配置模板
+  aima_kernel.yaml             # 你的配置（gitignore）
+  player_battle.yaml           # 四位角色对战配置
+  quick_test.yaml              # 快速测试配置
+
+configs/players/               # 角色配置
+  ichihime/                    # 一姬（猫耳巫女）
+  yui/                         # 八木唯（天才少女）
+  kavi/                        # 卡维（占卜师）
+  kana/                        # 藤田佳奈（偶像）
+
+src/
+  kernel/                      # 日麻规则内核
+  llm/                         # LLM 编排与角色系统
+  ui/                          # Rich 终端观战
+```
+
+## 详细文档
+
+- [LLM 模块文档](src/llm/README.md) - LLM 编排、角色配置、API 说明
+- [内核文档](src/kernel/README.md) - 日麻规则内核架构
+
+## 开发
+
+```bash
+pip install -e ".[dev,llm]"
+pytest tests/ -q
+```
