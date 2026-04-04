@@ -249,6 +249,11 @@ def _cmd_watch_dry_run(
     players: list[dict[str, Any]] | None = None,
 ) -> int:
     """实时观战（Rich + dry-run 或真实 LLM 模式）。"""
+    # 观战模式下，控制台只显示 WARNING 及以上级别日志，避免干扰 Rich UI
+    for h in logging.getLogger().handlers:
+        if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
+            h.setLevel(logging.WARNING)
+
     try:
         from ui.terminal_rich import LiveMatchCallback
         from llm.runner import run_llm_match
