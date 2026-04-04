@@ -1,0 +1,59 @@
+# AIma 核心配置模板
+# 用法：
+#   1. 复制本文件为 aima_kernel.yaml
+#   2. 填入你的 API Key
+#   3. 运行：python -m llm --kernel-config configs/aima_kernel.yaml
+#
+# 注意：aima_kernel.yaml 已被 gitignore，不会提交到仓库
+
+# ==================== LLM 服务配置 ====================
+llm:
+  # 服务提供商：openai 或 anthropic
+  provider: openai
+
+  # API 配置
+  api_key: "your-api-key-here"  # 必填：填入你的 API Key
+  base_url: "https://api.openai.com/v1"  # OpenAI 官方地址
+  # base_url: "http://localhost:11434/v1"  # Ollama 本地地址
+  # base_url: "https://api.deepseek.com/v1"  # DeepSeek
+
+  # 模型名称
+  model: "gpt-4o-mini"
+  # model: "deepseek-chat"
+  # model: "claude-3-5-sonnet-20241022"
+
+  # 请求参数
+  timeout_sec: 120.0
+  max_tokens: 1024
+
+  # 多席独立配置（可选）
+  # 如果不配置，所有座位使用上方默认配置
+  seats:
+    # seat0:  # 东
+    #   api_key: "seat0-specific-key"
+    #   model: "gpt-4o"
+    # seat1:  # 南
+    #   model: "gpt-4o-mini"
+
+# ==================== 默认玩家配置 ====================
+# 当不指定 --players 时使用的默认玩家
+players:
+  - id: ichihime
+    seat: 0
+  - id: yui
+    seat: 1
+  - id: kavi
+    seat: 2
+  - id: kana
+    seat: 3
+
+# ==================== 日志配置 ====================
+logging:
+  # 日志级别：DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+
+  # 是否写入文件
+  file_output: true
+
+  # 日志目录
+  log_dir: "logs"

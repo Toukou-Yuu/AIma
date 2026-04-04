@@ -247,6 +247,7 @@ def _cmd_watch_dry_run(
     timeout_sec: float | None = None,
     max_tokens: int | None = None,
     players: list[dict[str, Any]] | None = None,
+    kernel_config_path: str = "configs/aima_kernel.yaml",
 ) -> int:
     """实时观战（Rich + dry-run 或真实 LLM 模式）。"""
     # 观战模式下，控制台只显示 WARNING 及以上级别日志，避免干扰 Rich UI
@@ -277,12 +278,13 @@ def _cmd_watch_dry_run(
     client = None
     if not dry_run:
         llm_cfg = load_llm_config(
+            config_path=kernel_config_path,
             timeout_sec=timeout_sec,
             max_tokens=max_tokens,
         )
         if llm_cfg is None:
             print(
-                "未设置 API Key（见 AIMA_OPENAI_* / AIMA_ANTHROPIC_*）。"
+                "未设置 API Key（请在 configs/aima_kernel.yaml 中设置 api_key）。"
                 "使用 --dry-run 可本地试跑。",
                 file=sys.stderr,
             )
@@ -325,13 +327,16 @@ def main(argv: list[str] | None = None) -> int:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-    # 第一遍解析：只取 --config（帮助信息会在第二遍完整显示）
+    # 第一遍解析：只取 --config 和 --kernel-config
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config", metavar="PATH", help="YAML 配置文件路径")
+    pre_parser.add_argument("--kernel-config", metavar="PATH", default="configs/aima_kernel.yaml",
+                            help="内核配置文件路径（默认 configs/aima_kernel.yaml）")
     pre_args, remaining = pre_parser.parse_known_args(argv)
 
     # 加载 YAML 配置
     yaml_cfg = _load_yaml_config(pre_args.config)
+    kernel_config_path = pre_args.kernel_config
 
     # 第二遍解析：完整参数列表
     p = argparse.ArgumentParser(description="AIma LLM 牌手跑局（内核闭环）")
@@ -453,6 +458,7 @@ def main(argv: list[str] | None = None) -> int:
                 timeout_sec=yaml_cfg.get("llm", {}).get("timeout_sec"),
                 max_tokens=yaml_cfg.get("llm", {}).get("max_tokens"),
                 players=cfg.players,
+                kernel_config_path=kernel_config_path,
             )
 
     if cfg.replay:
@@ -487,12 +493,13 @@ def main(argv: list[str] | None = None) -> int:
     client = None
     if not cfg.dry_run:
         llm_cfg = load_llm_config(
+            config_path=kernel_config_path,
             timeout_sec=yaml_cfg.get("llm", {}).get("timeout_sec"),
             max_tokens=yaml_cfg.get("llm", {}).get("max_tokens"),
         )
         if llm_cfg is None:
             print(
-                "未设置 API Key（见 AIMA_OPENAI_* / AIMA_ANTHROPIC_*）。"
+                "未设置 API Key（请在 configs/aima_kernel.yaml 中设置 api_key）。"
                 "使用 --dry-run 可本地试跑。",
                 file=sys.stderr,
             )
