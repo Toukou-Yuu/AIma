@@ -168,6 +168,7 @@ class LiveMatchViewer:
         self._step = 0
         self._last_actor_seat: int | None = None
         self._seat_reasons: dict[int, str] = {}  # 每席的决策理由
+        self._seat_names: dict[int, str] = {}  # 每席的玩家名字
 
     def _hand_to_rich(self, hand: Counter, dora_tiles: set) -> Text:
         """将手牌转为 Rich Text，宝牌显示为红色底色。"""
@@ -332,10 +333,14 @@ class LiveMatchViewer:
             is_last = (seat == 3)
             branch_char = "└──" if is_last else "├──"
 
+            # 获取玩家名字
+            player_name = self._seat_names.get(seat, f"S{seat}")
+
             # 玩家行
             player_text = Text.assemble(
                 (f"{branch_char} ", "bright_black"),
                 _wind_with_seat(rel_wind, seat, is_active),
+                (f"[{player_name}]", "bold bright_green" if is_active else "bright_green"),
                 (riichi_mark, "bold bright_red" if riichi_mark else ""),
                 "  ",
                 hand_text,
@@ -779,6 +784,10 @@ class LiveMatchCallback:
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.live:
             self.live.__exit__(exc_type, exc_val, exc_tb)
+
+    def set_player_names(self, names: dict[int, str]):
+        """设置各席玩家名字。"""
+        self.viewer._seat_names = names
 
     def on_step(self, state: GameState, events: tuple[GameEvent, ...], action_str: str = "", reason: str = ""):
         """每步调用。"""

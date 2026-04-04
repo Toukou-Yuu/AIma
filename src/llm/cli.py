@@ -246,14 +246,28 @@ def _cmd_watch_dry_run(
     show_reason: bool = True,
     timeout_sec: float | None = None,
     max_tokens: int | None = None,
+    players: list[dict[str, Any]] | None = None,
 ) -> int:
     """实时观战（Rich + dry-run 或真实 LLM 模式）。"""
     try:
         from ui.terminal_rich import LiveMatchCallback
         from llm.runner import run_llm_match
+        from llm.agent.profile import load_profile
     except ImportError as e:
         print(f"需要 rich: pip install rich ({e})", file=sys.stderr)
         return 2
+
+    # 加载玩家名字
+    player_names: dict[int, str] = {}
+    if players:
+        for p in players:
+            seat = p["seat"]
+            player_id = p.get("id")
+            if player_id and player_id != "default":
+                profile = load_profile(player_id)
+                player_names[seat] = profile.name if profile else player_id
+            else:
+                player_names[seat] = "默认"
 
     client = None
     if not dry_run:
@@ -275,6 +289,9 @@ def _cmd_watch_dry_run(
         show_reason=show_reason and not dry_run,
         max_player_steps=max_player_steps,
     ) as callback:
+        # 设置玩家名字
+        if player_names:
+            callback.set_player_names(player_names)
         rr = run_llm_match(
             seed=seed,
             max_player_steps=max_player_steps,
@@ -430,6 +447,7 @@ def main(argv: list[str] | None = None) -> int:
                 show_reason=cfg.show_reason,
                 timeout_sec=yaml_cfg.get("llm", {}).get("timeout_sec"),
                 max_tokens=yaml_cfg.get("llm", {}).get("max_tokens"),
+                players=cfg.players,
             )
 
     if cfg.replay:
