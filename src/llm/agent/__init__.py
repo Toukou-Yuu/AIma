@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from kernel.api.legal_actions import LegalAction
     from kernel.engine.state import GameState
+    from llm.agent.context import EpisodeContext
     from llm.protocol import ChatMessage, CompletionClient
 
 log = logging.getLogger(__name__)
@@ -28,7 +29,9 @@ class Decision:
 class PlayerAgent:
     """玩家代理 - 封装 LLM 调用和状态管理.
 
-    Phase 4: 支持从 stats.json 加载长期统计.
+    设计原则：Agent 是无状态的"纯函数"，只保留长期状态（profile/memory/stats）。
+    运行时状态（本局统计、本场统计、决策历史）存储在 EpisodeContext 中，
+    由外部（runner）管理。
     """
 
     def __init__(
@@ -42,17 +45,16 @@ class PlayerAgent:
         """初始化 Agent.
 
         Args:
-            player_id: 玩家 ID
-            profile: 直接传入的 profile
-            memory: 直接传入的 memory
-            stats: 直接传入的 stats
-            max_history_rounds: 最大历史轮数
+            player_id: 玩家 ID（用于从文件加载长期状态）
+            profile: 直接传入的 profile（优先级高于 player_id）
+            memory: 直接传入的 memory（优先级高于 player_id）
+            stats: 直接传入的 stats（优先级高于 player_id）
+            max_history_rounds: 最大历史对话轮数
         """
         self.player_id = player_id
         self.max_history_rounds = max_history_rounds
-        self._history: list[ChatMessage] = []
 
-        # 加载 profile
+        # 加载 profile（长期状态）
         if profile is not None:
             self.profile = profile
         elif player_id is not None:
@@ -62,7 +64,7 @@ class PlayerAgent:
         else:
             self.profile = self._default_profile()
 
-        # 加载 memory
+        # 加载 memory（长期状态）
         if memory is not None:
             self.memory = memory
         elif player_id is not None:
@@ -72,7 +74,7 @@ class PlayerAgent:
             from llm.agent.memory import PlayerMemory
             self.memory = PlayerMemory()
 
-        # Phase 4: 加载 stats
+        # 加载 stats（长期状态）
         if stats is not None:
             self.stats = stats
         elif player_id is not None:
@@ -81,11 +83,6 @@ class PlayerAgent:
         else:
             from llm.agent.stats import PlayerStats
             self.stats = PlayerStats()
-
-        # 局内统计收集器
-        self._episode_stats: "EpisodeStats | None" = None
-        # Phase 4: 本局统计收集器
-        self._match_stats: "MatchStats | None" = None
 
     def _default_profile(self) -> "PlayerProfile":
         """返回默认 profile."""
@@ -102,98 +99,12 @@ class PlayerAgent:
             strategy_prompt="",
         )
 
-    def start_episode(self, seat: int) -> None:
-        """开始新一局，初始化统计收集器."""
-        from llm.agent.memory import EpisodeStats
-        self._episode_stats = EpisodeStats(
-            player_id=self.player_id or "default",
-            seat=seat,
-        )
-        # Phase 4: 初始化本局统计
-        if self._match_stats is None:
-            from llm.agent.stats import MatchStats
-            self._match_stats = MatchStats()
-
-    def record_riichi(self) -> None:
-        """记录立直宣言."""
-        if self._episode_stats is not None:
-            self._episode_stats.riichi_count += 1
-        # Phase 4: 更新 match stats
-        if self._match_stats is not None:
-            self._match_stats.riichi_count += 1
-
-    def record_win(self, win_tile: str, is_ron: bool = False) -> None:
-        """记录和了."""
-        if self._episode_stats is not None:
-            self._episode_stats.wins += 1
-            self._episode_stats.win_tiles.append(win_tile)
-            if self._episode_stats.riichi_count > 0:
-                self._episode_stats.riichi_win += 1
-        # Phase 4: 更新 match stats
-        if self._match_stats is not None:
-            self._match_stats.wins += 1
-            if self._match_stats.riichi_count > 0:
-                self._match_stats.riichi_wins += 1
-
-    def record_deal_in(self, deal_in_tile: str) -> None:
-        """记录放铳."""
-        if self._episode_stats is not None:
-            self._episode_stats.deal_ins += 1
-            self._episode_stats.deal_in_tiles.append(deal_in_tile)
-            if self._episode_stats.riichi_count > 0:
-                self._episode_stats.riichi_deal_in += 1
-        # Phase 4: 更新 match stats
-        if self._match_stats is not None:
-            self._match_stats.deal_ins += 1
-            if self._match_stats.riichi_count > 0:
-                self._match_stats.riichi_deal_ins += 1
-
-    def end_episode(self, points: int, client: CompletionClient | None = None) -> None:
-        """结束本局，更新 memory."""
-        if self._episode_stats is not None and self.player_id is not None:
-            self._episode_stats.total_points = points
-            self._episode_stats.hands_played = 1
-
-            # Phase 5: 可选使用 LLM 润色
-            if client is not None:
-                from llm.agent.llm_summarizer import LLMSummarizer
-                from llm.agent.memory import save_memory
-                summarizer = LLMSummarizer(client)
-                new_memory = summarizer.polish(self.memory, self._episode_stats)
-            else:
-                from llm.agent.memory import EpisodeSummarizer, save_memory
-                summarizer = EpisodeSummarizer()
-                new_memory = summarizer.summarize(self._episode_stats, self.memory)
-
-            self.memory = new_memory
-            save_memory(self.player_id, new_memory)
-            self._episode_stats = None
-
-        # Phase 4: 累计本局统计（但不保存，等整场比赛结束）
-        if self._match_stats is not None:
-            self._match_stats.points += points
-            self._match_stats.hands += 1
-
-    def end_match(self, placement: int) -> None:
-        """结束整场比赛，更新 stats."""
-        if self._match_stats is None or self.player_id is None:
-            return
-
-        self._match_stats.placement = placement
-
-        # 更新长期统计
-        from llm.agent.stats import StatsAggregator, save_stats
-        aggregator = StatsAggregator()
-        new_stats = aggregator.update(self.stats, self._match_stats)
-        self.stats = new_stats
-        save_stats(self.player_id, new_stats)
-        self._match_stats = None
-
     def decide(
         self,
         state: GameState,
         seat: int,
         *,
+        episode_ctx: EpisodeContext,
         client: CompletionClient | None,
         dry_run: bool = False,
         session_audit: bool = False,
@@ -204,6 +115,7 @@ class PlayerAgent:
         Args:
             state: 当前游戏状态
             seat: 玩家座位
+            episode_ctx: 本局运行时上下文（包含统计、历史等）
             client: LLM 客户端（dry_run 时可为 None）
             dry_run: 是否跳过 LLM 调用，直接选第一个合法动作
             session_audit: 是否记录审计日志
@@ -232,11 +144,11 @@ class PlayerAgent:
         if len(acts) == 1 and acts[0].kind == ActionKind.PASS_CALL:
             if session_audit:
                 log.info("llm_skipped singleton pass_call seat=%s", seat)
-            return Decision(acts[0], None, self._history)
+            return Decision(acts[0], None, episode_ctx.decision_history)
 
         # 3. dry_run 模式
         if dry_run or client is None:
-            return Decision(acts[0], None, self._history)
+            return Decision(acts[0], None, episode_ctx.decision_history)
 
         # 4. 构建 observation 和 prompt
         obs = observation(state, seat, mode="human")
@@ -245,8 +157,8 @@ class PlayerAgent:
 
         # 5. 拼装消息（使用 profile 的 persona/strategy + memory + stats）
         messages = [ChatMessage(role="system", content=build_system_prompt(self.profile, self.memory, self.stats))]
-        if self._history:
-            messages.extend(self._history)
+        if episode_ctx.decision_history:
+            messages.extend(episode_ctx.decision_history)
         messages.append(current_user_msg)
 
         # 6. 调用 LLM
@@ -257,7 +169,7 @@ class PlayerAgent:
             head = raw if len(raw) <= 600 else raw[:600] + "…"
             log.debug("llm raw_head seat=%s %r", seat, head)
             # 记录历史消息数量
-            hist_len = len(self._history)
+            hist_len = len(episode_ctx.decision_history)
             log.debug("llm_history seat=%s history_msgs=%s", seat, hist_len)
 
         # 7. 解析和校验
@@ -265,7 +177,7 @@ class PlayerAgent:
             choice = extract_json_object(raw)
         except (ValueError, TypeError) as e:
             log.warning("parse failed, fallback first legal: %s", e)
-            return Decision(acts[0], None, self._history)
+            return Decision(acts[0], None, episode_ctx.decision_history)
 
         why = explain_text_from_choice(choice)
         la = find_matching_legal_action(acts, choice)
@@ -276,13 +188,8 @@ class PlayerAgent:
         # 9. 处理匹配失败的情况（仍记录历史）
         if la is None:
             log.warning("choice not in legal_actions, fallback first: %s", choice)
-            self._history.append(current_user_msg)
-            self._history.append(ChatMessage(role="assistant", content=assistant_content))
-            # 截断历史
-            max_history_msgs = self.max_history_rounds * 2
-            if len(self._history) > max_history_msgs:
-                self._history = self._history[-max_history_msgs:]
-            return Decision(acts[0], None, self._history)
+            episode_ctx.record_decision(Decision(acts[0], None, []))
+            return Decision(acts[0], None, episode_ctx.decision_history)
 
         # 10. 记录审计日志
         if session_audit:
@@ -292,17 +199,53 @@ class PlayerAgent:
                 json.dumps(legal_action_to_wire(la), ensure_ascii=False),
             )
 
-        # 11. 更新历史：追加 user + assistant
-        self._history.append(current_user_msg)
-        self._history.append(ChatMessage(role="assistant", content=assistant_content))
+        # 11. 更新历史
+        episode_ctx.record_decision(Decision(la, why, []))
 
-        # 12. 截断历史
-        max_history_msgs = self.max_history_rounds * 2
-        if len(self._history) > max_history_msgs:
-            self._history = self._history[-max_history_msgs:]
+        return Decision(la, why, episode_ctx.decision_history)
 
-        return Decision(la, why, self._history)
+    def update_memory(
+        self,
+        episode_ctx: EpisodeContext,
+        client: CompletionClient | None = None,
+    ) -> None:
+        """局结束后更新 memory.
 
-    def clear_history(self) -> None:
-        """清空对话历史（用于新一局开始）."""
-        self._history = []
+        Args:
+            episode_ctx: 本局运行时上下文
+            client: 可选的 LLM 客户端（启用 LLM 润色）
+        """
+        if self.player_id is None:
+            return
+
+        # 更新 memory
+        if client is not None:
+            from llm.agent.llm_summarizer import LLMSummarizer
+            from llm.agent.memory import save_memory
+            summarizer = LLMSummarizer(client)
+            new_memory = summarizer.polish(self.memory, episode_ctx.episode_stats)
+        else:
+            from llm.agent.memory import EpisodeSummarizer, save_memory
+            summarizer = EpisodeSummarizer()
+            new_memory = summarizer.summarize(episode_ctx.episode_stats, self.memory)
+
+        self.memory = new_memory
+        save_memory(self.player_id, new_memory)
+
+    def update_stats(self, episode_ctx: EpisodeContext, placement: int) -> None:
+        """比赛结束后更新 stats.
+
+        Args:
+            episode_ctx: 本局运行时上下文（包含本场统计）
+            placement: 最终排名（1-4）
+        """
+        if self.player_id is None:
+            return
+
+        from llm.agent.stats import StatsAggregator, save_stats
+
+        episode_ctx.match_stats.placement = placement
+        aggregator = StatsAggregator()
+        new_stats = aggregator.update(self.stats, episode_ctx.match_stats)
+        self.stats = new_stats
+        save_stats(self.player_id, new_stats)

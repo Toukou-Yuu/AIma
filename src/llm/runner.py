@@ -36,6 +36,7 @@ from kernel.replay_json import action_to_wire, game_event_to_wire, match_log_doc
 from kernel.tiles.model import Tile
 from llm.action_build import legal_action_to_action
 from llm.agent import PlayerAgent
+from llm.agent.context import EpisodeContext
 from llm.observation_format import SYSTEM_PROMPT, build_user_prompt
 from llm.parse import extract_json_object
 from llm.protocol import ChatMessage, CompletionClient
@@ -74,35 +75,38 @@ def _accumulate_simple_stats(
             hands_finished[0] += 1
 
 
-def _update_agent_stats(
+def _update_episode_stats(
     events: tuple[GameEvent, ...],
-    seat_agents: dict[int, PlayerAgent],
+    seat_contexts: dict[int, EpisodeContext],
 ) -> None:
-    """更新 Agent 的 episode 统计（Ron/Tsumo/DealIn）。"""
+    """更新 EpisodeContext 的统计（Ron/Tsumo/DealIn）。"""
     for ev in events:
         if isinstance(ev, RonEvent):
             # 和了者记录 win
-            if ev.seat in seat_agents:
-                seat_agents[ev.seat].record_win(ev.win_tile.to_code(), is_ron=True)
+            if ev.seat in seat_contexts:
+                seat_contexts[ev.seat].record_win(ev.win_tile.to_code())
             # 放铳者记录 deal_in
-            if ev.discard_seat in seat_agents:
-                seat_agents[ev.discard_seat].record_deal_in(ev.win_tile.to_code())
+            if ev.discard_seat in seat_contexts:
+                seat_contexts[ev.discard_seat].record_deal_in(ev.win_tile.to_code())
         elif isinstance(ev, TsumoEvent):
-            if ev.seat in seat_agents:
-                seat_agents[ev.seat].record_win(ev.win_tile.to_code(), is_ron=False)
+            if ev.seat in seat_contexts:
+                seat_contexts[ev.seat].record_win(ev.win_tile.to_code())
 
 
 def _finalize_agents_episode(
     events: tuple[GameEvent, ...],
     seat_agents: dict[int, PlayerAgent],
+    seat_contexts: dict[int, EpisodeContext],
+    client: CompletionClient | None = None,
 ) -> None:
     """局结束时更新所有 Agent 的 memory。"""
     for ev in events:
         if isinstance(ev, HandOverEvent):
             for seat in range(4):
-                if seat in seat_agents:
+                if seat in seat_agents and seat in seat_contexts:
                     points = ev.payments[seat]
-                    seat_agents[seat].end_episode(points)
+                    seat_contexts[seat].end_episode(points)
+                    seat_agents[seat].update_memory(seat_contexts[seat], client)
 
 
 def _write_simple_snapshot(
@@ -395,6 +399,10 @@ def run_llm_match(
         seat_agents: dict[int, PlayerAgent] = {
             s: PlayerAgent(max_history_rounds=max_history_rounds) for s in range(4)
         }
+    # EpisodeContext：运行时状态管理（Agent 无状态化）
+    seat_contexts: dict[int, EpisodeContext] = {
+        s: EpisodeContext(s) for s in range(4)
+    }
     state = initial_game_state()
     wall_seed = seed
     wall = tuple(shuffle_deck(build_deck(), seed=wall_seed))
@@ -415,9 +423,7 @@ def run_llm_match(
         )
         _accumulate_simple_stats(begin_out.events, win_counts, hands_finished)
         hand_number = 1
-        # Phase 3: 第一局开始时初始化 episode 统计
-        for seat, agent in seat_agents.items():
-            agent.start_episode(seat)
+        # EpisodeContext 已在初始化时创建，无需额外操作
         _write_simple_snapshot(
             simple_log_file,
             begin_out.new_state,
@@ -471,8 +477,8 @@ def run_llm_match(
                 current_rank += 1
             # 更新每个 agent 的 stats
             for seat, agent in seat_agents.items():
-                if agent.player_id is not None:
-                    agent.end_match(placements[seat])
+                if agent.player_id is not None and seat in seat_contexts:
+                    agent.update_stats(seat_contexts[seat], placements[seat])
             break
 
         if state.phase in (GamePhase.HAND_OVER, GamePhase.FLOWN):
@@ -496,13 +502,9 @@ def run_llm_match(
                     GamePhase.FLOWN,
                 ):
                     hand_number += 1
-                    # 新一局开始时，根据配置清空历史
-                    if clear_history_on_new_hand:
-                        for agent in seat_agents.values():
-                            agent.clear_history()
-                    # Phase 3: 新一局开始时初始化 episode 统计
-                    for seat, agent in seat_agents.items():
-                        agent.start_episode(seat)
+                    # 新一局开始时，创建新的 EpisodeContext
+                    for s in range(4):
+                        seat_contexts[s] = EpisodeContext(s)
                 _write_simple_snapshot(
                     simple_log_file,
                     state,
@@ -588,9 +590,11 @@ def run_llm_match(
 
             seat = pending[0]
             agent = seat_agents[seat]
+            episode_ctx = seat_contexts[seat]
             decision = agent.decide(
                 state,
                 seat,
+                episode_ctx=episode_ctx,
                 client=client,
                 dry_run=dry_run,
                 session_audit=session_audit,
@@ -598,9 +602,9 @@ def run_llm_match(
             )
             la, llm_why = decision.action, decision.why
             act = legal_action_to_action(la)
-            # Phase 3: 记录立直
+            # 记录立直到 EpisodeContext
             if act.kind == ActionKind.DISCARD and act.declare_riichi:
-                agent.record_riichi()
+                episode_ctx.record_riichi()
             turn_draw_tile: Tile | None = None
             discard_seat_for_log: int | None = None
             discarded_tile_for_log: Tile | None = None
@@ -617,10 +621,10 @@ def run_llm_match(
                 verbose=verbose,
             )
             _accumulate_simple_stats(step_out.events, win_counts, hands_finished)
-            # Phase 3: 更新 Agent 统计
-            _update_agent_stats(step_out.events, seat_agents)
-            # Phase 3: 局结束时更新 Agent memory
-            _finalize_agents_episode(step_out.events, seat_agents)
+            # 更新 EpisodeContext 统计
+            _update_episode_stats(step_out.events, seat_contexts)
+            # 局结束时更新 Agent memory
+            _finalize_agents_episode(step_out.events, seat_agents, seat_contexts, client)
             state = step_out.new_state
             _write_simple_snapshot(
                 simple_log_file,
