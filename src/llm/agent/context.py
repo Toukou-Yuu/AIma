@@ -90,30 +90,36 @@ class EpisodeContext:
             riichi_str = "并立直" if action.declare_riichi else ""
             return f"打{tile_code}{riichi_str}"
 
-        if kind == ActionKind.CALL_CHII:
-            tiles = "/".join(t.to_code() for t in action.tiles) if action.tiles else "?"
-            called = action.called_tile.to_code() if action.called_tile else "?"
-            return f"吃 {tiles} (叫{called})"
+        if kind == ActionKind.OPEN_MELD and action.meld:
+            m = action.meld
+            tiles = "/".join(t.to_code() for t in m.tiles) if m.tiles else "?"
+            called = m.called_tile.to_code() if m.called_tile else "?"
+            kind_map = {"chii": "吃", "pon": "碰", "daiminkan": "杠"}
+            cn = kind_map.get(m.kind.value, m.kind.value)
+            return f"{cn} {tiles} (叫{called})"
 
-        if kind == ActionKind.CALL_PON:
-            tiles = "/".join(t.to_code() for t in action.tiles) if action.tiles else "?"
-            called = action.called_tile.to_code() if action.called_tile else "?"
-            return f"碰 {tiles} (叫{called})"
+        if kind == ActionKind.ANKAN and action.meld:
+            m = action.meld
+            tiles = "/".join(t.to_code() for t in m.tiles) if m.tiles else "?"
+            return f"暗杠 {tiles}"
 
-        if kind == ActionKind.CALL_KAN:
-            tiles = "/".join(t.to_code() for t in action.tiles) if action.tiles else "?"
-            called = action.called_tile.to_code() if action.called_tile else "?"
-            return f"杠 {tiles} (叫{called})"
+        if kind == ActionKind.SHANKUMINKAN and action.meld:
+            m = action.meld
+            tiles = "/".join(t.to_code() for t in m.tiles) if m.tiles else "?"
+            called = m.called_tile.to_code() if m.called_tile else "?"
+            return f"加杠 {tiles} (叫{called})"
 
-        if kind == ActionKind.CALL_RON:
-            tile_code = action.win_tile.to_code() if action.win_tile else "?"
-            return f"荣和 {tile_code}"
+        if kind == ActionKind.RON:
+            return "荣和"
 
-        if kind == ActionKind.CALL_TSUMO:
+        if kind == ActionKind.TSUMO:
             return "自摸"
 
         if kind == ActionKind.PASS_CALL:
             return "跳过"
+
+        if kind == ActionKind.DRAW:
+            return "摸牌"
 
         return kind.value
 

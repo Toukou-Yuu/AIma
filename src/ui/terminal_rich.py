@@ -277,6 +277,11 @@ class LiveMatchViewer:
         # 当前动作标题（无缩进）
         lines.append(Text(f"当前动作: {self._last_action_str}", style="bold bright_yellow"))
 
+        # 显示决策理由
+        if self.show_reason and self._last_reason:
+            reason_text = Text(f"决策理由: {self._last_reason}", style="italic dim")
+            lines.append(reason_text)
+
         for seat in range(4):
             # 计算相对风位
             rel_wind = (seat - dealer) % 4

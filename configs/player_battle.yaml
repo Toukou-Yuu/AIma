@@ -4,15 +4,15 @@
 match:
   seed: 42
   max_player_steps: 500
-  # 指定对战玩家（座位 0-3）
+  # 指定对战玩家（座位 0-3）：四位 Phase 2 创建的 Bot
   players:
     - id: aggressive_bot_v1
       seat: 0
     - id: defensive_bot_v1
       seat: 1
-    - id: default
+    - id: balanced_bot_v1
       seat: 2
-    - id: default
+    - id: opportunistic_bot_v1
       seat: 3
 
 llm:
@@ -28,7 +28,7 @@ logging:
 
 watch:
   enabled: true
-  delay: 0.5
+  delay: 2
   show_reason: true
 
 debug:
