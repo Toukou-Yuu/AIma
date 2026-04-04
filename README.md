@@ -33,6 +33,9 @@ llm:
 ### 3. 运行对局
 
 ```bash
+# 启动交互式终端（推荐）
+python -m ui.interactive
+
 # 四位魂天神社角色对战（实时观战）
 python -m llm --config configs/player_battle.yaml
 
@@ -88,6 +91,22 @@ watch:
   show_reason: true     # 显示决策理由
 ```
 
+## 交互式终端
+
+启动图形化菜单界面：
+
+```bash
+python -m ui.interactive
+```
+
+功能：
+- 🎮 **快速开始** - Dry-run 演示，无需 API Key
+- 🀄 **开始对局** - 选择4位玩家进行对战
+- 👤 **角色管理** - 查看/创建角色（支持4种人格模板）
+- 📺 **牌谱回放** - 回放历史对局
+
+创建角色时可选人格模板：进攻型、防守型、平衡型、变化型。
+
 ## 常用命令
 
 ```bash
@@ -129,13 +148,8 @@ configs/players/               # 角色配置
 src/
   kernel/                      # 日麻规则内核
   llm/                         # LLM 编排与角色系统
-  ui/                          # Rich 终端观战
+  ui/                          # 交互式终端与观战
 ```
-
-## 详细文档
-
-- [LLM 模块文档](src/llm/README.md) - LLM 编排、角色配置、API 说明
-- [内核文档](src/kernel/README.md) - 日麻规则内核架构
 
 ## 开发
 
