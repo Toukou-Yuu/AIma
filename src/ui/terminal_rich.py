@@ -354,7 +354,6 @@ class LiveMatchViewer:
 
             # 牌河行（固定渲染）
             river_prefix = "│   ├── " if not is_last else "    ├── "
-            river_content = river_str if river_str else "（无）"
             river_line = Text.assemble(
                 (river_prefix, "bright_black"),
                 ("牌河: ", "dim"),
@@ -362,7 +361,7 @@ class LiveMatchViewer:
             if river_str:
                 river_line.append(river_str)
             else:
-                river_line.append(("（无）", "dim"))
+                river_line.append(Text("（无）", style="dim"))
             lines.append(river_line)
 
             # 决策理由行（显示该席位的最后一次理由）
