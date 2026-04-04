@@ -86,6 +86,8 @@ SYSTEM_PROMPT = (
     "输出要求：仅输出一行 JSON 对象，不要 markdown 代码块，不要 JSON 以外的文字。\n"
     "JSON 中除下列动作字段外，**必须**包含字符串字段 ``why``："
     "用一两句简体中文说明**为何**选这一手（听牌/防守/打点/宣言等）。\n"
+    "**重要**：`why` 字段必须体现你的人格特色和说话风格（可爱/豪爽/元气/暴躁等），"
+    "使用你的口头禅和语气，不要像机器人一样说话。\n"
     "动作字段必须与所选 legal_actions 中某一项完全一致"
     "（含 kind、seat；discard 须含 tile；需要时含 declare_riichi、meld）。\n"
     '示例：{"kind":"discard","seat":0,"tile":"3m","why":"现物且维持一向听"}\n'
