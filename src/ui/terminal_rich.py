@@ -763,7 +763,13 @@ class LiveMatchCallback:
         self._start_sequence: int = 0
 
     def __enter__(self):
-        self.live = Live(console=self.viewer.console, refresh_per_second=4)
+        # 降低刷新率，使用屏幕缓冲减少闪烁
+        self.live = Live(
+            console=self.viewer.console,
+            refresh_per_second=2,
+            screen=True,
+            transient=True,
+        )
         self.live.__enter__()
         # 显示初始加载提示
         from rich.panel import Panel

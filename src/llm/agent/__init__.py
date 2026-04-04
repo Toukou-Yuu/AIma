@@ -140,10 +140,10 @@ class PlayerAgent:
             msg = f"no legal_actions for seat {seat}"
             raise RuntimeError(msg)
 
-        # 2. 唯一合法动作为「过」时跳过 LLM
-        if len(acts) == 1 and acts[0].kind == ActionKind.PASS_CALL:
+        # 2. 唯一合法动作为「过」或「摸牌」时跳过 LLM（无需决策）
+        if len(acts) == 1 and acts[0].kind in (ActionKind.PASS_CALL, ActionKind.DRAW):
             if session_audit:
-                log.info("llm_skipped singleton pass_call seat=%s", seat)
+                log.info("llm_skipped singleton %s seat=%s", acts[0].kind.value, seat)
             return Decision(acts[0], None, episode_ctx.decision_history)
 
         # 3. dry_run 模式
