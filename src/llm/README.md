@@ -10,94 +10,122 @@ pip install -e ".[rich]"  # LLM + 终端观战（推荐）
 pip install pyyaml         # YAML 配置支持
 ```
 
-依赖：`httpx`、`python-dotenv`、`pyyaml`。
+依赖：`httpx`、`pyyaml`。
 
-## 环境变量
+## 快速开始
 
-在仓库根目录运行时会自动加载 `.env` 文件（不覆盖已 export 的变量）。
+### 1. 创建配置文件
 
-| 变量 | 说明 |
-|------|------|
-| `AIMA_LLM_PROVIDER` | `openai`（默认）或 `anthropic` |
-| `AIMA_OPENAI_API_KEY` | OpenAI 兼容端密钥 |
-| `AIMA_OPENAI_BASE_URL` | 默认 `https://api.openai.com/v1` |
-| `AIMA_OPENAI_MODEL` | 默认 `gpt-4o-mini` |
-| `AIMA_ANTHROPIC_API_KEY` | Anthropic 密钥 |
-| `AIMA_ANTHROPIC_BASE_URL` | 默认 `https://api.anthropic.com` |
-| `AIMA_ANTHROPIC_MODEL` | 默认 `claude-3-5-haiku-20241022` |
-| `AIMA_OPENAI_API_KEY_SEAT0` … `SEAT3` | 可选：为特定座位指定不同密钥 |
-| `AIMA_LLM_TIMEOUT_SEC` | 默认 `120` |
-| `AIMA_LLM_MAX_TOKENS` | 默认 `1024` |
+```bash
+cp configs/aima_kernel_template.yaml configs/aima_kernel.yaml
+```
 
-仓库根目录 `.env.example` 提供模板；**勿将真实密钥提交版本库**。
+编辑 `configs/aima_kernel.yaml`，填入你的 API Key：
+
+```yaml
+llm:
+  provider: openai
+  api_key: "sk-你的-api-key"      # 必填
+  base_url: "https://api.openai.com/v1"
+  model: "gpt-4o-mini"
+  timeout_sec: 120.0
+  max_tokens: 1024
+```
+
+支持任意 OpenAI 兼容接口（如 DeepSeek、本地 Ollama 等）。
+
+### 2. 运行对局
+
+```bash
+# 四位魂天神社角色对战（实时观战）
+python -m llm --config configs/player_battle.yaml
+
+# 快速测试（Dry-run，无需 API Key）
+python -m llm --config configs/quick_test.yaml
+```
+
+## 配置系统
+
+### 内核配置（aima_kernel.yaml）
+
+位于 `configs/aima_kernel.yaml`（已从 gitignore，不提交到仓库）：
+
+```yaml
+llm:
+  provider: openai              # openai 或 anthropic
+  api_key: "your-key"           # API 密钥
+  base_url: "https://..."       # API 地址
+  model: "gpt-4o-mini"          # 模型名称
+  timeout_sec: 120.0
+  max_tokens: 1024
+
+players:                        # 默认玩家
+  - id: ichihime     # 一姬（猫耳巫女）
+    seat: 0
+  - id: yui          # 八木唯（天才少女）
+    seat: 1
+  - id: kavi         # 卡维（占卜师）
+    seat: 2
+  - id: kana         # 藤田佳奈（偶像）
+    seat: 3
+
+logging:
+  level: "INFO"
+  file_output: true
+```
+
+### 对局配置（player_battle.yaml / quick_test.yaml）
+
+```yaml
+match:
+  seed: 42
+  max_player_steps: 500
+  players:                      # 可选：覆盖默认玩家
+    - id: ichihime
+      seat: 0
+    - id: yui
+      seat: 1
+
+logging:
+  session: ""                   # 生成时间戳命名的日志
+  session_audit: true
+
+watch:
+  enabled: true
+  delay: 0.5
+  show_reason: true             # 显示决策理由
+
+debug:
+  dry_run: false
+```
+
+## 四位角色
+
+| 座位 | ID | 名字 | 性格 | 口头禅 |
+|------|-----|------|------|--------|
+| 东 | ichihime | 一姬 | 活泼猫耳巫女 | "喵~大胜利！" |
+| 南 | yui | 八木唯 | 冷淡天才 | "...我不明白" |
+| 西 | kavi | 卡维 | 神秘占卜师 | "命运无法改变" |
+| 北 | kana | 藤田佳奈 | 元气偶像 | "牌效好麻烦喵" |
+
+每位角色有独特的说话风格和决策理由表现。
 
 ## 命令行使用
 
 ### 使用配置文件（推荐）
 
 ```bash
-# 正式对局（实时观战 + 自动记录）
-python -m llm --config configs/watch_mode.yaml
+# 正式对局（实时观战）
+python -m llm --config configs/player_battle.yaml
 
-# 快速测试（Dry-run，无需 API Key）
+# 快速测试（Dry-run）
 python -m llm --config configs/quick_test.yaml
 
-# CLI 覆盖配置参数
-python -m llm --config configs/watch_mode.yaml --seed 100 --max-player-steps 800
-```
+# 生成日志
+python -m llm --config configs/player_battle.yaml --log-session my_match
 
-### 配置文件说明
-
-配置文件位于 `configs/` 目录：
-
-| 配置文件 | 用途 |
-|---------|------|
-| `default.yaml` | 完整参考模板（所有选项及枚举值注释） |
-| `watch_mode.yaml` | **正式对局**（观战 + 自动记录日志） |
-| `quick_test.yaml` | 快速测试（dry-run，无 API 调用） |
-
-**配置结构**：
-
-```yaml
-match:
-  seed: 42                    # 整数 (0 ~ 2^31-1)
-  max_player_steps: 500       # 正整数（玩家决策步数）
-
-llm:
-  timeout_sec: 120            # 正数 (30-300)
-  max_tokens: 1024            # 正整数 (512-2048)
-  request_delay: 0.5          # 非负数（每次请求间隔）
-  max_history_rounds: 10      # 非负整数 (0=禁用历史)
-  clear_history_per_hand: false   # 新一局是否清空历史
-
-logging:
-  session: ""                 # null | "" | "自定义名称"
-  json: null                  # null | "path/to/file.json"
-  session_audit: true         # true/false
-
-watch:
-  enabled: true               # true/false
-  delay: 0.5                  # 非负数（观战延迟）
-  show_reason: true           # true/false（显示模型思考）
-
-debug:
-  verbose: false              # true/false
-  dry_run: false              # true/false（随机演示，不调用 API）
-```
-
-**优先级**：CLI 参数 > YAML 配置 > 代码默认值
-
-### 传统 CLI 方式（向后兼容）
-
-```bash
-# Dry-run 模式（随机演示，无需 API Key）
-python -m llm --watch --dry-run --seed 0 --max-player-steps 200
-
-# 真实 LLM 对局（需配置 API Key）
-python -m llm --watch --seed 1 --max-player-steps 300
-
-# 调整观战速度
-python -m llm --watch --dry-run --seed 0 --watch-delay 0.5
+# 指定内核配置
+python -m llm --config configs/player_battle.yaml --kernel-config configs/my_kernel.yaml
 ```
 
 ### 从牌谱回放
@@ -106,49 +134,33 @@ python -m llm --watch --dry-run --seed 0 --watch-delay 0.5
 python -m llm --watch --replay logs/replay/xxx.json --watch-delay 0.2
 ```
 
-### 生成日志（后台模式）
+### 生成日志
 
-```bash
-# 生成对局日志
-python -m llm --config configs/quick_test.yaml --log-session my_run_01
+设置 `logging.session: ""` 会自动生成时间戳命名的日志：
 
-# 生成的文件：
-# logs/replay/my_run_01.json   - 完整牌谱
-# logs/debug/my_run_01.log     - 调试日志
-# logs/simple/my_run_01.txt    - 可读文本日志
-```
-
-### 完整 CLI 参考
-
-```bash
-python -m llm --help
-```
-
-常用参数：
-- `--config PATH` - **YAML 配置文件路径（推荐）**
-- `--watch` - 启用 Rich 实时观战
-- `--watch-delay SEC` - 观战步间延迟（默认 0.3）
-- `--dry-run` - 随机演示，不调用 API
-- `--seed INT` - 洗牌种子
-- `--max-player-steps INT` - 最大玩家决策步数
-- `--log-session [STEM]` - 生成日志文件
-- `--replay PATH` - 从牌谱回放
+- `logs/replay/20260405-120000.json` - 完整牌谱
+- `logs/debug/20260405-120000.log` - 调试日志
+- `logs/simple/20260405-120000.txt` - 可读文本日志
 
 ## 程序调用
 
 ```python
-from llm import build_client, load_llm_config, run_llm_match
+from llm.config import load_llm_config, load_match_config
+from llm import build_client, run_llm_match
 from ui.terminal_rich import LiveMatchCallback
 
-# 带实时观战的 LLM 对局
+# 加载配置
 llm_cfg = load_llm_config()
+match_cfg = load_match_config("configs/player_battle.yaml")
+
 if llm_cfg:
     client = build_client(llm_cfg)
     with LiveMatchCallback(delay=0.5) as callback:
         rr = run_llm_match(
-            seed=42,
-            max_player_steps=500,
+            seed=match_cfg.seed,
+            max_player_steps=match_cfg.max_player_steps,
             client=client,
+            players=match_cfg.players,
             on_step_callback=callback.on_step
         )
 ```
@@ -158,4 +170,25 @@ if llm_cfg:
 ```bash
 pip install -e ".[dev,llm]"
 pytest tests/test_llm_*.py -q
+```
+
+## 目录结构
+
+```
+configs/
+  aima_kernel_template.yaml    # 配置模板（提交到仓库）
+  aima_kernel.yaml             # 你的配置（gitignore）
+  player_battle.yaml           # 四位角色对战配置
+  quick_test.yaml              # 快速测试配置
+
+logs/
+  replay/                      # 牌谱 JSON
+  debug/                       # 调试日志
+  simple/                      # 可读文本日志
+
+configs/players/               # 角色配置
+  ichihime/                    # 一姬
+  yui/                         # 八木唯
+  kavi/                        # 卡维
+  kana/                        # 藤田佳奈
 ```
