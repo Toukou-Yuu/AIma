@@ -168,6 +168,7 @@ class LiveMatchViewer:
         self._step = 0
         self._last_actor_seat: int | None = None
         self._seat_reasons: dict[int, str] = {}  # 每席的决策理由
+        self._seat_decision_times: dict[int, float] = {}  # 每席的决策时间（秒）
         self._seat_names: dict[int, str] = {}  # 每席的玩家名字
 
     def _hand_to_rich(self, hand: Counter, dora_tiles: set) -> Text:
@@ -369,15 +370,19 @@ class LiveMatchViewer:
                 river_line.append(Text("（无）", style="dim"))
             lines.append(river_line)
 
-            # 决策理由行（显示该席位的最后一次理由）
+            # 决策理由行（显示该席位的最后一次理由和时间）
             seat_reason = self._seat_reasons.get(seat)
+            seat_decision_time = self._seat_decision_times.get(seat, 0)
             if seat_reason and self.show_reason:
                 reason_prefix = "│   └── " if not is_last else "    └── "
                 # 高亮当前行动席
                 reason_style = "bold italic bright_cyan" if seat == self._last_actor_seat else "italic bright_cyan"
+                time_str = f"({seat_decision_time:.1f}s) " if seat_decision_time > 0 else ""
                 reason_text = Text.assemble(
                     (reason_prefix, "bright_black"),
-                    ("决策理由: ", "dim cyan"),
+                    ("决策理由", "dim cyan"),
+                    (time_str, "dim"),
+                    (": ", "dim cyan"),
                     (seat_reason, reason_style),
                 )
                 lines.append(reason_text)
@@ -656,7 +661,7 @@ class LiveMatchViewer:
 
         return Panel(main_content, border_style="bright_blue")
 
-    def step(self, state: GameState, events: tuple[GameEvent, ...], action_str: str = "", reason: str = ""):
+    def step(self, state: GameState, events: tuple[GameEvent, ...], action_str: str = "", reason: str = "", decision_time: float = 0.0):
         """
         单步渲染（供外部调用）。
 
@@ -673,9 +678,10 @@ class LiveMatchViewer:
                 self._last_actor_seat = int(action_str[1])
             except (ValueError, IndexError):
                 pass
-        # 更新对应席位的决策理由
+        # 更新对应席位的决策理由和时间
         if self._last_actor_seat is not None and reason:
             self._seat_reasons[self._last_actor_seat] = reason
+            self._seat_decision_times[self._last_actor_seat] = decision_time
         self._update_stats(events)
         return self._build_layout(state, events)
 
@@ -766,6 +772,7 @@ class LiveMatchCallback:
         self.viewer = LiveMatchViewer(delay=delay, show_reason=show_reason, max_player_steps=max_player_steps)
         self.live: Live | None = None
         self._start_sequence: int = 0
+        self._decision_start_time: float | None = None
 
     def __enter__(self):
         # 降低刷新率，使用屏幕缓冲减少闪烁
@@ -779,6 +786,7 @@ class LiveMatchCallback:
         # 显示初始加载提示
         from rich.panel import Panel
         self.live.update(Panel("[dim]正在初始化对局，等待 LLM 响应...", title="AIma", border_style="bright_blue"))
+        self._decision_start_time = time.time()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -791,7 +799,13 @@ class LiveMatchCallback:
 
     def on_step(self, state: GameState, events: tuple[GameEvent, ...], action_str: str = "", reason: str = ""):
         """每步调用。"""
-        panel = self.viewer.step(state, events, action_str, reason)
+        # 计算决策时间
+        decision_time = 0.0
+        if self._decision_start_time is not None:
+            decision_time = time.time() - self._decision_start_time
+            self._decision_start_time = time.time()  # 重置计时器用于下一步
+
+        panel = self.viewer.step(state, events, action_str, reason, decision_time)
         if self.live:
             self.live.update(panel)
         time.sleep(self.viewer.delay)

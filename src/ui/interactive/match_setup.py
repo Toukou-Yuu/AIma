@@ -118,6 +118,9 @@ class MatchSetupPage(Page):
             cmd_parts.append("--watch")
             cmd_parts.append(f"--watch-delay {settings['delay']}")
 
+        # 添加日志参数
+        cmd_parts.append("--log-session match")
+
         # 检查是否需要 API Key
         has_llm = any(s != "default" for s in selected)
         if has_llm and not KERNEL_CONFIG_PATH.exists():
@@ -165,6 +168,9 @@ class MatchSetupPage(Page):
                 stderr=subprocess.DEVNULL if watch else None,
             )
             console.print("\n[dim]✓ 对局已结束[/dim]")
+            # 终局暂停
+            console.print()
+            Prompt.press_any_key("终局牌桌已保留，按任意键返回菜单...")
         except KeyboardInterrupt:
             console.print("\n")
             console.print(Panel(
@@ -173,8 +179,7 @@ class MatchSetupPage(Page):
                 border_style="yellow",
                 padding=(1, 2),
             ))
-
-        Prompt.press_any_key()
+            Prompt.press_any_key()
 
 
 def run() -> None:
@@ -216,6 +221,9 @@ class QuickStartPage(Page):
                 stderr=subprocess.DEVNULL if watch else None,
             )
             console.print("\n[dim]✓ 对局已结束[/dim]")
+            # 终局暂停
+            console.print()
+            Prompt.press_any_key("终局牌桌已保留，按任意键返回菜单...")
         except KeyboardInterrupt:
             console.print("\n")
             console.print(Panel(
@@ -224,8 +232,7 @@ class QuickStartPage(Page):
                 border_style="yellow",
                 padding=(1, 2),
             ))
-
-        Prompt.press_any_key()
+            Prompt.press_any_key()
 
 
 def quick_start() -> None:

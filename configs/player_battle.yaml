@@ -18,7 +18,7 @@ match:
 llm:
   timeout_sec: 120
   max_tokens: 1024
-  request_delay: 0.5
+  request_delay: 1
   max_history_rounds: 10
   clear_history_per_hand: false
 

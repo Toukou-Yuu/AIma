@@ -185,6 +185,8 @@ class PlayerAgent:
         # 7. 解析和校验
         try:
             choice = extract_json_object(raw)
+            # DEBUG: 打印解析结果
+            print(f"[DEBUG] seat={seat} choice={choice}")
         except (ValueError, TypeError) as e:
             log.warning("parse failed, fallback first legal: %s", e)
             return Decision(acts[0], None, episode_ctx.decision_history)

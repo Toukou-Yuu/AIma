@@ -88,6 +88,9 @@ class ReplayPlayerPage(Page):
 
         try:
             subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL)
+            # 终局暂停
+            console.print()
+            Prompt.press_any_key("回放结束，按任意键返回...")
         except KeyboardInterrupt:
             pass
 
