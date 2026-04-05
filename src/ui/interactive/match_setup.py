@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 
 from rich.console import Console
 from rich.panel import Panel
@@ -119,12 +120,26 @@ def _execute_command(cmd: str, watch: bool) -> None:
     """执行命令."""
     console.print()
     console.print("[bold green]🚀 启动对局...[/bold green]")
+    if watch:
+        console.print("[dim]💡 提示: 观战中按 Ctrl+C 可随时退出返回菜单[/dim]")
     console.print()
 
     try:
-        subprocess.run(cmd, shell=True)
+        # 使用 DEVNULL 隐藏子进程的报错输出
+        subprocess.run(
+            cmd,
+            shell=True,
+            stderr=subprocess.DEVNULL if watch else None,
+        )
+        console.print("\n[dim]✓ 对局已结束[/dim]")
     except KeyboardInterrupt:
-        console.print("\n[dim]对局已中断[/dim]")
+        console.print("\n")
+        console.print(Panel(
+            "[yellow]对局已中断[/yellow]\n"
+            "[dim]日志已保存到 logs/ 目录[/dim]",
+            border_style="yellow",
+            padding=(1, 2),
+        ))
 
     menu.press_any_key()
 
@@ -152,12 +167,23 @@ def quick_start() -> None:
 
     console.print()
     console.print(Panel(f"[dim]{cmd}[/dim]", title="执行命令", border_style="green"))
+    console.print("[dim]💡 提示: 观战中按 Ctrl+C 可随时退出返回菜单[/dim]")
 
     try:
-        subprocess.run(cmd, shell=True)
+        subprocess.run(
+            cmd,
+            shell=True,
+            stderr=subprocess.DEVNULL if watch else None,
+        )
+        console.print("\n[dim]✓ 对局已结束[/dim]")
     except KeyboardInterrupt:
-        console.print("\n[dim]对局已中断[/dim]")
+        console.print("\n")
+        console.print(Panel(
+            "[yellow]对局已中断[/yellow]\n"
+            "[dim]日志已保存到 logs/simple/quick.txt 和 logs/replay/quick.json[/dim]",
+            border_style="yellow",
+            padding=(1, 2),
+        ))
 
-    console.print()
-    console.print("[dim]日志保存于: logs/simple/quick.txt 和 logs/replay/quick.json[/dim]")
     menu.press_any_key()
+

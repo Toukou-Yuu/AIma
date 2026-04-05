@@ -2,7 +2,7 @@
 
 用法::
 
-    from ui.terminal_rich import LiveMatchViewer
+    from ui.terminal import LiveMatchViewer
     from llm.runner import run_llm_match
 
     viewer = LiveMatchViewer(delay=0.5)

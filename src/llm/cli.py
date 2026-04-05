@@ -226,7 +226,7 @@ def _cmd_replay(path: str) -> int:
 def _cmd_watch_replay(path: str, delay: float) -> int:
     """从牌谱 JSON 实时观战（Rich）。"""
     try:
-        from ui.terminal_rich import LiveMatchViewer
+        from ui.terminal import LiveMatchViewer
     except ImportError as e:
         print(f"需要 rich: pip install rich ({e})", file=sys.stderr)
         return 2
@@ -276,7 +276,7 @@ def _cmd_watch_dry_run(
             )
 
     try:
-        from ui.terminal_rich import LiveMatchCallback
+        from ui.terminal import LiveMatchCallback
         from llm.runner import run_llm_match
         from llm.agent.profile import load_profile
     except ImportError as e:

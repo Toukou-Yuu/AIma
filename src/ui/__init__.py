@@ -2,7 +2,7 @@
 
 实时终端观战::
 
-    from ui.terminal_rich import LiveMatchViewer, demo_dry_run
+    from ui.terminal import LiveMatchViewer, demo_dry_run
     demo_dry_run(seed=42)
 """
 
