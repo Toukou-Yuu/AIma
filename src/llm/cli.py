@@ -244,8 +244,7 @@ def _cmd_watch_dry_run(
     max_history_rounds: int = 10,
     clear_history_per_hand: bool = False,
     show_reason: bool = True,
-    timeout_sec: float | None = None,
-    max_tokens: int | None = None,
+    llm_override: dict[str, Any] | None = None,
     players: list[dict[str, Any]] | None = None,
     kernel_config_path: str = "configs/aima_kernel.yaml",
     log_session: str | None = None,
@@ -298,11 +297,11 @@ def _cmd_watch_dry_run(
                 player_names[seat] = "默认"
 
     client = None
+    llm_cfg = None
     if not dry_run:
         llm_cfg = load_llm_config(
             config_path=kernel_config_path,
-            timeout_sec=timeout_sec,
-            max_tokens=max_tokens,
+            override_cfg=llm_override,
         )
         if llm_cfg is None:
             print(
@@ -334,11 +333,22 @@ def _cmd_watch_dry_run(
             max_history_rounds=max_history_rounds,
             clear_history_on_new_hand=clear_history_per_hand,
             players=players,
+            system_prompt=llm_cfg.system_prompt if llm_cfg else None,
         )
         print(
             f"\nplayer_steps={rr.player_steps} kernel_steps={rr.kernel_steps} "
             f"reason={rr.stopped_reason!r} phase={rr.final_state.phase.value}"
         )
+
+    # 保存 replay 日志
+    if log_session is not None:
+        import json
+        log_stem = _resolve_log_stem(log_session)
+        if log_stem:
+            replay_path = _LOG_REPLAY_DIR / f"{log_stem}.json"
+            payload = json.dumps(rr.as_match_log(), ensure_ascii=False, indent=2)
+            replay_path.write_text(payload, encoding="utf-8")
+            print(f"\n对局日志: {replay_path}")
 
     if simple_log_file:
         simple_log_file.close()
@@ -474,6 +484,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_watch_replay(cfg.replay, cfg.watch_delay)
         else:
             # 实时观战（dry-run 或真实 LLM）
+            # 构建对局配置的 llm 覆盖
+            match_llm_override = yaml_cfg.get("llm", {})
             return _cmd_watch_dry_run(
                 cfg.seed,
                 cfg.max_player_steps,
@@ -482,8 +494,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_history_rounds=cfg.max_history_rounds,
                 clear_history_per_hand=cfg.clear_history_per_hand,
                 show_reason=cfg.show_reason,
-                timeout_sec=yaml_cfg.get("llm", {}).get("timeout_sec"),
-                max_tokens=yaml_cfg.get("llm", {}).get("max_tokens"),
+                llm_override=match_llm_override,
                 players=cfg.players,
                 kernel_config_path=kernel_config_path,
                 log_session=cfg.log_session,
@@ -523,8 +534,7 @@ def main(argv: list[str] | None = None) -> int:
     if not cfg.dry_run:
         llm_cfg = load_llm_config(
             config_path=kernel_config_path,
-            timeout_sec=yaml_cfg.get("llm", {}).get("timeout_sec"),
-            max_tokens=yaml_cfg.get("llm", {}).get("max_tokens"),
+            override_cfg=yaml_cfg.get("llm"),
         )
         if llm_cfg is None:
             print(
@@ -549,6 +559,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_history_rounds=cfg.max_history_rounds,
                 clear_history_on_new_hand=cfg.clear_history_per_hand,
                 players=cfg.players,
+                system_prompt=llm_cfg.system_prompt if llm_cfg else None,
             )
     else:
         rr = run_llm_match(
@@ -563,6 +574,7 @@ def main(argv: list[str] | None = None) -> int:
             max_history_rounds=cfg.max_history_rounds,
             clear_history_on_new_hand=cfg.clear_history_per_hand,
             players=cfg.players,
+            system_prompt=llm_cfg.system_prompt if llm_cfg else None,
         )
     print(
         f"player_steps={rr.player_steps} kernel_steps={rr.kernel_steps} "

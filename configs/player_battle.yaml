@@ -1,6 +1,9 @@
 # 多玩家对战配置示例
 # 用法: python -m llm --config configs/player_battle.yaml
+#
+# 配置优先级：本文件 > aima_kernel.yaml 中的座位配置 > aima_kernel.yaml 全局配置
 
+# ==================== 对局基本设置 ====================
 match:
   seed: 42
   max_player_steps: 500
@@ -15,22 +18,28 @@ match:
     - id: kana
       seat: 3
 
+# ==================== LLM 对局特定覆盖（可选） ====================
+# 以下配置会覆盖 aima_kernel.yaml 中的对应值
+# 如不需要覆盖，可删除整个 llm 节或注释其中部分项
 llm:
-  timeout_sec: 120
-  max_tokens: 1024
-  request_delay: 1
-  max_history_rounds: 10
-  clear_history_per_hand: false
+  # timeout_sec: 300      # 对局特定超时（秒），覆盖内核配置
+  # max_tokens: 2048      # 对局特定最大 token，覆盖内核配置
+  request_delay: 0.5      # 请求间隔（秒）
+  # max_history_rounds: 10  # 覆盖内核配置
+  # clear_history_per_hand: false  # 覆盖内核配置
 
-logging:
-  session: ""
-  session_audit: true
-
+# ==================== 实时观战设置 ====================
 watch:
   enabled: true
-  delay: 2
-  show_reason: true
+  delay: 0.5              # 观战延迟（秒）
+  show_reason: true       # 显示决策理由
 
+# ==================== 日志设置 ====================
+logging:
+  session: ""             # 生成时间戳命名的日志
+  session_audit: true
+
+# ==================== 调试选项 ====================
 debug:
   verbose: false
   dry_run: false

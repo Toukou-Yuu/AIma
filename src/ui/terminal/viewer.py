@@ -661,14 +661,13 @@ class LiveMatchViewer:
         # 顶部并排：场况 + 统计
         top_row = Columns([header_panel, stats_panel], equal=False, expand=False)
 
-        # 手牌树（中间，足够高度）
+        # 手牌树（中间，自适应高度）
         player_tree = self._render_player_tree(state)
         hand_panel = Panel(
             player_tree,
             title="手牌",
             border_style="green",
-            height=26,  # 增加高度
-            padding=(0, 2),  # 增加水平边距
+            padding=(0, 2),
         )
 
         # 事件（底部）

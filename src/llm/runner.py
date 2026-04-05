@@ -355,6 +355,7 @@ def run_llm_match(
     max_history_rounds: int = 10,
     clear_history_on_new_hand: bool = False,
     players: list[dict[str, Any]] | None = None,
+    system_prompt: str | None = None,
 ) -> RunResult:
     """
     从 ``PRE_DEAL`` 开局到 ``MATCH_END`` 或步数上限。
@@ -389,15 +390,22 @@ def run_llm_match(
             seat_agents[seat] = PlayerAgent(
                 player_id=player_id,
                 max_history_rounds=max_history_rounds,
+                system_prompt=system_prompt,
             )
         # 未指定的座位使用默认
         for s in range(4):
             if s not in seat_agents:
-                seat_agents[s] = PlayerAgent(max_history_rounds=max_history_rounds)
+                seat_agents[s] = PlayerAgent(
+                    max_history_rounds=max_history_rounds,
+                    system_prompt=system_prompt,
+                )
     else:
         # 全部使用默认
         seat_agents: dict[int, PlayerAgent] = {
-            s: PlayerAgent(max_history_rounds=max_history_rounds) for s in range(4)
+            s: PlayerAgent(
+                max_history_rounds=max_history_rounds,
+                system_prompt=system_prompt,
+            ) for s in range(4)
         }
     # EpisodeContext：运行时状态管理（Agent 无状态化）
     seat_contexts: dict[int, EpisodeContext] = {
@@ -468,16 +476,16 @@ def run_llm_match(
             reason = "match_end"
             # Phase 4: 更新所有 Agent 的 stats
             final_scores = state.table.scores
-            # 计算排名（按分数降序，同分同排名）
-            sorted_seats = sorted(range(4), key=lambda s: -final_scores[s])
-            placements = {}
-            current_rank = 1
-            for i, seat in enumerate(sorted_seats):
-                if i > 0 and final_scores[seat] == final_scores[sorted_seats[i-1]]:
-                    placements[seat] = placements[sorted_seats[i-1]]
-                else:
-                    placements[seat] = current_rank
-                current_rank += 1
+            # 计算排名（雀魂规则：按分数降序，同分按最后一局的东南西北顺位）
+            # 获取最后一局的庄家（东家）座位
+            final_dealer = state.table.dealer_seat
+            # 排序键：先按分数降序，分数相同则按相对风位（东0, 南1, 西2, 北3）
+            sorted_seats = sorted(
+                range(4),
+                key=lambda s: (-final_scores[s], (s - final_dealer) % 4)
+            )
+            # 强制分配 1-4 名（雀魂规则：同分也按座位排序）
+            placements = {seat: rank + 1 for rank, seat in enumerate(sorted_seats)}
             # 更新每个 agent 的 stats
             for seat, agent in seat_agents.items():
                 if agent.player_id is not None and seat in seat_contexts:

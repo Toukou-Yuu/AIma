@@ -42,6 +42,7 @@ class PlayerAgent:
         memory: "PlayerMemory | None" = None,
         stats: "PlayerStats | None" = None,
         max_history_rounds: int = 10,
+        system_prompt: str | None = None,
     ):
         """初始化 Agent.
 
@@ -51,9 +52,11 @@ class PlayerAgent:
             memory: 直接传入的 memory（优先级高于 player_id）
             stats: 直接传入的 stats（优先级高于 player_id）
             max_history_rounds: 最大历史对话轮数
+            system_prompt: 系统提示词（从配置文件读取）
         """
         self.player_id = player_id
         self.max_history_rounds = max_history_rounds
+        self.system_prompt = system_prompt
 
         # 加载 profile（长期状态）
         if profile is not None:
@@ -157,7 +160,7 @@ class PlayerAgent:
         current_user_msg = ChatMessage(role="user", content=user_content)
 
         # 5. 拼装消息（使用 profile 的 persona/strategy + memory + stats）
-        messages = [ChatMessage(role="system", content=build_system_prompt(self.profile, self.memory, self.stats))]
+        messages = [ChatMessage(role="system", content=build_system_prompt(self.profile, self.memory, self.stats, self.system_prompt))]
 
         # 注入本局决策历史（纯文本格式）
         if episode_ctx.decision_history:
@@ -185,8 +188,6 @@ class PlayerAgent:
         # 7. 解析和校验
         try:
             choice = extract_json_object(raw)
-            # DEBUG: 打印解析结果
-            print(f"[DEBUG] seat={seat} choice={choice}")
         except (ValueError, TypeError) as e:
             log.warning("parse failed, fallback first legal: %s", e)
             return Decision(acts[0], None, episode_ctx.decision_history)

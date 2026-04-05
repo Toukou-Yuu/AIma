@@ -162,11 +162,16 @@ class MatchSetupPage(Page):
         console.print()
 
         try:
-            subprocess.run(
+            result = subprocess.run(
                 cmd,
                 shell=True,
                 stderr=subprocess.DEVNULL if watch else None,
             )
+            if result.returncode != 0:
+                console.print(f"\n[red]✗ 对局执行失败 (返回码: {result.returncode})[/red]")
+                console.print("[dim]请检查配置和依赖是否正确安装[/dim]")
+                Prompt.press_any_key()
+                return
             console.print("\n[dim]✓ 对局已结束[/dim]")
             # 终局暂停
             console.print()
@@ -215,11 +220,21 @@ class QuickStartPage(Page):
         console.print("[dim]💡 提示: 观战中按 Ctrl+C 可随时退出返回菜单[/dim]")
 
         try:
-            subprocess.run(
+            result = subprocess.run(
                 cmd,
                 shell=True,
-                stderr=subprocess.DEVNULL if watch else None,
+                capture_output=True,
+                text=True,
             )
+            if result.returncode != 0:
+                console.print(f"\n[red]✗ 对局执行失败 (返回码: {result.returncode})[/red]")
+                if result.stderr:
+                    console.print("[dim]错误信息:[/dim]")
+                    # 显示更多错误信息（最多2000字符）
+                    error_text = result.stderr[:2000]
+                    console.print(f"[red]{error_text}[/red]")
+                Prompt.press_any_key()
+                return
             console.print("\n[dim]✓ 对局已结束[/dim]")
             # 终局暂停
             console.print()
