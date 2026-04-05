@@ -1,4 +1,4 @@
-"""牌谱回放."""
+"""牌谱回放 - 使用统一框架重构."""
 
 from __future__ import annotations
 
@@ -7,72 +7,96 @@ import subprocess
 from pathlib import Path
 
 from rich.console import Console
-from rich.panel import Panel
 
-from . import menu
+from ui.interactive.framework import MenuPage, Page, Prompt
 
 console = Console()
 
 REPLAY_DIR = Path("logs/replay")
 
 
-def run() -> None:
-    """运行牌谱回放菜单."""
-    replays = _list_replays()
+class ReplayMenuPage(MenuPage):
+    """牌谱回放菜单."""
 
-    if not replays:
-        console.print("[dim]暂无牌谱记录[/dim]")
-        menu.press_any_key()
-        return
+    title = "牌谱回放"
 
-    labels = [(f"📄 {label}", path) for label, path in replays]
-    choice = menu.show_replay_menu(labels)
+    def _get_choices(self):
+        import questionary
+        replays = self._list_replays()
 
-    if choice == "back" or choice is None:
-        return
+        if not replays:
+            return []
 
-    _play_replay(choice)
+        choices = []
+        for label, path in replays:
+            choices.append(questionary.Choice(label, value=str(path)))
+        choices.extend([
+            questionary.Separator(),
+            questionary.Choice("返回", value="back"),
+        ])
+        return choices
 
+    def _list_replays(self) -> list[tuple[str, Path]]:
+        """列出牌谱文件."""
+        if not REPLAY_DIR.exists():
+            return []
 
-def _list_replays() -> list[tuple[str, Path]]:
-    """列出牌谱文件."""
-    if not REPLAY_DIR.exists():
-        return []
+        replays = sorted(
+            REPLAY_DIR.glob("*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )[:20]
 
-    replays = sorted(
-        REPLAY_DIR.glob("*.json"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True
-    )[:20]  # 最近20个
-
-    result = []
-    for r in replays:
-        try:
-            data = json.loads(r.read_text(encoding="utf-8"))
-            timestamp = data.get("timestamp", "")
-            if isinstance(timestamp, str) and timestamp:
-                label = f"{r.stem} ({timestamp[:16]})"
-            else:
+        result = []
+        for r in replays:
+            try:
+                data = json.loads(r.read_text(encoding="utf-8"))
+                timestamp = data.get("timestamp", "")
+                if isinstance(timestamp, str) and timestamp:
+                    label = f"{r.stem} ({timestamp[:16]})"
+                else:
+                    label = r.stem
+            except Exception:
                 label = r.stem
-        except Exception:
-            label = r.stem
-        result.append((label, r))
+            result.append((label, r))
 
-    return result
+        return result
+
+    def _render_content(self) -> str | None:
+        """重写以处理无牌谱情况."""
+        choices = self._get_choices()
+        if not choices:
+            console.print("[dim]暂无牌谱记录[/dim]")
+            Prompt.press_any_key()
+            return "back"
+        return super()._render_content()
 
 
-def _play_replay(replay_path: str) -> None:
-    """播放牌谱."""
-    delay = menu.input_number("回放延迟(秒):", default="0.5")
+class ReplayPlayerPage(Page):
+    """牌谱播放页."""
 
-    cmd = f'python -m llm --replay "{replay_path}" --watch --watch-delay {delay}'
+    def __init__(self, replay_path: str):
+        self.replay_path = replay_path
 
-    console.print()
-    console.print(Panel(f"[dim]{cmd}[/dim]", title="执行命令", border_style="green"))
+    def _render_content(self) -> None:
+        delay = Prompt.number("回放延迟(秒):", default="0.5")
 
-    try:
-        subprocess.run(cmd, shell=True)
-    except KeyboardInterrupt:
-        pass
+        cmd = f'python -m llm --replay "{self.replay_path}" --watch --watch-delay {delay}'
 
-    menu.press_any_key()
+        console.print()
+        console.print(f"[dim]{cmd}[/dim]")
+
+        try:
+            subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL)
+        except KeyboardInterrupt:
+            pass
+
+
+def run() -> None:
+    """运行牌谱回放."""
+    choice = ReplayMenuPage().run()
+
+    if choice in ("back", "esc", None):
+        return
+
+    ReplayPlayerPage(choice).run()

@@ -29,8 +29,10 @@ except ImportError as e:
     print(f"需要 questionary: pip install questionary ({e})", file=sys.stderr)
     raise SystemExit(1)
 
-from . import menu, profile_manager, replay
+from .main_menu import show_main_menu
 from .match_setup import quick_start, run as match_run
+from .profile_manager import run as profile_run
+from .replay import run as replay_run
 
 console = Console()
 
@@ -44,9 +46,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         while True:
-            choice = menu.show_main_menu()
+            choice = show_main_menu()
 
-            if choice == "quit":
+            if choice in ("quit", "esc"):
+                console.clear()
                 console.print("\n[dim]再见! 👋[/dim]")
                 return 0
             elif choice == "quick":
@@ -54,9 +57,9 @@ def main(argv: list[str] | None = None) -> int:
             elif choice == "match":
                 match_run()
             elif choice == "profile":
-                profile_manager.run()
+                profile_run()
             elif choice == "replay":
-                replay.run()
+                replay_run()
 
     except KeyboardInterrupt:
         console.print("\n\n[dim]已退出[/dim]")
