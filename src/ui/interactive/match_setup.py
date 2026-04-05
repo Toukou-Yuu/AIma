@@ -118,8 +118,8 @@ class MatchSetupPage(Page):
             cmd_parts.append("--watch")
             cmd_parts.append(f"--watch-delay {settings['delay']}")
 
-        # 添加日志参数
-        cmd_parts.append("--log-session match")
+        # 添加日志参数（使用空字符串自动生成时间戳文件名）
+        cmd_parts.append('--log-session ""')
 
         # 检查是否需要 API Key
         has_llm = any(s != "default" for s in selected)

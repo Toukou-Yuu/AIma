@@ -375,17 +375,36 @@ class LiveMatchViewer:
             seat_decision_time = self._seat_decision_times.get(seat, 0)
             if seat_reason and self.show_reason:
                 reason_prefix = "│   └── " if not is_last else "    └── "
-                # 高亮当前行动席
-                reason_style = "bold italic bright_cyan" if seat == self._last_actor_seat else "italic bright_cyan"
                 time_str = f"({seat_decision_time:.1f}s) " if seat_decision_time > 0 else ""
-                reason_text = Text.assemble(
-                    (reason_prefix, "bright_black"),
-                    ("决策理由", "dim cyan"),
-                    (time_str, "dim"),
-                    (": ", "dim cyan"),
-                    (seat_reason, reason_style),
-                )
-                lines.append(reason_text)
+                reason_label = "决策理由"
+
+                # 计算可用宽度并换行
+                prefix_len = len(reason_prefix) + len(reason_label) + len(time_str) + 2  # +2 for ": "
+                max_reason_width = 70 - prefix_len
+
+                # 截断并分行显示理由
+                if len(seat_reason) > max_reason_width:
+                    reason_lines = [seat_reason[i:i+max_reason_width] for i in range(0, len(seat_reason), max_reason_width)]
+                else:
+                    reason_lines = [seat_reason]
+
+                for idx, reason_line in enumerate(reason_lines):
+                    if idx == 0:
+                        reason_text = Text.assemble(
+                            (reason_prefix, "bright_black"),
+                            (reason_label, "dim cyan"),
+                            (time_str, "dim"),
+                            (": ", "dim cyan"),
+                            (reason_line, "italic bright_cyan" if seat == self._last_actor_seat else "italic cyan"),
+                        )
+                    else:
+                        # 续行缩进
+                        cont_prefix = "│       " if not is_last else "        "
+                        reason_text = Text.assemble(
+                            (cont_prefix, "bright_black"),
+                            (reason_line, "italic bright_cyan" if seat == self._last_actor_seat else "italic cyan"),
+                        )
+                    lines.append(reason_text)
             else:
                 # 占位行保持结构
                 lines.append(Text("│" + " " * 79 if not is_last else " " * 80, style="bright_black"))
