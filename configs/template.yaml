@@ -1,0 +1,69 @@
+# AIma 对局配置模板（完整参考）
+# 用法:
+#   python -m llm --config configs/template.yaml
+#
+# 复制并修改此文件以创建自定义配置
+
+# ==================== 对局基本设置 ====================
+match:
+  # 洗牌种子，整数（0 ~ 2^31-1）
+  seed: 42
+
+  # 最大玩家决策步数（不含局间洗牌和自动过），正整数
+  max_player_steps: 500
+
+  # 指定对战玩家（可选）
+  # 不指定则使用 aima_kernel.yaml 中的默认玩家
+  players:
+    - id: ichihime
+      seat: 0
+    - id: yui
+      seat: 1
+    - id: kavi
+      seat: 2
+    - id: kana
+      seat: 3
+
+# ==================== LLM 运行时设置 ====================
+llm:
+  # 请求超时（秒）
+  timeout_sec: 120
+
+  # 最大生成 token 数
+  max_tokens: 1024
+
+  # 每次请求间隔（秒）
+  request_delay: 0.5
+
+  # 每席保留的最大对话轮数
+  max_history_rounds: 10
+
+  # 每局开始时清空历史
+  clear_history_per_hand: false
+
+# ==================== 日志设置 ====================
+logging:
+  # 会话日志文件名：null(不生成)、""(自动生成)、"自定义名称"
+  session: ""
+
+  # 是否启用审计日志
+  session_audit: true
+
+# ==================== 实时观战设置 ====================
+watch:
+  # 是否启用 Rich 实时终端观战
+  enabled: true
+
+  # 观战每步间隔（秒）
+  delay: 0.5
+
+  # 是否显示 AI 决策理由
+  show_reason: true
+
+# ==================== 调试选项 ====================
+debug:
+  # 详细模式
+  verbose: false
+
+  # Dry-run 模式（不调用 API，使用随机动作）
+  dry_run: false
