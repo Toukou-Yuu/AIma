@@ -24,7 +24,13 @@ class _ScriptedClient:
     def __init__(self, payload: str) -> None:
         self._payload = payload
 
-    def complete(self, messages: list[object], *, model: str | None = None) -> str:
+    def complete(
+        self,
+        messages: list[object],
+        *,
+        model: str | None = None,
+        session_id: str | None = None,
+    ) -> str:
         return self._payload
 
 

@@ -200,57 +200,6 @@ def load_llm_config(
         system_prompt=system_prompt,
     )
 
-    # 检查 API Key
-    if not api_key or api_key in ("your-api-key-here", "your-api-key"):
-        return None
-
-    # 设置默认值
-    if not base_url:
-        base_url = "https://api.openai.com/v1" if provider == "openai" else "https://api.anthropic.com"
-    if not model:
-        model = "gpt-4o-mini" if provider == "openai" else "claude-3-5-haiku-20241022"
-
-    timeout_s = float(llm_cfg.get("timeout_sec", 120))
-    max_tok = int(llm_cfg.get("max_tokens", 1024))
-
-    # 读取系统提示词（带默认值）
-    default_system_prompt = (
-        "你是日式麻将（立直麻将）的牌手代理。你只能从给出的 legal_actions 中"
-        "**精确选择一条**执行。\n"
-        "\n"
-        "【牌面编码说明】\n"
-        "- 万子：1m-9m（如 1m=一万，5m=五万）\n"
-        "- 筒子：1p-9p（如 1p=一筒，5p=五筒）\n"
-        "- 索子：1s-9s（如 1s=一索，5s=五索）\n"
-        "- 字牌：1z=東，2z=南，3z=西，4z=北，5z=白，6z=發，7z=中\n"
-        "\n"
-        "输出要求：仅输出一行 JSON 对象，不要 markdown 代码块，不要 JSON 以外的文字。\n"
-        "JSON 中除下列动作字段外，**必须**包含字符串字段 ``why``："
-        "用符合你人设的语气说明**为何**选这一手（不超过40字）。\n"
-        "**重要**：`why` 字段必须体现你的人设性格，用角色特有的说话方式，禁止机械分析。\n"
-        "动作字段必须与所选 legal_actions 中某一项完全一致"
-        "（含 kind、seat；discard 须含 tile；需要时含 declare_riichi、meld）。\n"
-        '示例：{"kind":"discard","seat":0,"tile":"3m","why":"现物且维持一向听"}\n'
-        '示例：{"kind":"pass_call","seat":1,"why":"无役无法荣和"}'
-    )
-    system_prompt = llm_cfg.get("system_prompt", default_system_prompt)
-
-    # 参数覆盖
-    if timeout_sec is not None:
-        timeout_s = timeout_sec
-    if max_tokens is not None:
-        max_tok = max_tokens
-
-    return LLMClientConfig(
-        provider=provider,
-        base_url=base_url,
-        api_key=api_key,
-        model=model,
-        timeout_sec=timeout_s,
-        max_tokens=max_tok,
-        system_prompt=system_prompt,
-    )
-
 
 def load_match_config(
     config_path: Path | str = "configs/aima_kernel.yaml",

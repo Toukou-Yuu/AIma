@@ -557,6 +557,10 @@ def run_llm_match(
             # 记录立直到 EpisodeContext
             if act.kind == ActionKind.DISCARD and act.declare_riichi:
                 episode_ctx.record_riichi()
+                # 为其他玩家触发关键帧：任何玩家立直时，其他玩家需要知道
+                for other_seat in range(4):
+                    if other_seat != seat and other_seat in seat_contexts:
+                        seat_contexts[other_seat].record_riichi_trigger()
             turn_draw_tile: Tile | None = None
             discard_seat_for_log: int | None = None
             discarded_tile_for_log: Tile | None = None

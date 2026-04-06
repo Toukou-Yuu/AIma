@@ -224,7 +224,8 @@ class PlayerAgent:
             time.sleep(request_delay_seconds)
 
         # 关键：为每个玩家使用独立的 session_id，确保4个AI有独立上下文
-        session_id = f"majiang_player_{self.player_id or seat}" if self.player_id else None
+        # 始终生成唯一 session_id，使用 player_id 或座位号
+        session_id = f"majiang_player_{self.player_id or seat}"
         raw = client.complete(messages, session_id=session_id)
         if session_audit:
             head = raw if len(raw) <= 600 else raw[:600] + "…"
