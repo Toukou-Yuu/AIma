@@ -62,8 +62,68 @@ class EpisodeContext:
         """记录决策到历史."""
         self.decision_history.append(decision)
 
+    def format_history_summary(self) -> str:
+        """生成关键事件摘要（替代逐条记录）.
+
+        只保留关键事件：立直、和牌、放铳、副露（吃碰杠）
+        丢弃普通打牌、摸牌、过牌等冗余信息
+
+        Returns:
+            纯文本格式的关键事件摘要，每行一条记录
+        """
+        if not self.decision_history:
+            return ""
+
+        lines = []
+        for i, d in enumerate(self.decision_history, 1):
+            action_desc = self._describe_action_summary(d.action)
+            if action_desc:  # 只记录关键事件
+                lines.append(f"第{i}巡: {action_desc}")
+
+        return "\n".join(lines)
+
+    def _describe_action_summary(self, action) -> str | None:
+        """将 action 描述为摘要文本，只返回关键事件."""
+        from kernel.engine.actions import ActionKind
+
+        kind = action.kind
+
+        # 关键事件1: 和牌
+        if kind == ActionKind.RON:
+            return "荣和"
+
+        if kind == ActionKind.TSUMO:
+            return "自摸"
+
+        # 关键事件2: 立直（通过 discard + declare_riichi 判断）
+        if kind == ActionKind.DISCARD and action.declare_riichi:
+            tile_code = action.tile.to_code() if action.tile else "?"
+            return f"打{tile_code}立直宣言"
+
+        # 关键事件3: 副露（吃碰杠）
+        if kind == ActionKind.OPEN_MELD and action.meld:
+            m = action.meld
+            tiles = "/".join(t.to_code() for t in m.tiles) if m.tiles else "?"
+            called = m.called_tile.to_code() if m.called_tile else "?"
+            kind_map = {"chii": "吃", "pon": "碰", "daiminkan": "杠"}
+            cn = kind_map.get(m.kind.value, m.kind.value)
+            return f"{cn}{tiles}"
+
+        if kind == ActionKind.ANKAN and action.meld:
+            m = action.meld
+            tiles = "/".join(t.to_code() for t in m.tiles) if m.tiles else "?"
+            return f"暗杠{tiles}"
+
+        if kind == ActionKind.SHANKUMINKAN and action.meld:
+            m = action.meld
+            tiles = "/".join(t.to_code() for t in m.tiles) if m.tiles else "?"
+            return f"加杠{tiles}"
+
+        # 非关键事件：返回 None（不记录）
+        return None
+
     def format_history_for_prompt(self) -> str:
-        """将决策历史格式化为纯文本.
+        """将决策历史格式化为纯文本（完整版，用于对比调试）.
 
         Returns:
             纯文本格式的决策历史，每行一条记录

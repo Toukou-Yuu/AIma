@@ -43,6 +43,7 @@ class PlayerAgent:
         stats: "PlayerStats | None" = None,
         max_history_rounds: int = 10,
         system_prompt: str | None = None,
+        use_compression: bool = True,  # 默认启用上下文压缩
     ):
         """初始化 Agent.
 
@@ -53,10 +54,12 @@ class PlayerAgent:
             stats: 直接传入的 stats（优先级高于 player_id）
             max_history_rounds: 最大历史对话轮数
             system_prompt: 系统提示词（从配置文件读取）
+            use_compression: 是否启用上下文压缩（默认启用）
         """
         self.player_id = player_id
         self.max_history_rounds = max_history_rounds
         self.system_prompt = system_prompt
+        self.use_compression = use_compression
 
         # 加载 profile（长期状态）
         if profile is not None:
@@ -156,19 +159,33 @@ class PlayerAgent:
 
         # 4. 构建 observation 和 prompt
         obs = observation(state, seat, mode="human")
-        user_content = build_decision_prompt(obs, acts)
+
+        # 根据配置选择压缩或完整格式
+        if self.use_compression:
+            from llm.agent.prompt_builder import build_compressed_decision_prompt
+            user_content = build_compressed_decision_prompt(obs, acts)
+        else:
+            from llm.agent.prompt_builder import build_decision_prompt
+            user_content = build_decision_prompt(obs, acts)
+
         current_user_msg = ChatMessage(role="user", content=user_content)
 
         # 5. 拼装消息（使用 profile 的 persona/strategy + memory + stats）
         messages = [ChatMessage(role="system", content=build_system_prompt(self.profile, self.memory, self.stats, self.system_prompt))]
 
-        # 注入本局决策历史（纯文本格式）
+        # 注入本局决策历史（根据配置选择摘要或完整版）
         if episode_ctx.decision_history:
-            history_text = episode_ctx.format_history_for_prompt()
+            if self.use_compression:
+                history_text = episode_ctx.format_history_summary()
+                history_header = "本局关键事件"
+            else:
+                history_text = episode_ctx.format_history_for_prompt()
+                history_header = "本局前期决策历史"
+
             if history_text:
                 history_msg = ChatMessage(
                     role="user",
-                    content=f"本局前期决策历史：\n{history_text}\n---"
+                    content=f"{history_header}：\n{history_text}\n---"
                 )
                 messages.append(history_msg)
 

@@ -86,3 +86,28 @@ def build_decision_prompt(
         用户提示字符串（JSON 格式）
     """
     return build_user_prompt(observation, legal_actions)
+
+
+def build_compressed_decision_prompt(
+    observation: Observation,
+    legal_actions: tuple[LegalAction, ...],
+) -> str:
+    """构建压缩版决策提示（用户消息）.
+
+    使用压缩观测减少 token 消耗.
+
+    Args:
+        observation: 当前局面观测
+        legal_actions: 合法动作列表
+
+    Returns:
+        用户提示字符串（JSON 格式）
+    """
+    from llm.observation_format import build_compressed_observation
+
+    compressed_obs = build_compressed_observation(observation)
+    body = {
+        "observation": compressed_obs,
+        "legal_actions": [legal_action_to_wire(la) for la in legal_actions],
+    }
+    return json.dumps(body, ensure_ascii=False, indent=2)
