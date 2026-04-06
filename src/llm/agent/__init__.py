@@ -222,7 +222,10 @@ class PlayerAgent:
         # 调用 LLM
         if request_delay_seconds > 0:
             time.sleep(request_delay_seconds)
-        raw = client.complete(messages)
+
+        # 关键：为每个玩家使用独立的 session_id，确保4个AI有独立上下文
+        session_id = f"majiang_player_{self.player_id or seat}" if self.player_id else None
+        raw = client.complete(messages, session_id=session_id)
         if session_audit:
             head = raw if len(raw) <= 600 else raw[:600] + "…"
             log.debug("llm raw_head seat=%s %r", seat, head)

@@ -20,10 +20,25 @@ class ChatMessage:
 
 @runtime_checkable
 class CompletionClient(Protocol):
-    """一次多轮对话 → 模型文本（由调用方再解析为结构化动作）。"""
+    """一次多轮对话 → 模型文本（由调用方再解析为结构化动作）。
 
-    def complete(self, messages: list[ChatMessage], *, model: str | None = None) -> str:
-        """返回助手正文（不含 tool 结构）。"""
+    支持多会话并行（session_id），用于4个AI玩家独立上下文。
+    """
+
+    def complete(
+        self,
+        messages: list[ChatMessage],
+        *,
+        model: str | None = None,
+        session_id: str | None = None,
+    ) -> str:
+        """返回助手正文（不含 tool 结构）。
+
+        Args:
+            messages: 消息列表
+            model: 模型名称（可选）
+            session_id: 会话ID（可选），用于llama-server多会话隔离
+        """
         ...
 
 
