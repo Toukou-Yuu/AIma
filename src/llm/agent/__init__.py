@@ -43,7 +43,8 @@ class PlayerAgent:
         stats: "PlayerStats | None" = None,
         max_history_rounds: int = 10,
         system_prompt: str | None = None,
-        use_compression: bool = True,  # 默认启用上下文压缩
+        use_compression: bool = True,  # 默认启用上下文压缩（Phase 1）
+        use_delta: bool = True,        # 默认启用状态差异（Phase 2）
     ):
         """初始化 Agent.
 
@@ -55,11 +56,13 @@ class PlayerAgent:
             max_history_rounds: 最大历史对话轮数
             system_prompt: 系统提示词（从配置文件读取）
             use_compression: 是否启用上下文压缩（默认启用）
+            use_delta: 是否启用状态差异法（默认启用）
         """
         self.player_id = player_id
         self.max_history_rounds = max_history_rounds
         self.system_prompt = system_prompt
         self.use_compression = use_compression
+        self.use_delta = use_delta
 
         # 加载 profile（长期状态）
         if profile is not None:
@@ -160,13 +163,28 @@ class PlayerAgent:
         # 4. 构建 observation 和 prompt
         obs = observation(state, seat, mode="human")
 
-        # 根据配置选择压缩或完整格式
-        if self.use_compression:
-            from llm.agent.prompt_builder import build_compressed_decision_prompt
-            user_content = build_compressed_decision_prompt(obs, acts)
+        # Phase 2: 选择帧类型（关键帧 vs 变化帧）
+        if self.use_delta and not episode_ctx.should_send_keyframe():
+            # 发送变化帧（只包含变化）
+            from llm.observation_format import build_delta_observation
+            from llm.agent.prompt_builder import build_delta_decision_prompt
+
+            delta_obs = build_delta_observation(
+                obs,
+                episode_ctx.last_observation,
+                episode_ctx.last_hand
+            )
+            user_content = build_delta_decision_prompt(delta_obs, acts)
+            frame_type = "delta"
         else:
-            from llm.agent.prompt_builder import build_decision_prompt
-            user_content = build_decision_prompt(obs, acts)
+            # 发送关键帧（完整状态）
+            if self.use_compression:
+                from llm.agent.prompt_builder import build_compressed_decision_prompt
+                user_content = build_compressed_decision_prompt(obs, acts)
+            else:
+                from llm.agent.prompt_builder import build_decision_prompt
+                user_content = build_decision_prompt(obs, acts)
+            frame_type = "keyframe"
 
         current_user_msg = ChatMessage(role="user", content=user_content)
 
@@ -190,6 +208,13 @@ class PlayerAgent:
                 messages.append(history_msg)
 
         messages.append(current_user_msg)
+
+        # Phase 2: 更新上下文帧信息
+        episode_ctx.update_frame(obs)
+
+        # DEBUG: 记录帧类型
+        if session_audit:
+            log.debug("llm_frame seat=%s type=%s", seat, frame_type)
 
         # DEBUG: 保存最后一次请求到文件
         _debug_save_last_prompt(messages)

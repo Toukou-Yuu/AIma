@@ -195,3 +195,116 @@ def build_user_prompt(obs: Observation, legal: tuple[LegalAction, ...]) -> str:
         "legal_actions": [legal_action_to_wire(la) for la in legal],
     }
     return json.dumps(body, ensure_ascii=False, indent=2)
+
+
+def _calculate_hand_changes(
+    prev_hand: Counter[Tile],
+    curr_hand: Counter[Tile],
+) -> dict[str, list[str]]:
+    """计算手牌变化：摸到和打出.
+
+    Args:
+        prev_hand: 上回合手牌
+        curr_hand: 当前手牌
+
+    Returns:
+        {"drew": ["7p"], "discarded": ["3m"]}
+    """
+    changes = {"drew": [], "discarded": []}
+
+    all_tiles = set(prev_hand.keys()) | set(curr_hand.keys())
+    for tile in all_tiles:
+        prev_count = prev_hand.get(tile, 0)
+        curr_count = curr_hand.get(tile, 0)
+        if curr_count > prev_count:
+            changes["drew"].extend([tile.to_code()] * (curr_count - prev_count))
+        elif prev_count > curr_count:
+            changes["discarded"].extend([tile.to_code()] * (prev_count - curr_count))
+
+    return changes
+
+
+def _river_entries_to_actions(river_entries: tuple[RiverEntry, ...]) -> list[str]:
+    """将牌河条目转换为动作描述."""
+    actions = []
+    for entry in river_entries:
+        seat_name = f"家{entry.seat}"
+        tile_str = entry.tile.to_code()
+        if entry.is_riichi:
+            actions.append(f"{seat_name} 打{tile_str}立直")
+        elif entry.is_tsumogiri:
+            actions.append(f"{seat_name} 摸切{tile_str}")
+        else:
+            actions.append(f"{seat_name} 打{tile_str}")
+    return actions
+
+
+def build_delta_observation(
+    curr_obs: Observation,
+    prev_obs: Observation,
+    prev_hand: Counter[Tile] | None = None,
+) -> dict[str, Any]:
+    """生成变化帧（只包含从上回合的变化）.
+
+    Args:
+        curr_obs: 当前观测
+        prev_obs: 上回合观测
+        prev_hand: 上回合手牌（可选，用于计算手牌变化）
+
+    Returns:
+        变化帧字典
+    """
+    delta: dict[str, Any] = {
+        "frame_type": "delta",
+        "seat": curr_obs.seat,
+        "wind": _calculate_wind(curr_obs.seat, curr_obs.dealer_seat),
+    }
+
+    # 我的手牌变化
+    if prev_hand and curr_obs.hand:
+        my_changes = _calculate_hand_changes(prev_hand, curr_obs.hand)
+        if my_changes["drew"]:
+            delta["my_draw"] = my_changes["drew"][0]  # 通常只有一张
+        if my_changes["discarded"]:
+            delta["my_discard"] = my_changes["discarded"][0]
+
+    # 当前完整手牌（用于确认）
+    delta["current_hand"] = _hand_dict(curr_obs.hand)
+    delta["current_melds"] = [
+        {
+            "kind": m.kind.value,
+            "tiles": [t.to_code() for t in m.tiles],
+        }
+        for m in curr_obs.melds
+    ]
+
+    # 对手动作（从牌河新增条目推断）
+    if curr_obs.river and prev_obs.river:
+        new_river = curr_obs.river[len(prev_obs.river):]
+        if new_river:
+            delta["others_actions"] = _river_entries_to_actions(new_river)
+
+    # 宝牌变化
+    if len(curr_obs.dora_indicators) > len(prev_obs.dora_indicators):
+        delta["new_dora"] = curr_obs.dora_indicators[-1].to_code()
+
+    # 立直状态变化
+    new_riichi = []
+    for i, (curr, prev) in enumerate(zip(curr_obs.riichi_state, prev_obs.riichi_state)):
+        if curr and not prev:
+            new_riichi.append(i)
+    if new_riichi:
+        delta["new_riichi"] = new_riichi
+
+    # 分数变化（如果有人和牌）
+    if curr_obs.scores != prev_obs.scores:
+        delta["score_changes"] = {
+            i: curr - prev
+            for i, (curr, prev) in enumerate(zip(curr_obs.scores, prev_obs.scores))
+            if curr != prev
+        }
+
+    # 当前分数
+    delta["current_scores"] = list(curr_obs.scores)
+
+    return delta

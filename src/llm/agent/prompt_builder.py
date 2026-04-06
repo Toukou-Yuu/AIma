@@ -111,3 +111,28 @@ def build_compressed_decision_prompt(
         "legal_actions": [legal_action_to_wire(la) for la in legal_actions],
     }
     return json.dumps(body, ensure_ascii=False, indent=2)
+
+
+def build_delta_decision_prompt(
+    delta_obs: dict[str, Any],
+    legal_actions: tuple[LegalAction, ...],
+) -> str:
+    """构建变化帧决策提示（用户消息）.
+
+    Phase 2: 只发送变化信息，大幅减少 token.
+
+    Args:
+        delta_obs: 变化帧观测（由 build_delta_observation 生成）
+        legal_actions: 合法动作列表
+
+    Returns:
+        用户提示字符串（JSON 格式）
+    """
+    from llm.wire import legal_action_to_wire
+
+    body = {
+        "frame_type": "delta",
+        "delta": delta_obs,
+        "legal_actions": [legal_action_to_wire(la) for la in legal_actions],
+    }
+    return json.dumps(body, ensure_ascii=False, indent=2)

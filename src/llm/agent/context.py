@@ -9,6 +9,10 @@ from llm.agent.memory import EpisodeStats
 from llm.agent.stats import MatchStats
 
 if TYPE_CHECKING:
+    from collections import Counter
+
+    from kernel.api.observation import Observation
+    from kernel.tiles.model import Tile
     from llm.agent import Decision
 
 
@@ -26,7 +30,57 @@ class EpisodeContext:
     match_stats: MatchStats = field(default_factory=MatchStats)
     decision_history: list[Decision] = field(default_factory=list)
 
+    # Phase 2: 状态差异法 - 保存上一帧信息
+    last_observation: Observation | None = field(default=None, repr=False)
+    last_hand: Counter[Tile] | None = field(default=None, repr=False)
+    frame_count: int = field(default=0)
+    new_riichi_triggered: bool = field(default=False)  # 有人立直后发送关键帧
+
     def __post_init__(self):
+        """初始化后确保 episode_stats 的 seat 正确."""
+        if self.episode_stats.seat != self.seat:
+            self.episode_stats.seat = self.seat
+
+    def should_send_keyframe(self) -> bool:
+        """判断是否应发送关键帧（完整状态）.
+
+        关键帧触发条件：
+        1. 局开始时（frame_count == 0）
+        2. 每10回合定期同步
+        3. 有人立直后（new_riichi_triggered）
+
+        Returns:
+            True: 应发送关键帧（完整状态）
+            False: 可发送变化帧（增量更新）
+        """
+        # 局开始时必须关键帧
+        if self.frame_count == 0:
+            return True
+
+        # 有人立直后发送关键帧
+        if self.new_riichi_triggered:
+            self.new_riichi_triggered = False  # 重置标记
+            return True
+
+        # 每10回合定期同步
+        if self.frame_count % 10 == 0:
+            return True
+
+        return False
+
+    def record_riichi_trigger(self) -> None:
+        """记录有人立直，触发下一帧为关键帧."""
+        self.new_riichi_triggered = True
+
+    def update_frame(self, observation: Observation) -> None:
+        """更新帧信息.
+
+        Args:
+            observation: 当前观测
+        """
+        self.last_observation = observation
+        self.last_hand = observation.hand.copy() if observation.hand else None
+        self.frame_count += 1
         """初始化后确保 episode_stats 的 seat 正确."""
         if self.episode_stats.seat != self.seat:
             self.episode_stats.seat = self.seat
