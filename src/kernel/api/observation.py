@@ -42,6 +42,7 @@ class Observation:
 
     Attributes:
         seat: 观测者座位
+        dealer_seat: 当前庄家座位
         phase: 对局阶段（``IN_ROUND`` / ``HAND_OVER`` / ``MATCH_END`` 等）
         hand: 自家手牌（人类模式：门清时完整，副露后含副露；全知模式：完整）
         melds: 自家副露
@@ -62,6 +63,7 @@ class Observation:
     """
 
     seat: int
+    dealer_seat: int
     phase: GamePhase
     hand: Counter[Tile] | None
     melds: tuple[Meld, ...]
@@ -161,6 +163,7 @@ def observation(
     scores = table.scores
     honba = table.honba
     kyoutaku = table.kyoutaku
+    dealer_seat = table.dealer_seat
 
     # 当前行动席
     turn_seat = board.current_seat if board is not None else seat
@@ -185,6 +188,7 @@ def observation(
 
     return Observation(
         seat=seat,
+        dealer_seat=dealer_seat,
         phase=phase,
         hand=hand,
         melds=melds,

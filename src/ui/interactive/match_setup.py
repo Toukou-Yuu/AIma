@@ -82,7 +82,7 @@ class MatchSetupPage(Page):
         if cmd is None:
             return
 
-        self._execute_command(cmd, settings["watch"])
+        self._execute_command(cmd, settings["watch"], settings["max_hands"])
 
     def _configure_settings(self) -> dict | None:
         """配置对局设置."""
@@ -90,7 +90,7 @@ class MatchSetupPage(Page):
         console.print("[dim]对局设置 (直接回车使用默认值)[/dim]")
 
         seed = Prompt.number("随机种子 (0=随机):", default="0")
-        max_steps = Prompt.number("最大步数:", default="500")
+        max_hands = Prompt.number("局数 (4=东风, 8=半庄):", default="8")
         watch = Prompt.confirm("实时观战?", default=True)
 
         delay = "0.5"
@@ -99,7 +99,7 @@ class MatchSetupPage(Page):
 
         return {
             "seed": seed,
-            "max_steps": max_steps,
+            "max_hands": max_hands,
             "watch": watch,
             "delay": delay,
         }
@@ -111,7 +111,6 @@ class MatchSetupPage(Page):
             "python -m llm",
             f"--players {player_str}",
             f"--seed {settings['seed']}",
-            f"--max-player-steps {settings['max_steps']}",
         ]
 
         if settings["watch"]:
@@ -135,7 +134,6 @@ class MatchSetupPage(Page):
                     "python -m llm",
                     "--dry-run",
                     f"--seed {settings['seed']}",
-                    f"--max-player-steps {settings['max_steps']}",
                 ]
                 if settings["watch"]:
                     cmd_parts.append("--watch")
@@ -223,9 +221,23 @@ class QuickStartPage(Page):
             if watch:
                 # 观战模式：不捕获输出，让 Rich 界面正常显示
                 result = subprocess.run(cmd, shell=True)
+                # 130 是用户按 Ctrl+C 中断的标准退出码
+                if result.returncode == 130 or result.returncode == -1073741510:
+                    # 用户主动中断，不显示错误
+                    console.print("\n")
+                    console.print(Panel(
+                        "[yellow]对局已中断[/yellow]\n"
+                        "[dim]日志已保存到 logs/simple/quick.txt 和 logs/replay/quick.json[/dim]",
+                        border_style="yellow",
+                        padding=(1, 2),
+                    ))
+                    Prompt.press_any_key()
+                    self._clear_screen()  # 清屏避免残留
+                    return
                 if result.returncode != 0:
                     console.print(f"\n[red]✗ 对局执行失败 (返回码: {result.returncode})[/red]")
                     Prompt.press_any_key()
+                    self._clear_screen()  # 清屏避免残留
                     return
             else:
                 # 非观战模式：捕获输出用于调试
@@ -235,6 +247,18 @@ class QuickStartPage(Page):
                     capture_output=True,
                     text=True,
                 )
+                # 130 是用户按 Ctrl+C 中断的标准退出码，Windows 可能是 -1073741510
+                if result.returncode == 130 or result.returncode == -1073741510:
+                    console.print("\n")
+                    console.print(Panel(
+                        "[yellow]对局已中断[/yellow]\n"
+                        "[dim]日志已保存到 logs/simple/quick.txt 和 logs/replay/quick.json[/dim]",
+                        border_style="yellow",
+                        padding=(1, 2),
+                    ))
+                    Prompt.press_any_key()
+                    self._clear_screen()  # 清屏避免残留
+                    return
                 if result.returncode != 0:
                     console.print(f"\n[red]✗ 对局执行失败 (返回码: {result.returncode})[/red]")
                     if result.stderr:
@@ -242,11 +266,13 @@ class QuickStartPage(Page):
                         error_text = result.stderr[:2000]
                         console.print(f"[red]{error_text}[/red]")
                     Prompt.press_any_key()
+                    self._clear_screen()  # 清屏避免残留
                     return
             console.print("\n[dim]✓ 对局已结束[/dim]")
             # 终局暂停
             console.print()
             Prompt.press_any_key("终局牌桌已保留，按任意键返回菜单...")
+            self._clear_screen()  # 清屏避免残留
         except KeyboardInterrupt:
             console.print("\n")
             console.print(Panel(
@@ -256,6 +282,7 @@ class QuickStartPage(Page):
                 padding=(1, 2),
             ))
             Prompt.press_any_key()
+            self._clear_screen()  # 清屏避免残留
 
 
 def quick_start() -> None:

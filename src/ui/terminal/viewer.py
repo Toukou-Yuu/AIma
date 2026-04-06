@@ -148,18 +148,18 @@ def _wind_with_seat(wind_idx: int, seat: int, is_active: bool = False) -> Text:
 class LiveMatchViewer:
     """Rich 实时观战器。"""
 
-    def __init__(self, delay: float = 0.5, show_reason: bool = True, max_player_steps: int = 500):
+    def __init__(self, delay: float = 0.5, show_reason: bool = True, target_hands: int = 8):
         """
         初始化观战器。
 
         Args:
             delay: 每步之间的延迟（秒）
             show_reason: 是否显示模型的决策理由
-            max_player_steps: 最大玩家决策步数（用于显示步数进度）
+            target_hands: 目标局数（用于显示进度，如半庄=8）
         """
         self.delay = delay
         self.show_reason = show_reason
-        self.max_player_steps = max_player_steps
+        self.target_hands = target_hands
         self.console = Console()
         self._wins = [0, 0, 0, 0]
         self._rounds = 0
@@ -229,9 +229,8 @@ class LiveMatchViewer:
         header.add_column("key", style="dim")
         header.add_column("value")
 
-        header.add_row("步数", f"{self._step}/{self.max_player_steps}")
-        header.add_row("局", f"{wind}風{round_num}局")
-        header.add_row("本场", str(table.honba))
+        # 显示局数和本场（如：東1局 第3本場）
+        header.add_row("局", f"{wind}風{round_num}局 第{table.honba}本場")
         header.add_row("供托", str(table.kyoutaku))
 
         if board:
@@ -743,6 +742,7 @@ class LiveMatchViewer:
             return
 
         data = json.loads(path.read_text(encoding="utf-8"))
+        reasons = data.get("reasons", [])  # 读取决策理由
         try:
             actions = actions_from_match_log(data)
         except (ValueError, KeyError, TypeError) as e:
@@ -770,7 +770,8 @@ class LiveMatchViewer:
                         self._update_stats(outcome.events)
 
                         action_str = f"Step {i+1}: {action.kind.value}"
-                        live.update(self.step(state, outcome.events, action_str))
+                        reason = reasons[i] if i < len(reasons) else None
+                        live.update(self.step(state, outcome.events, action_str, reason))
                         time.sleep(self.delay if delay is None else delay)
                     except Exception as e:
                         self.console.print(f"[red]回放错误 at step {i}: {e}[/]")
@@ -786,8 +787,8 @@ class LiveMatchViewer:
 class LiveMatchCallback:
     """用于集成到 runner 的实时回调类。"""
 
-    def __init__(self, delay: float = 0.5, show_reason: bool = True, max_player_steps: int = 500):
-        self.viewer = LiveMatchViewer(delay=delay, show_reason=show_reason, max_player_steps=max_player_steps)
+    def __init__(self, delay: float = 0.5, show_reason: bool = True, target_hands: int = 8):
+        self.viewer = LiveMatchViewer(delay=delay, show_reason=show_reason, target_hands=target_hands)
         self.live: Live | None = None
         self._start_sequence: int = 0
         self._decision_start_time: float | None = None
@@ -826,7 +827,11 @@ class LiveMatchCallback:
         panel = self.viewer.step(state, events, action_str, reason, decision_time)
         if self.live:
             self.live.update(panel)
-        time.sleep(self.viewer.delay)
+        try:
+            time.sleep(self.viewer.delay)
+        except KeyboardInterrupt:
+            # 用户中断观战，优雅退出
+            raise SystemExit(130)  # 130 是 Unix 标准的 Ctrl+C 退出码
 
 
 def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3):

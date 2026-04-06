@@ -9,8 +9,14 @@ match:
   # 洗牌种子，整数（0 ~ 2^31-1）
   seed: 42
 
-  # 最大玩家决策步数（不含局间洗牌和自动过），正整数
-  max_player_steps: 500
+  # 最大玩家决策步数（已废弃，使用 match_end 替代）
+  # max_player_steps: 500
+
+  # 对局结束条件
+  match_end:
+    type: hands        # 局数制
+    value: 8           # 半庄=8局，东风战=4局
+    allow_negative: false  # 有人负分时提前结束
 
   # 指定对战玩家（可选）
   # 不指定则使用 aima_kernel.yaml 中的默认玩家

@@ -174,6 +174,9 @@ class PlayerAgent:
 
         messages.append(current_user_msg)
 
+        # DEBUG: 保存最后一次请求到文件
+        _debug_save_last_prompt(messages)
+
         # 调用 LLM
         if request_delay_seconds > 0:
             time.sleep(request_delay_seconds)
@@ -229,6 +232,7 @@ class PlayerAgent:
             client: 可选的 LLM 客户端（启用 LLM 润色）
         """
         if self.player_id is None:
+            log.debug("跳过 memory 更新：player_id 为 None")
             return
 
         # 更新 memory
@@ -244,6 +248,7 @@ class PlayerAgent:
 
         self.memory = new_memory
         save_memory(self.player_id, new_memory)
+        log.info("已保存 memory: player_id=%s", self.player_id)
 
     def update_stats(self, episode_ctx: EpisodeContext, placement: int) -> None:
         """比赛结束后更新 stats.
@@ -262,3 +267,21 @@ class PlayerAgent:
         new_stats = aggregator.update(self.stats, episode_ctx.match_stats)
         self.stats = new_stats
         save_stats(self.player_id, new_stats)
+
+
+def _debug_save_last_prompt(messages: list[ChatMessage]) -> None:
+    """保存最后一次请求到 logs/last_sent_prompt.log。"""
+    try:
+        log_path = Path("logs/last_sent_prompt.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
+        lines = []
+        for msg in messages:
+            lines.append(f"[{msg.role}]")
+            lines.append(msg.content)
+            lines.append("")
+
+        log_path.write_text("\n".join(lines), encoding="utf-8")
+    except Exception:
+        # 调试功能失败不应影响主流程
+        pass

@@ -31,10 +31,19 @@ def _river_entries(river: tuple[RiverEntry, ...]) -> list[dict[str, Any]]:
     ]
 
 
+def _calculate_wind(seat: int, dealer_seat: int) -> str:
+    """根据座位和庄家计算风位。"""
+    winds = ["東", "南", "西", "北"]
+    # (seat - dealer_seat) % 4 得到相对风位
+    return winds[(seat - dealer_seat) % 4]
+
+
 def observation_to_prompt_dict(obs: Observation) -> dict[str, Any]:
     """人类观测 → 可 JSON 序列化的 dict（不含 debug 王牌等敏感扩展给模型时可裁剪）."""
     out: dict[str, Any] = {
         "seat": obs.seat,
+        "wind": _calculate_wind(obs.seat, obs.dealer_seat),
+        "dealer_seat": obs.dealer_seat,
         "phase": obs.phase.value,
         "hand": _hand_dict(obs.hand),
         "melds": [
@@ -78,24 +87,3 @@ def build_user_prompt(obs: Observation, legal: tuple[LegalAction, ...]) -> str:
         "legal_actions": [legal_action_to_wire(la) for la in legal],
     }
     return json.dumps(body, ensure_ascii=False, indent=2)
-
-
-SYSTEM_PROMPT = (
-    "你是日式麻将（立直麻将）的牌手代理。你只能从给出的 legal_actions 中"
-    "**精确选择一条**执行。\n"
-    "\n"
-    "【牌面编码说明】\n"
-    "- 万子：1m-9m（如 1m=一万，5m=五万）\n"
-    "- 筒子：1p-9p（如 1p=一筒，5p=五筒）\n"
-    "- 索子：1s-9s（如 1s=一索，5s=五索）\n"
-    "- 字牌：1z=東，2z=南，3z=西，4z=北，5z=白，6z=發，7z=中\n"
-    "\n"
-    "输出要求：仅输出一行 JSON 对象，不要 markdown 代码块，不要 JSON 以外的文字。\n"
-    "JSON 中除下列动作字段外，**必须**包含字符串字段 ``why``："
-    "用符合你人设的语气说明**为何**选这一手（不超过40字）。\n"
-    "**重要**：`why` 字段必须体现你的人设性格，用角色特有的说话方式，禁止机械分析。\n"
-    "动作字段必须与所选 legal_actions 中某一项完全一致"
-    "（含 kind、seat；discard 须含 tile；需要时含 declare_riichi、meld）。\n"
-    '示例：{"kind":"discard","seat":0,"tile":"3m","why":"现物且维持一向听"}\n'
-    '示例：{"kind":"pass_call","seat":1,"why":"无役无法荣和"}\n'
-)

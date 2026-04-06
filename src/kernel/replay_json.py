@@ -321,9 +321,10 @@ def match_log_document(
     final_phase: str,
     actions_wire: tuple[dict[str, Any], ...],
     events_wire: tuple[dict[str, Any], ...],
+    reasons: tuple[str | None, ...] | None = None,
 ) -> dict[str, Any]:
     """组装 CLI/文件用的顶层牌谱 dict。"""
-    return {
+    doc = {
         "format_version": MATCH_LOG_FORMAT_VERSION,
         "seed": seed,
         "stopped_reason": stopped_reason,
@@ -332,3 +333,6 @@ def match_log_document(
         "actions": list(actions_wire),
         "events": list(events_wire),
     }
+    if reasons:
+        doc["reasons"] = [r for r in reasons]
+    return doc

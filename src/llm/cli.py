@@ -127,9 +127,15 @@ def _merge_config(
     只合并 CLI 显式指定的参数（非 None 或布尔值已设置）。
     """
     # YAML 默认值映射
+    # 读取 match_end 配置
+    match_end_cfg = yaml_cfg.get("match", {}).get("match_end", {})
     defaults = {
         "seed": yaml_cfg.get("match", {}).get("seed", 0),
-        "max_player_steps": yaml_cfg.get("match", {}).get("max_player_steps", 500),
+        "match_end": {
+            "type": match_end_cfg.get("type", "hands"),
+            "value": match_end_cfg.get("value", 8),
+            "allow_negative": match_end_cfg.get("allow_negative", False),
+        },
         "dry_run": yaml_cfg.get("debug", {}).get("dry_run", False),
         "log_json": yaml_cfg.get("logging", {}).get("json"),
         "log_session": yaml_cfg.get("logging", {}).get("session"),
@@ -238,8 +244,8 @@ def _cmd_watch_replay(path: str, delay: float) -> int:
 
 def _cmd_watch_dry_run(
     seed: int,
-    max_player_steps: int,
     delay: float,
+    match_end: dict[str, Any] | None = None,
     dry_run: bool = True,
     max_history_rounds: int = 10,
     clear_history_per_hand: bool = False,
@@ -312,17 +318,29 @@ def _cmd_watch_dry_run(
             return 2
         client = build_client(llm_cfg)
 
+    from llm.config import MatchEndCondition
+
+    # 构建 MatchEndCondition
+    if match_end is None:
+        me = MatchEndCondition(type="hands", value=8, allow_negative=False)
+    else:
+        me = MatchEndCondition(
+            type=match_end.get("type", "hands"),
+            value=match_end.get("value", 8),
+            allow_negative=match_end.get("allow_negative", False),
+        )
+
     with LiveMatchCallback(
         delay=delay,
         show_reason=show_reason and not dry_run,
-        max_player_steps=max_player_steps,
+        match_end=me,
     ) as callback:
         # 设置玩家名字
         if player_names:
             callback.set_player_names(player_names)
         rr = run_llm_match(
             seed=seed,
-            max_player_steps=max_player_steps,
+            match_end=me,
             client=client,
             dry_run=dry_run,
             verbose=False,
@@ -488,8 +506,8 @@ def main(argv: list[str] | None = None) -> int:
             match_llm_override = yaml_cfg.get("llm", {})
             return _cmd_watch_dry_run(
                 cfg.seed,
-                cfg.max_player_steps,
                 cfg.watch_delay,
+                match_end=cfg.match_end,
                 dry_run=cfg.dry_run,
                 max_history_rounds=cfg.max_history_rounds,
                 clear_history_per_hand=cfg.clear_history_per_hand,
@@ -545,11 +563,23 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         client = build_client(llm_cfg)
 
+    from llm.config import MatchEndCondition
+
+    # 构建 MatchEndCondition
+    if cfg.match_end is None:
+        me = MatchEndCondition(type="hands", value=8, allow_negative=False)
+    else:
+        me = MatchEndCondition(
+            type=cfg.match_end.get("type", "hands"),
+            value=cfg.match_end.get("value", 8),
+            allow_negative=cfg.match_end.get("allow_negative", False),
+        )
+
     if simple_session_path is not None:
         with simple_session_path.open("w", encoding="utf-8") as simple_fp:
             rr = run_llm_match(
                 seed=cfg.seed,
-                max_player_steps=cfg.max_player_steps,
+                match_end=me,
                 client=client,
                 dry_run=cfg.dry_run,
                 verbose=cfg.verbose,
@@ -564,7 +594,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         rr = run_llm_match(
             seed=cfg.seed,
-            max_player_steps=cfg.max_player_steps,
+            match_end=me,
             client=client,
             dry_run=cfg.dry_run,
             verbose=cfg.verbose,

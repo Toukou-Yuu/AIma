@@ -24,11 +24,39 @@ class LLMClientConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class MatchEndCondition:
+    """对局结束条件。"""
+
+    type: Literal["hands"] = "hands"  # 目前只支持局数制
+    value: int = 8  # 默认半庄（8局）
+    allow_negative: bool = True  # 是否允许负分继续（False则有人负分时提前结束）
+
+    def is_match_end(self, hands_played: int, scores: tuple[int, ...]) -> tuple[bool, str]:
+        """判断是否满足结束条件。
+
+        Returns:
+            (是否结束, 结束原因)
+        """
+        # 检查局数
+        if hands_played >= self.value:
+            return True, f"hands_completed:{hands_played}"
+
+        # 检查负分（如果启用）
+        if not self.allow_negative:
+            for seat, score in enumerate(scores):
+                if score < 0:
+                    return True, f"negative_score:seat{seat}"
+
+        return False, ""
+
+
+@dataclass(frozen=True, slots=True)
 class MatchConfig:
     """对局配置。"""
 
     seed: int = 42
-    max_player_steps: int = 500
+    match_end: MatchEndCondition | None = None  # 对局结束条件
+    max_player_steps: int = 500  # 兼容旧配置，优先级低于 match_end
     players: list[dict[str, Any]] | None = None
 
 
@@ -241,6 +269,18 @@ def load_match_config(
     cfg = load_kernel_config(config_path)
     default_players = cfg.get("players")
 
+    def _parse_match_end(match_data: dict) -> MatchEndCondition | None:
+        """解析对局结束条件配置。"""
+        end_cfg = match_data.get("match_end")
+        if end_cfg:
+            return MatchEndCondition(
+                type=end_cfg.get("type", "hands"),
+                value=end_cfg.get("value", 8),
+                allow_negative=end_cfg.get("allow_negative", True),
+            )
+        # 兼容旧配置
+        return None
+
     # 如果指定了对局配置，优先读取
     if match_config_path:
         try:
@@ -249,6 +289,7 @@ def load_match_config(
             match_data = data.get("match", {})
             return MatchConfig(
                 seed=match_data.get("seed", 42),
+                match_end=_parse_match_end(match_data),
                 max_player_steps=match_data.get("max_player_steps", 500),
                 players=match_data.get("players") or default_players,
             )
@@ -259,6 +300,7 @@ def load_match_config(
     match_data = cfg.get("match", {})
     return MatchConfig(
         seed=match_data.get("seed", 42),
+        match_end=_parse_match_end(match_data),
         max_player_steps=match_data.get("max_player_steps", 500),
         players=default_players,
     )

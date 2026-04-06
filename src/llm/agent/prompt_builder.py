@@ -35,33 +35,17 @@ def build_system_prompt(
 
     Returns:
         系统提示字符串
-    """
-    # 使用传入的 system_prompt 或默认提示词
-    if system_prompt is None:
-        # 默认提示词（硬编码后备）
-        base_prompt = (
-            "你是日式麻将（立直麻将）的牌手代理。你只能从给出的 legal_actions 中"
-            "**精确选择一条**执行。\n"
-            "\n"
-            "【牌面编码说明】\n"
-            "- 万子：1m-9m（如 1m=一万，5m=五万）\n"
-            "- 筒子：1p-9p（如 1p=一筒，5p=五筒）\n"
-            "- 索子：1s-9s（如 1s=一索，5s=五索）\n"
-            "- 字牌：1z=東，2z=南，3z=西，4z=北，5z=白，6z=發，7z=中\n"
-            "\n"
-            "输出要求：仅输出一行 JSON 对象，不要 markdown 代码块，不要 JSON 以外的文字。\n"
-            "JSON 中除下列动作字段外，**必须**包含字符串字段 ``why``："
-            "用符合你人设的语气说明**为何**选这一手（不超过40字）。\n"
-            "**重要**：`why` 字段必须体现你的人设性格，用角色特有的说话方式，禁止机械分析。\n"
-            "动作字段必须与所选 legal_actions 中某一项完全一致"
-            "（含 kind、seat；discard 须含 tile；需要时含 declare_riichi、meld）。\n"
-            '示例：{"kind":"discard","seat":0,"tile":"3m","why":"现物且维持一向听"}\n'
-            '示例：{"kind":"pass_call","seat":1,"why":"无役无法荣和"}'
-        )
-    else:
-        base_prompt = system_prompt
 
-    sections = [base_prompt]
+    Raises:
+        ValueError: 当未提供 system_prompt 时
+    """
+    if system_prompt is None:
+        raise ValueError(
+            "未配置 system_prompt。请在 configs/aima_kernel.yaml 的 llm 部分 "
+            "添加 system_prompt 配置，或参考 configs/aima_kernel_template.yaml"
+        )
+
+    sections = [system_prompt]
 
     if profile and profile.persona_prompt:
         sections.append(f"\n【人格】\n{profile.persona_prompt}")

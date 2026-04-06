@@ -37,13 +37,11 @@ from kernel.tiles.model import Tile
 from llm.action_build import legal_action_to_action
 from llm.agent import PlayerAgent
 from llm.agent.context import EpisodeContext
-from llm.observation_format import SYSTEM_PROMPT, build_user_prompt
-from llm.parse import extract_json_object
-from llm.protocol import ChatMessage, CompletionClient
+from llm.observation_format import build_user_prompt
+from llm.protocol import CompletionClient
 from llm.table_snapshot_text import action_wire_to_cn, write_snapshot_block
 from llm.turns import pending_actor_seats
-from llm.validate import explain_text_from_choice, find_matching_legal_action
-from llm.wire import legal_action_to_wire
+from llm.config import MatchEndCondition
 
 log = logging.getLogger(__name__)
 
@@ -101,10 +99,10 @@ def _finalize_agents_episode(
 ) -> None:
     """局结束时更新所有 Agent 的 memory。"""
     for ev in events:
-        if isinstance(ev, HandOverEvent):
+        if isinstance(ev, (HandOverEvent, FlowEvent)):
             for seat in range(4):
                 if seat in seat_agents and seat in seat_contexts:
-                    points = ev.payments[seat]
+                    points = ev.payments[seat] if isinstance(ev, HandOverEvent) else 0
                     seat_contexts[seat].end_episode(points)
                     seat_agents[seat].update_memory(seat_contexts[seat], client)
 
@@ -247,6 +245,7 @@ class RunResult:
     seed: int = 0
     actions_wire: tuple[dict[str, Any], ...] = ()
     events_wire: tuple[dict[str, Any], ...] = ()
+    reasons: tuple[str | None, ...] = ()  # 每个动作的决策理由
 
     def as_match_log(self) -> dict[str, Any]:
         """可 ``json.dump`` 的牌谱顶层结构。"""
@@ -257,94 +256,14 @@ class RunResult:
             final_phase=self.final_state.phase.value,
             actions_wire=self.actions_wire,
             events_wire=self.events_wire,
+            reasons=self.reasons,
         )
-
-
-def choose_legal_action(
-    state: GameState,
-    seat: int,
-    *,
-    client: CompletionClient | None,
-    dry_run: bool,
-    session_audit: bool = False,
-    request_delay_seconds: float = 0.0,
-    history: list[ChatMessage] | None = None,
-    max_history_rounds: int = 10,
-) -> tuple[LegalAction, str | None, list[ChatMessage]]:
-    """返回「所选合法动作」、「模型 JSON 中的 why 说明」（无请求时为 ``None``）和「更新后的历史消息列表」。"""
-    acts = legal_actions(state, seat)
-    if not acts:
-        msg = f"no legal_actions for seat {seat}"
-        raise RuntimeError(msg)
-
-    # 唯一合法动作为「过」时不调用 API（内核已判定无荣/当前轮无其它选项）
-    if len(acts) == 1 and acts[0].kind == ActionKind.PASS_CALL:
-        if session_audit:
-            log.info("llm_skipped singleton pass_call seat=%s", seat)
-        return acts[0], None, history or []
-
-    if dry_run or client is None:
-        return acts[0], None, history or []
-
-    obs = observation(state, seat, mode="human")
-    user_content = build_user_prompt(obs, acts)
-    current_user_msg = ChatMessage(role="user", content=user_content)
-
-    # 合并历史 + 当前消息
-    messages = [ChatMessage(role="system", content=SYSTEM_PROMPT)]
-    if history:
-        messages.extend(history)
-    messages.append(current_user_msg)
-
-    if request_delay_seconds > 0:
-        time.sleep(request_delay_seconds)
-    raw = client.complete(messages)
-    if session_audit:
-        head = raw if len(raw) <= 600 else raw[:600] + "…"
-        log.debug("llm raw_head seat=%s %r", seat, head)
-        # 记录历史消息数量（方便确认记忆功能在工作）
-        hist_len = len(history) if history else 0
-        log.debug("llm_history seat=%s history_msgs=%s", seat, hist_len)
-    try:
-        choice = extract_json_object(raw)
-    except (ValueError, TypeError) as e:
-        log.warning("parse failed, fallback first legal: %s", e)
-        return acts[0], None, history or []
-    why = explain_text_from_choice(choice)
-    la = find_matching_legal_action(acts, choice)
-
-    # 构建 assistant 消息内容（使用模型返回的原始 JSON）
-    assistant_content = json.dumps(choice, ensure_ascii=False)
-
-    if la is None:
-        log.warning("choice not in legal_actions, fallback first: %s", choice)
-        # 即使失败也记录这次对话到历史
-        new_history = (history or []) + [current_user_msg, ChatMessage(role="assistant", content=assistant_content)]
-        max_history_msgs = max_history_rounds * 2
-        if len(new_history) > max_history_msgs:
-            new_history = new_history[-max_history_msgs:]
-        return acts[0], None, new_history
-
-    if session_audit:
-        log.info(
-            "llm_choice seat=%s %s",
-            seat,
-            json.dumps(legal_action_to_wire(la), ensure_ascii=False),
-        )
-
-    # 更新历史：追加 user + assistant
-    new_history = (history or []) + [current_user_msg, ChatMessage(role="assistant", content=assistant_content)]
-    max_history_msgs = max_history_rounds * 2
-    if len(new_history) > max_history_msgs:
-        new_history = new_history[-max_history_msgs:]
-
-    return la, why, new_history
 
 
 def run_llm_match(
     *,
     seed: int,
-    max_player_steps: int,
+    match_end: MatchEndCondition | None = None,
     client: CompletionClient | None = None,
     dry_run: bool = False,
     verbose: bool = False,
@@ -358,7 +277,7 @@ def run_llm_match(
     system_prompt: str | None = None,
 ) -> RunResult:
     """
-    从 ``PRE_DEAL`` 开局到 ``MATCH_END`` 或步数上限。
+    从 ``PRE_DEAL`` 开局到 ``MATCH_END`` 或满足结束条件。
 
     - ``dry_run``：每步取 ``legal_actions`` 首项（确定性，无网络）。
     - 局间 ``HAND_OVER`` / ``FLOWN``：自动 ``NOOP`` + 新牌山（``shuffle_deck`` 递增种子）。
@@ -371,7 +290,7 @@ def run_llm_match(
     - ``simple_log_file``：若给定，按内核事件写简体中文可读对局（与 JSON 牌谱并行）。
     - ``request_delay_seconds``：每次调用 LLM 前休眠秒数（减压控/防连接被掐）；``dry_run`` 时不请求，不休眠。
     - ``on_step_callback``：可选回调，每步玩家决策后调用（用于实时 UI 观战）。
-    - ``max_player_steps``：最大玩家决策步数（不含局间 NOOP 和 PASS 合并）。
+    - ``match_end``：对局结束条件（局数制/负分结束），默认半庄8局。
     - ``players``：可选，指定对战玩家列表，格式 [{"id": "player_id", "seat": 0}, ...]。
     """
     if simple_log_file is not None:
@@ -418,6 +337,7 @@ def run_llm_match(
 
     actions_acc: list[dict[str, Any]] = []
     events_acc: list[dict[str, Any]] = []
+    reasons_acc: list[str | None] = []  # 收集决策理由
 
     begin_act = Action(ActionKind.BEGIN_ROUND, wall=wall)
     try:
@@ -466,27 +386,47 @@ def run_llm_match(
             seed=seed,
             actions_wire=(),
             events_wire=(),
+            reasons=(),
         )
 
     kernel_steps = 0
     player_steps = 0
-    reason = "max_player_steps"
-    while player_steps < max_player_steps:
+    hands_completed = 0  # 已完成的局数
+    reason = "match_end"
+
+    # 默认结束条件：半庄8局，负分结束
+    if match_end is None:
+        match_end = MatchEndCondition(type="hands", value=8, allow_negative=False)
+
+    while True:
+        # 检查结束条件（每局结束后）
+        if hands_completed > 0 and state.phase in (GamePhase.HAND_OVER, GamePhase.FLOWN, GamePhase.MATCH_END):
+            should_end, end_reason = match_end.is_match_end(hands_completed, state.table.scores)
+            if should_end:
+                reason = end_reason
+                # Phase 4: 更新所有 Agent 的 stats
+                final_scores = state.table.scores
+                final_dealer = state.table.dealer_seat
+                sorted_seats = sorted(
+                    range(4),
+                    key=lambda s: (-final_scores[s], (s - final_dealer) % 4)
+                )
+                placements = {seat: rank + 1 for rank, seat in enumerate(sorted_seats)}
+                for seat, agent in seat_agents.items():
+                    if agent.player_id is not None and seat in seat_contexts:
+                        agent.update_stats(seat_contexts[seat], placements[seat])
+                # 触发 MATCH_END
+                break
+
         if state.phase == GamePhase.MATCH_END:
             reason = "match_end"
-            # Phase 4: 更新所有 Agent 的 stats
             final_scores = state.table.scores
-            # 计算排名（雀魂规则：按分数降序，同分按最后一局的东南西北顺位）
-            # 获取最后一局的庄家（东家）座位
             final_dealer = state.table.dealer_seat
-            # 排序键：先按分数降序，分数相同则按相对风位（东0, 南1, 西2, 北3）
             sorted_seats = sorted(
                 range(4),
                 key=lambda s: (-final_scores[s], (s - final_dealer) % 4)
             )
-            # 强制分配 1-4 名（雀魂规则：同分也按座位排序）
             placements = {seat: rank + 1 for rank, seat in enumerate(sorted_seats)}
-            # 更新每个 agent 的 stats
             for seat, agent in seat_agents.items():
                 if agent.player_id is not None and seat in seat_contexts:
                     agent.update_stats(seat_contexts[seat], placements[seat])
@@ -512,6 +452,7 @@ def run_llm_match(
                     GamePhase.HAND_OVER,
                     GamePhase.FLOWN,
                 ):
+                    hands_completed += 1  # 已完成一局
                     hand_number += 1
                     # 新一局开始时，创建新的 EpisodeContext
                     for s in range(4):
@@ -669,6 +610,7 @@ def run_llm_match(
                     # 回调异常不应中断对局
                     pass
             player_steps += 1  # 玩家决策步数递增（无论回调是否成功）
+            reasons_acc.append(llm_why)  # 记录决策理由
             if session_audit:
                 wr = _live_wall_remaining_tiles(b)
                 log.info(
@@ -697,4 +639,5 @@ def run_llm_match(
         seed=seed,
         actions_wire=tuple(actions_acc),
         events_wire=tuple(events_acc),
+        reasons=tuple(reasons_acc),
     )
