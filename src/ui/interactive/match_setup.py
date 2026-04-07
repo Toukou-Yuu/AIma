@@ -82,7 +82,7 @@ class MatchSetupPage(Page):
         if cmd is None:
             return
 
-        self._execute_command(cmd, settings["watch"], settings["max_hands"])
+        self._execute_command(cmd, settings["watch"])
 
     def _configure_settings(self) -> dict | None:
         """配置对局设置."""
