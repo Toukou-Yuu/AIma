@@ -129,18 +129,22 @@ def _parse_hand_tiles(hand_str: str) -> list[Text]:
     return tiles
 
 
-def _wind_with_seat(wind_idx: int, seat: int, is_active: bool = False) -> Text:
-    """生成带样式的风位+座位标签，如'东(S0)'。
+def _wind_with_seat(wind_idx: int, seat: int, is_active: bool = False, player_name: str | None = None) -> Text:
+    """生成带样式的风位+座位标签，如'东(S0)' 或 '一姬(S0)'。
 
     Args:
         wind_idx: 相对风位索引 (0=东, 1=南, 2=西, 3=北)
         seat: 绝对座位号 (0-3)
         is_active: 是否为当前操作席（高亮显示）
+        player_name: 玩家名字（可选）
     """
-    wind = _WIND_NAMES[wind_idx]
+    if player_name:
+        name = player_name
+    else:
+        name = _WIND_NAMES[wind_idx]
     style = "bold bright_cyan" if is_active else "bright_white"
     return Text.assemble(
-        (wind, style),
+        (name, style),
         (f"(S{seat})", "dim")
     )
 
@@ -249,11 +253,16 @@ class LiveMatchViewer:
         scores.add_column(style="dim")
         scores.add_column(justify="right")
         for i, s in enumerate(table.scores):
-            wind_name = _WIND_NAMES[i]
+            # 使用玩家名字（如果有）或座位号
+            player_name = self._seat_names.get(i)
+            if player_name:
+                label = f"{player_name}"
+            else:
+                label = f"S{i}"
             # 高亮上一步执行动作的玩家点数
             is_active = (i == self._last_actor_seat)
             style = "bold bright_cyan" if is_active else ""
-            scores.add_row(f"{wind_name}:", Text(str(s), style=style))
+            scores.add_row(f"{label}:", Text(str(s), style=style))
 
         # 合并
         main = Table(show_header=False, box=None)
@@ -339,7 +348,7 @@ class LiveMatchViewer:
             # 玩家行
             player_text = Text.assemble(
                 (f"{branch_char} ", "bright_black"),
-                _wind_with_seat(rel_wind, seat, is_active),
+                _wind_with_seat(rel_wind, seat, is_active, player_name),
                 (f"[{player_name}]", "bold bright_green" if is_active else "bright_green"),
                 (riichi_mark, "bold bright_red" if riichi_mark else ""),
                 "  ",
@@ -563,16 +572,18 @@ class LiveMatchViewer:
     def _format_event(self, ev: GameEvent) -> Text | None:
         """单个事件 -> Rich Text。"""
         if isinstance(ev, RoundBeginEvent):
+            dealer_name = self._seat_names.get(ev.dealer_seat, f"S{ev.dealer_seat}")
             return Text.assemble(
-                ("配牌 ", "dim"),
+                (f"{dealer_name} 配牌 ", "dim"),
                 ("宝牌: ", "dim"),
                 _tile_to_rich(ev.dora_indicator.to_code(), is_dora=True),
             )
 
         if isinstance(ev, DrawTileEvent):
             src = "岭上" if ev.is_rinshan else "本墙"
+            player_name = self._seat_names.get(ev.seat, _WIND_NAMES[ev.seat])
             return Text.assemble(
-                (_WIND_NAMES[ev.seat], "cyan"),
+                (player_name, "cyan"),
                 (f" 从{src}摸 ", "dim"),
                 _tile_to_rich(ev.tile.to_code()),
             )
@@ -580,8 +591,9 @@ class LiveMatchViewer:
         if isinstance(ev, DiscardTileEvent):
             riichi = " 立直" if ev.declare_riichi else ""
             tg = "摸切" if ev.is_tsumogiri else "手切"
+            player_name = self._seat_names.get(ev.seat, _WIND_NAMES[ev.seat])
             return Text.assemble(
-                (_WIND_NAMES[ev.seat], "cyan"),
+                (player_name, "cyan"),
                 (f" 打 ", "dim"),
                 _tile_to_rich(ev.tile.to_code()),
                 (f" ({tg}{riichi})", "dim"),
@@ -590,30 +602,34 @@ class LiveMatchViewer:
         if isinstance(ev, CallEvent):
             cn = {"chi": "吃", "pon": "碰", "daiminkan": "大明杠",
                   "ankan": "暗杠", "shankuminkan": "加杠"}.get(ev.call_kind, ev.call_kind)
+            player_name = self._seat_names.get(ev.seat, _WIND_NAMES[ev.seat])
             return Text.assemble(
-                (_WIND_NAMES[ev.seat], "bright_magenta"),
+                (player_name, "bright_magenta"),
                 (f" {cn}", "bright_magenta"),
             )
 
         if isinstance(ev, RonEvent):
+            player_name = self._seat_names.get(ev.seat, _WIND_NAMES[ev.seat])
+            discarder_name = self._seat_names.get(ev.discard_seat, _WIND_NAMES[ev.discard_seat])
             return Text.assemble(
-                (_WIND_NAMES[ev.seat], "bold bright_red"),
+                (player_name, "bold bright_red"),
                 (" 荣和 ", "bold bright_red"),
                 _tile_to_rich(ev.win_tile.to_code()),
-                (f" ← {_WIND_NAMES[ev.discard_seat]}", "dim"),
+                (f" ← {discarder_name}", "dim"),
             )
 
         if isinstance(ev, TsumoEvent):
             rs = "岭上" if ev.is_rinshan else ""
+            player_name = self._seat_names.get(ev.seat, _WIND_NAMES[ev.seat])
             return Text.assemble(
-                (_WIND_NAMES[ev.seat], "bold bright_red"),
+                (player_name, "bold bright_red"),
                 (f" 自摸和了 {rs}", "bold bright_red"),
                 _tile_to_rich(ev.win_tile.to_code()),
             )
 
         if isinstance(ev, HandOverEvent):
             if ev.winners:
-                winners = "、".join(_WIND_NAMES[w] for w in ev.winners)
+                winners = "、".join(self._seat_names.get(w, _WIND_NAMES[w]) for w in ev.winners)
                 return Text.assemble(
                     ("局终: ", "bold yellow"),
                     (f"{winners} 和了", "bright_yellow"),

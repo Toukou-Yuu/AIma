@@ -1,6 +1,6 @@
 {
-  "total_games": 2,
-  "total_hands": 0,
+  "total_games": 5,
+  "total_hands": 3,
   "wins": 0,
   "deal_ins": 0,
   "riichi_count": 0,
@@ -8,8 +8,8 @@
   "riichi_deal_ins": 0,
   "total_points": 0,
   "first_place_count": 1,
-  "second_place_count": 1,
-  "third_place_count": 0,
-  "fourth_place_count": 0,
-  "last_updated": "2026-04-06T03:23:58.808022"
+  "second_place_count": 2,
+  "third_place_count": 1,
+  "fourth_place_count": 1,
+  "last_updated": "2026-04-07T13:34:55.428276"
 }
