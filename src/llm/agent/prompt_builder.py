@@ -5,6 +5,7 @@ Phase 4: 支持从 stats 注入统计数据.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from kernel.api.legal_actions import LegalAction
