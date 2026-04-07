@@ -161,6 +161,14 @@ def _merge_config(
         else:
             setattr(result, key, default_val)
 
+    # 特殊处理 --max-hands：转换为 match_end 格式
+    if getattr(cli_args, "max_hands", None) is not None:
+        result.match_end = {
+            "type": "hands",
+            "value": cli_args.max_hands,
+            "allow_negative": False,
+        }
+
     # 特殊处理：若 log_session 非 null，自动启用 session_audit
     if result.log_session is not None:
         result.session_audit = True
@@ -478,6 +486,13 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         metavar="ID_LIST",
         help="指定对战玩家，格式: id0,id1,id2,id3（对应座位0-3），如: aggressive_bot_v1,defensive_bot_v1,default,default",
+    )
+    p.add_argument(
+        "--max-hands",
+        type=int,
+        default=None,
+        metavar="N",
+        help="对局局数（4=东风战, 8=半庄战, 默认使用配置文件）",
     )
     p.add_argument(
         "--show-stats",

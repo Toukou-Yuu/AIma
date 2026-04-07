@@ -107,10 +107,12 @@ class MatchSetupPage(Page):
     def _build_command(self, selected: list[str], settings: dict) -> str | None:
         """构建执行命令."""
         player_str = ",".join(selected)
+        max_hands = settings.get('max_hands', 8)
         cmd_parts = [
             "python -m llm",
             f"--players {player_str}",
             f"--seed {settings['seed']}",
+            f"--max-hands {max_hands}",
         ]
 
         if settings["watch"]:
