@@ -104,6 +104,7 @@ def build_compressed_decision_prompt(
         用户提示字符串（JSON 格式）
     """
     from llm.observation_format import build_compressed_observation
+    from llm.wire import legal_action_to_wire
 
     compressed_obs = build_compressed_observation(observation)
     body = {
