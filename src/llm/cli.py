@@ -341,7 +341,7 @@ def _cmd_watch_dry_run(
     with LiveMatchCallback(
         delay=delay,
         show_reason=show_reason and not dry_run,
-        match_end=me,
+        target_hands=me.value if me else 8,
     ) as callback:
         # 设置玩家名字
         if player_names:
