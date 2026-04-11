@@ -130,7 +130,7 @@ def _parse_hand_tiles(hand_str: str) -> list[Text]:
 
 
 def _wind_with_seat(wind_idx: int, seat: int, is_active: bool = False, player_name: str | None = None) -> Text:
-    """生成带样式的风位+座位标签，如'东(S0)' 或 '一姬(S0)'。
+    """生成带样式的风位+座位标签，如'东(S0)' 或 '东家 一姬'。
 
     Args:
         wind_idx: 相对风位索引 (0=东, 1=南, 2=西, 3=北)
@@ -138,15 +138,21 @@ def _wind_with_seat(wind_idx: int, seat: int, is_active: bool = False, player_na
         is_active: 是否为当前操作席（高亮显示）
         player_name: 玩家名字（可选）
     """
-    if player_name:
-        name = player_name
-    else:
-        name = _WIND_NAMES[wind_idx]
+    wind_name = _WIND_NAMES[wind_idx]  # 东、南、西、北
     style = "bold bright_cyan" if is_active else "bright_white"
-    return Text.assemble(
-        (name, style),
-        (f"(S{seat})", "dim")
-    )
+
+    if player_name:
+        # 显示为 "东家 一姬" 格式
+        return Text.assemble(
+            (f"{wind_name}家 ", style),
+            (player_name, style),
+        )
+    else:
+        # 没有名字时显示 "东(S0)" 格式
+        return Text.assemble(
+            (wind_name, style),
+            (f"(S{seat})", "dim")
+        )
 
 
 class LiveMatchViewer:
@@ -248,26 +254,23 @@ class LiveMatchViewer:
                 )
                 header.add_row("宝牌指示器", dora_text)
 
-        # 点数
-        scores = Table(show_header=False, box=None, padding=(0, 1))
-        scores.add_column(style="dim")
-        scores.add_column(justify="right")
+        # 点数 - 直接渲染为文本，避免嵌套Table的宽度问题
+        score_lines = []
         for i, s in enumerate(table.scores):
-            # 使用玩家名字（如果有）或座位号
             player_name = self._seat_names.get(i)
-            if player_name:
-                label = f"{player_name}"
-            else:
-                label = f"S{i}"
-            # 高亮上一步执行动作的玩家点数
+            label = player_name if player_name else f"S{i}"
             is_active = (i == self._last_actor_seat)
-            style = "bold bright_cyan" if is_active else ""
-            scores.add_row(f"{label}:", Text(str(s), style=style))
+            line = Text()
+            # 把分数直接放在标签里测试
+            content = f"{label}: {s}"
+            line.append(content, style="bold bright_cyan" if is_active else "white")
+            score_lines.append(line)
+        scores = Text("\n").join(score_lines)
 
         # 合并
         main = Table(show_header=False, box=None)
-        main.add_column()
-        main.add_column()
+        main.add_column(min_width=35)
+        main.add_column(min_width=20)
         main.add_row(header, scores)
 
         return main
@@ -345,11 +348,10 @@ class LiveMatchViewer:
             # 获取玩家名字
             player_name = self._seat_names.get(seat, f"S{seat}")
 
-            # 玩家行
+            # 玩家行（风位+名字已包含在 _wind_with_seat 中）
             player_text = Text.assemble(
                 (f"{branch_char} ", "bright_black"),
                 _wind_with_seat(rel_wind, seat, is_active, player_name),
-                (f"[{player_name}]", "bold bright_green" if is_active else "bright_green"),
                 (riichi_mark, "bold bright_red" if riichi_mark else ""),
                 "  ",
                 hand_text,
@@ -547,13 +549,23 @@ class LiveMatchViewer:
 
     def _render_stats(self) -> Text:
         """渲染统计信息面板（返回 Text）。"""
+        from wcwidth import wcswidth
+
         lines = []
         for i in range(4):
-            seat_label = f"S{i}"
+            # 使用玩家名字（如果有）或座位号
+            player_name = self._seat_names.get(i)
+            if player_name:
+                seat_label = player_name
+            else:
+                seat_label = f"S{i}"
             wins = self._wins[i]
             rate = f"{wins}/{self._rounds}" if self._rounds > 0 else "—"
             pct = f"({wins/max(self._rounds,1)*100:.0f}%)" if self._rounds > 0 else "(—)"
-            lines.append(f"{seat_label}    {wins}    {rate} {pct}")
+            # 计算显示宽度并填充（中文字符宽度为2）
+            display_width = wcswidth(seat_label)
+            padding = max(0, 8 - display_width)
+            lines.append(f"{seat_label}{' ' * padding} {wins}    {rate} {pct}")
         return Text("\n".join(lines))
 
     def _render_recent_events(self, events: tuple[GameEvent, ...]) -> Group:

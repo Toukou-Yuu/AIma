@@ -97,13 +97,17 @@ def _finalize_agents_episode(
     seat_contexts: dict[int, EpisodeContext],
     client: CompletionClient | None = None,
 ) -> None:
-    """局结束时更新所有 Agent 的 memory。"""
+    """局结束时更新所有 Agent 的 memory 和暂存 match_stats."""
     for ev in events:
         if isinstance(ev, (HandOverEvent, FlowEvent)):
             for seat in range(4):
                 if seat in seat_agents and seat in seat_contexts:
                     points = ev.payments[seat] if isinstance(ev, HandOverEvent) else 0
                     seat_contexts[seat].end_episode(points)
+                    # 保存 match_stats 到 Agent 以跨局持久化
+                    agent = seat_agents[seat]
+                    if agent.player_id is not None:
+                        agent.save_match_stats(seat_contexts[seat].match_stats)
                     seat_agents[seat].update_memory(seat_contexts[seat], client)
 
 
@@ -456,7 +460,12 @@ def run_llm_match(
                     hand_number += 1
                     # 新一局开始时，创建新的 EpisodeContext
                     for s in range(4):
-                        seat_contexts[s] = EpisodeContext(s)
+                        if s in seat_agents and seat_agents[s].player_id is not None:
+                            # 从 Agent 加载累积的 match_stats
+                            match_stats = seat_agents[s].load_match_stats()
+                            seat_contexts[s] = EpisodeContext(s, match_stats=match_stats)
+                        else:
+                            seat_contexts[s] = EpisodeContext(s)
                 _write_simple_snapshot(
                     simple_log_file,
                     state,

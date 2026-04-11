@@ -17,6 +17,44 @@ from llm.config import load_llm_config
 from llm.protocol import build_client
 from llm.runner import run_llm_match
 
+
+def _print_match_results_from_state(state, players: list[dict[str, Any]] | None = None) -> None:
+    """打印对局结束后的四家成绩（从 final_state 读取）。"""
+    from kernel.table.model import PrevailingWind
+
+    table = state.table
+    final_scores = table.scores
+    final_dealer = table.dealer_seat
+
+    # 计算排名
+    sorted_seats = sorted(
+        range(4),
+        key=lambda s: (-final_scores[s], (s - final_dealer) % 4)
+    )
+
+    # 获取玩家名字
+    player_names = {}
+    if players:
+        for p in players:
+            seat = p.get("seat")
+            player_id = p.get("id")
+            if seat is not None and player_id:
+                player_names[seat] = player_id
+
+    print("\n" + "=" * 50)
+    print("对局结束 - 最终成绩")
+    print("=" * 50)
+    print(f"{'排名':<6}{'座位':<8}{'玩家':<12}{'分数':>10}")
+    print("-" * 50)
+
+    for rank, seat in enumerate(sorted_seats, 1):
+        name = player_names.get(seat, f"Player{seat}")
+        seat_name = f"S{seat}"
+        score = final_scores[seat]
+        print(f"{rank}位{'':<4}{seat_name:<8}{name:<12}{score:>10,}")
+
+    print("=" * 50 + "\n")
+
 # 项目根相对路径：对局牌谱与调试文本日志共用同一文件名（stem）关联
 _LOG_REPLAY_DIR = Path("logs") / "replay"
 _LOG_DEBUG_DIR = Path("logs") / "debug"
@@ -375,6 +413,9 @@ def _cmd_watch_dry_run(
             payload = json.dumps(rr.as_match_log(), ensure_ascii=False, indent=2)
             replay_path.write_text(payload, encoding="utf-8")
             print(f"\n对局日志: {replay_path}")
+
+    # 显示最终成绩（在 Live 退出后，避免被刷新掉）
+    _print_match_results_from_state(rr.final_state, players)
 
     if simple_log_file:
         simple_log_file.close()

@@ -314,6 +314,27 @@ class PlayerAgent:
         self.stats = new_stats
         save_stats(self.player_id, new_stats)
 
+    def save_match_stats(self, match_stats: "MatchStats") -> None:
+        """保存跨局累积的 match_stats 到 Agent（临时存储，不累积到长期 stats）.
+
+        Args:
+            match_stats: 本场统计
+        """
+        # 使用一个临时属性存储，不修改 self.stats
+        self._temp_match_stats = match_stats
+
+    def load_match_stats(self) -> "MatchStats":
+        """从 Agent 加载跨局累积的 match_stats.
+
+        Returns:
+            MatchStats: 累积的本场统计（如果没有则返回新的）
+        """
+        from llm.agent.stats import MatchStats
+
+        if hasattr(self, '_temp_match_stats'):
+            return self._temp_match_stats
+        return MatchStats()
+
 
 def _debug_save_last_prompt(messages: list[ChatMessage]) -> None:
     """保存最后一次请求到 logs/last_sent_prompt.log。"""
