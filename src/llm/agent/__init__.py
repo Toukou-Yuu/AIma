@@ -1,12 +1,13 @@
 """Agent 包 - LLM 玩家代理封装.
 
 重构后的架构：
-- PlayerAgent: 协调类，组合各组件
+- PlayerAgent: 协调类，组合各组件（无状态纯函数）
 - AgentCore: 核心决策逻辑
 - SessionManager: 会话管理
 - PromptBuilder: Prompt 构建
 - DecisionParser: 决策解析
 - PersistenceManager: 持久化管理
+- MatchContext: 跨局状态管理（Context Object 模式）
 """
 
 from __future__ import annotations
@@ -33,11 +34,12 @@ __all__ = ["PlayerAgent", "Decision"]
 
 
 class PlayerAgent:
-    """玩家代理 - 协调类（组合模式）.
+    """玩家代理 - 协调类（组合模式，无状态纯函数）.
 
     设计原则：
     - Agent 是无状态的"纯函数"，只保留长期状态（profile/memory/stats）
     - 运行时状态存储在 EpisodeContext 中，由外部（runner）管理
+    - 跨局状态由 MatchContext 管理（Context Object 模式）
     - 通过组合各组件实现职责分离
 
     组件：
@@ -46,9 +48,6 @@ class PlayerAgent:
     - _prompt_builder: Prompt 构建（system + user prompt）
     - _core: 核心决策逻辑（LLM 调用 + 解析）
     """
-
-    # 类型声明
-    _temp_match_stats: "MatchStats | None"
 
     def __init__(
         self,
@@ -106,9 +105,6 @@ class PlayerAgent:
 
         # 5. 创建核心决策组件
         self._core = AgentCore(self.profile, use_compression, use_delta)
-
-        # 6. 跨局临时状态存储
-        self._temp_match_stats = None
 
     def decide(
         self,
@@ -180,23 +176,3 @@ class PlayerAgent:
             episode_ctx.match_stats,
             placement,
         )
-
-    def save_match_stats(self, match_stats: "MatchStats") -> None:
-        """保存跨局累积的 match_stats 到 Agent（临时存储）.
-
-        Args:
-            match_stats: 本场统计
-        """
-        self._temp_match_stats = match_stats
-
-    def load_match_stats(self) -> "MatchStats":
-        """从 Agent 加载跨局累积的 match_stats.
-
-        Returns:
-            MatchStats: 累积的本场统计（如果没有则返回新的）
-        """
-        from llm.agent.stats import MatchStats
-
-        if self._temp_match_stats is not None:
-            return self._temp_match_stats
-        return MatchStats()

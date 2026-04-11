@@ -37,6 +37,7 @@ from kernel.tiles.model import Tile
 from llm.action_build import legal_action_to_action
 from llm.agent import PlayerAgent
 from llm.agent.context import EpisodeContext
+from llm.agent.match_context import MatchContext
 from llm.observation_format import build_user_prompt
 from llm.protocol import CompletionClient
 from llm.table_snapshot_text import action_wire_to_cn, write_snapshot_block
@@ -95,19 +96,18 @@ def _finalize_agents_episode(
     events: tuple[GameEvent, ...],
     seat_agents: dict[int, PlayerAgent],
     seat_contexts: dict[int, EpisodeContext],
+    match_contexts: dict[int, MatchContext],
     client: CompletionClient | None = None,
 ) -> None:
-    """局结束时更新所有 Agent 的 memory 和暂存 match_stats."""
+    """局结束时更新所有 Agent 的 memory 并关闭 EpisodeContext."""
     for ev in events:
         if isinstance(ev, (HandOverEvent, FlowEvent)):
             for seat in range(4):
                 if seat in seat_agents and seat in seat_contexts:
                     points = ev.payments[seat] if isinstance(ev, HandOverEvent) else 0
                     seat_contexts[seat].end_episode(points)
-                    # 保存 match_stats 到 Agent 以跨局持久化
-                    agent = seat_agents[seat]
-                    if agent.player_id is not None:
-                        agent.save_match_stats(seat_contexts[seat].match_stats)
+                    # 关闭本局（更新 MatchContext 的跨局统计）
+                    match_contexts[seat].close_episode(seat_contexts[seat])
                     seat_agents[seat].update_memory(seat_contexts[seat], client)
 
 
@@ -330,9 +330,13 @@ def run_llm_match(
                 system_prompt=system_prompt,
             ) for s in range(4)
         }
-    # EpisodeContext：运行时状态管理（Agent 无状态化）
+    # MatchContext：跨局状态管理（Context Object 模式）
+    match_contexts: dict[int, MatchContext] = {
+        s: MatchContext(s) for s in range(4)
+    }
+    # EpisodeContext：运行时状态管理（由 MatchContext 创建）
     seat_contexts: dict[int, EpisodeContext] = {
-        s: EpisodeContext(s) for s in range(4)
+        s: match_contexts[s].create_episode() for s in range(4)
     }
     state = initial_game_state()
     wall_seed = seed
@@ -458,14 +462,9 @@ def run_llm_match(
                 ):
                     hands_completed += 1  # 已完成一局
                     hand_number += 1
-                    # 新一局开始时，创建新的 EpisodeContext
+                    # 新一局开始时，由 MatchContext 创建新的 EpisodeContext（Factory 模式）
                     for s in range(4):
-                        if s in seat_agents and seat_agents[s].player_id is not None:
-                            # 从 Agent 加载累积的 match_stats
-                            match_stats = seat_agents[s].load_match_stats()
-                            seat_contexts[s] = EpisodeContext(s, match_stats=match_stats)
-                        else:
-                            seat_contexts[s] = EpisodeContext(s)
+                        seat_contexts[s] = match_contexts[s].create_episode()
                 _write_simple_snapshot(
                     simple_log_file,
                     state,
@@ -588,8 +587,8 @@ def run_llm_match(
             _accumulate_simple_stats(step_out.events, win_counts, hands_finished)
             # 更新 EpisodeContext 统计
             _update_episode_stats(step_out.events, seat_contexts)
-            # 局结束时更新 Agent memory
-            _finalize_agents_episode(step_out.events, seat_agents, seat_contexts, client)
+            # 局结束时更新 Agent memory 并关闭 EpisodeContext
+            _finalize_agents_episode(step_out.events, seat_agents, seat_contexts, match_contexts, client)
             state = step_out.new_state
             _write_simple_snapshot(
                 simple_log_file,

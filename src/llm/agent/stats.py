@@ -152,6 +152,19 @@ class MatchStats:
     hands: int = 0
     placement: int = 0  # 1-4
 
+    def copy(self) -> "MatchStats":
+        """创建副本（用于状态隔离）."""
+        return MatchStats(
+            wins=self.wins,
+            deal_ins=self.deal_ins,
+            riichi_count=self.riichi_count,
+            riichi_wins=self.riichi_wins,
+            riichi_deal_ins=self.riichi_deal_ins,
+            points=self.points,
+            hands=self.hands,
+            placement=self.placement,
+        )
+
 
 class StatsAggregator:
     """聚合单局统计到长期统计."""

@@ -6,38 +6,48 @@
 
 **Agent 是无状态的"纯函数"，只保留长期状态（profile/memory/stats）。**
 
-运行时状态（本局统计、本场统计、决策历史）存储在 `EpisodeContext` 中，由外部（runner）管理。
+运行时状态（本局统计）存储在 `EpisodeContext` 中，跨局状态存储在 `MatchContext` 中，均由外部（runner）管理。
 
 ## 职责分离架构（2026-04 重构）
 
-重构后采用组合模式，将 `PlayerAgent` 拆分为 6 个独立组件：
+重构后采用组合模式，将 `PlayerAgent` 拆分为 7 个独立组件：
 
 ```
 src/llm/agent/
-├── __init__.py        # PlayerAgent（协调类）
+├── __init__.py        # PlayerAgent（协调类，无状态纯函数）
 ├── core.py            # AgentCore（核心决策逻辑）
 ├── session.py         # SessionManager（会话管理）
 ├── prompt.py          # PromptBuilder（Prompt 构建）
 ├── decision_parser.py # DecisionParser（决策解析）
 ├── persistence.py     # PersistenceManager（持久化管理）
+├── match_context.py   # MatchContext（跨局状态管理）← Context Object 模式
 └── context.py         # EpisodeContext（运行时上下文）
 └── memory.py          # PlayerMemory + EpisodeSummarizer
-└── stats.py           # PlayerStats + StatsAggregator
+└── stats.py           # PlayerStats + StatsAggregator + MatchStats
 └── profile.py         # PlayerProfile
 └── llm_summarizer.py  # LLMSummarizer
 └── prompt_builder.py  # 基础 Prompt 函数（被 prompt.py 使用）
 ```
 
+### 设计模式应用
+
+| 设计模式 | 应用场景 |
+|----------|----------|
+| **Context Object Pattern** | `MatchContext` 封装跨局状态 |
+| **Factory Pattern** | `MatchContext.create_episode()` 统一创建 `EpisodeContext` |
+| **Composition Pattern** | `PlayerAgent` 组合各组件 |
+
 ### 组件职责
 
 | 组件 | 文件 | 职责 |
 |------|------|------|
-| `PlayerAgent` | `__init__.py` | 协调类，组合所有组件，提供公共接口 |
+| `PlayerAgent` | `__init__.py` | 协调类，组合所有组件，提供公共接口（无状态） |
 | `AgentCore` | `core.py` | 核心决策逻辑，判断唯一动作、dry-run、LLM调用、解析响应 |
 | `SessionManager` | `session.py` | 会话管理，生成唯一 session_token，构建 session_id |
 | `PromptBuilder` | `prompt.py` | Prompt 构建，整合 profile/memory/stats，选择帧类型 |
 | `DecisionParser` | `decision_parser.py` | 决策解析，JSON解析、action匹配、fallback处理 |
 | `PersistenceManager` | `persistence.py` | 持久化管理，load/save profile/memory/stats |
+| `MatchContext` | `match_context.py` | 跨局状态管理（Context Object），创建 EpisodeContext（Factory） |
 | `EpisodeContext` | `context.py` | 运行时上下文，本局统计、历史记录 |
 
 ### 组件交互
@@ -94,30 +104,44 @@ class SessionManager:
 | `PlayerMemory` | `memory.json` | **局结束** |
 | `PlayerStats` | `stats.json` | **比赛结束** |
 
-### 2. 运行时状态（存储在 `EpisodeContext`）
+### 2. 跨局状态（存储在 `MatchContext`）
+
+| 属性 | 描述 |
+|------|------|
+| `_match_stats` | 本场累积统计（私有，外部只读） |
+| `_episodes` | 已完成局列表 |
+
+### 3. 运行时状态（存储在 `EpisodeContext`）
 
 | 属性 | 描述 |
 |------|------|
 | `episode_stats` | 本局统计（和了、放铳、立直） |
-| `match_stats` | 本场统计（跨局累积） |
+| `match_stats` | 本局累积统计（从 MatchContext 副本继承） |
 | `decision_history` | 决策历史 |
 | `last_observation` | 上一帧观测（用于变化帧） |
 
-### 3. Agent 内部临时状态
+### 4. Agent 内部状态（无临时状态）
 
 | 属性 | 描述 |
 |------|------|
-| `_temp_match_stats` | 跨局统计临时存储 |
+| `profile` | 玩家配置 |
+| `memory` | 玩家记忆 |
+| `stats` | 玩家统计 |
+
+**注意**：Agent 不再存储任何临时跨局状态，完全无状态。
 
 ## 数据流
 
-### 局开始时
+### 局开始时（Context Object + Factory Pattern）
 
 ```python
-# runner.py
-for s in range(4):
-    match_stats = seat_agents[s].load_match_stats()
-    seat_contexts[s] = EpisodeContext(s, match_stats=match_stats)
+# runner.py - 初始化 MatchContext
+match_contexts: dict[int, MatchContext] = {
+    s: MatchContext(s) for s in range(4)
+}
+
+# runner.py - 创建 EpisodeContext（Factory 模式）
+seat_contexts[s] = match_contexts[s].create_episode()  # 返回副本，确保隔离
 ```
 
 ### 每步决策时
@@ -145,12 +169,12 @@ la, why = DecisionParser.parse_llm_response(raw, acts)
 episode_ctx.record_decision(Decision(la, why, []))
 ```
 
-### 局结束时
+### 局结束时（显式关闭）
 
 ```python
 # runner._finalize_agents_episode()
 seat_contexts[seat].end_episode(points)
-agent.save_match_stats(seat_contexts[seat].match_stats)
+match_contexts[seat].close_episode(seat_contexts[seat])  # 显式关闭（更新 MatchContext）
 agent.update_memory(seat_contexts[seat], client)  # 更新长期记忆
 ```
 
@@ -161,25 +185,34 @@ agent.update_memory(seat_contexts[seat], client)  # 更新长期记忆
 agent.update_stats(seat_contexts[seat], placement)  # 更新长期统计
 ```
 
+### 新局开始时（继承跨局统计）
+
+```python
+# runner.py - 新局创建（Factory 模式）
+seat_contexts[s] = match_contexts[s].create_episode()  # 继承累积的 match_stats
+```
+
 ## 重构收益
 
 ### 代码质量
 
 - **单一职责**：每个组件职责清晰
-- **高内聚**：相关功能集中在同一组件
-- **低耦合**：组件间通过接口交互
+- **高内聚**：相关功能集中在同一组件，外部无法直接修改内部状态
+- **低耦合**：组件间通过接口交互，runner 与 Agent 无状态传递依赖
 - **可测试**：每个组件可独立测试
+- **设计模式**：Context Object + Factory Pattern 提供标准化扩展点
 
 ### 文件行数
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `__init__.py` | ~100 | 协调 |
+| `__init__.py` | ~100 | 协调（无状态） |
 | `core.py` | ~150 | 决策 |
 | `session.py` | ~50 | 会话 |
 | `prompt.py` | ~100 | Prompt |
 | `decision_parser.py` | ~60 | 解析 |
 | `persistence.py` | ~120 | 持久化 |
+| `match_context.py` | ~80 | 跨局状态（Context Object） |
 
 ### 测试覆盖
 
@@ -207,4 +240,24 @@ def test_persistence_load_default():
     pm = PersistenceManager(None)
     profile = pm.load_profile()
     assert profile.id == "default"
+
+# 测试 MatchContext（Context Object Pattern）
+def test_match_context_lifecycle():
+    mc = MatchContext(0)
+    
+    # Factory 模式创建
+    ctx1 = mc.create_episode()
+    assert ctx1.match_stats.wins == 0
+    
+    # 隔离性验证
+    ctx1.match_stats.wins = 1
+    assert mc.get_stats().wins == 0  # 副本隔离
+    
+    # 显式关闭
+    mc.close_episode(ctx1)
+    assert mc.get_stats().wins == 1
+    
+    # 继承累积统计
+    ctx2 = mc.create_episode()
+    assert ctx2.match_stats.wins == 1
 ```
