@@ -18,149 +18,51 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING
 
-from rich.columns import Columns
-from rich.console import Console, Group
+from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
-from rich.tree import Tree
 
-from kernel.event_log import (
-    CallEvent,
-    DiscardTileEvent,
-    DrawTileEvent,
-    FlowEvent,
-    GameEvent,
-    HandOverEvent,
-    RonEvent,
-    RoundBeginEvent,
-    TsumoEvent,
+# 导入组件
+from ui.terminal.components import (
+    TileRenderer,
+    HandDisplay,
+    StatsTracker,
+    EventFormatter,
+    LayoutBuilder,
+    NameResolver,
 )
-from kernel.deal.model import TurnPhase
-from kernel.flow.model import FlowKind
-from kernel.hand.melds import MeldKind
-from kernel.table.model import PrevailingWind
-from kernel.tiles.model import Tile
+from ui.terminal.components.tiles import tile_to_rich
 
 if TYPE_CHECKING:
     from kernel.engine.state import GameState
+    from kernel.event_log import GameEvent
     from llm.runner import RunResult
 
-
-# 炫彩虹宝牌颜色循环
-_DORA_RAINBOW = [
-    "red",      # 红
-    "yellow",   # 黄
-    "green",    # 绿
-    "cyan",     # 青
-    "blue",     # 蓝
-    "magenta",  # 紫
-]
-_SUIT_COLORS = {
-    "m": "bright_white",  # 万子
-    "p": "bright_green",  # 筒子
-    "s": "bright_blue",   # 索子
-    "z": "bright_yellow", # 字牌
-}
 
 _WIND_NAMES = ["东", "南", "西", "北"]
 
 
-def _tile_to_rich(tile_code: str, is_dora: bool = False) -> Text:
-    """将牌码（如'1m'、'5sr'、'7z'）渲染为带颜色的 Text。
-
-    Args:
-        tile_code: 牌码
-        is_dora: 是否为宝牌（使用炫彩高亮）
-    """
-    if not tile_code:
-        return Text("")
-
-    suit = tile_code[0] if tile_code[0] in "mpsz" else tile_code[-1]
-    color = _SUIT_COLORS.get(suit, "white")
-
-    # 宝牌使用红色底色，字体回归正常颜色
-    if is_dora:
-        # 获取正常颜色（字牌用 bright_yellow，其他用 suit color）
-        if suit == "z":
-            fg_color = "bright_yellow"
-        else:
-            fg_color = color
-        style = f"bold {fg_color} on bright_red"
-    else:
-        style = color
-
-    # 赤宝牌标红（覆盖普通样式）
-    if "r" in tile_code:
-        style = "bright_red"
-
-    # 字牌用汉字
-    if suit == "z":
-        honor_map = {"1": "東", "2": "南", "3": "西", "4": "北", "5": "白", "6": "發", "7": "中"}
-        display = honor_map.get(tile_code[0], tile_code[0])
-        return Text(display, style=style)
-
-    return Text(tile_code.replace("r", ""), style=style)
-
-
-def _parse_hand_tiles(hand_str: str) -> list[Text]:
-    """解析手牌字符串（如'1m2m3m4p5p'）为 Text 列表。"""
-    tiles = []
-    i = 0
-    while i < len(hand_str):
-        # 跳过空格
-        if hand_str[i] == " ":
-            i += 1
-            continue
-        # 尝试读取牌（可能是 '5sr' 或 '1m' 或 '7z'）
-        if i + 1 < len(hand_str) and hand_str[i + 1] in "mpsz":
-            # 检查是否是赤宝牌 (e.g., '5sr')
-            if i + 2 < len(hand_str) and hand_str[i + 2] == "r":
-                tiles.append(_tile_to_rich(hand_str[i : i + 3]))
-                i += 3
-            else:
-                tiles.append(_tile_to_rich(hand_str[i : i + 2]))
-                i += 2
-        else:
-            i += 1
-    return tiles
-
-
-def _wind_with_seat(wind_idx: int, seat: int, is_active: bool = False, player_name: str | None = None) -> Text:
-    """生成带样式的风位+座位标签，如'东(S0)' 或 '东家 一姬'。
-
-    Args:
-        wind_idx: 相对风位索引 (0=东, 1=南, 2=西, 3=北)
-        seat: 绝对座位号 (0-3)
-        is_active: 是否为当前操作席（高亮显示）
-        player_name: 玩家名字（可选）
-    """
-    wind_name = _WIND_NAMES[wind_idx]  # 东、南、西、北
-    style = "bold bright_cyan" if is_active else "bright_white"
-
-    if player_name:
-        # 显示为 "东家 一姬" 格式
-        return Text.assemble(
-            (f"{wind_name}家 ", style),
-            (player_name, style),
-        )
-    else:
-        # 没有名字时显示 "东(S0)" 格式
-        return Text.assemble(
-            (wind_name, style),
-            (f"(S{seat})", "dim")
-        )
-
-
 class LiveMatchViewer:
-    """Rich 实时观战器。"""
+    """Rich 实时观战器（组件化架构）。
 
-    def __init__(self, delay: float = 0.5, show_reason: bool = True, target_hands: int = 8):
-        """
-        初始化观战器。
+    使用依赖注入的组件进行渲染：
+    - TileRenderer: 牌面渲染
+    - StatsTracker: 统计追踪
+    - EventFormatter: 事件格式化
+    - HandDisplay: 手牌显示
+    - LayoutBuilder: 布局构建
+    - NameResolver: 名字解析
+    """
+
+    def __init__(
+        self,
+        delay: float = 0.5,
+        show_reason: bool = True,
+        target_hands: int = 8,
+    ) -> None:
+        """初始化观战器。
 
         Args:
             delay: 每步之间的延迟（秒）
@@ -171,544 +73,60 @@ class LiveMatchViewer:
         self.show_reason = show_reason
         self.target_hands = target_hands
         self.console = Console()
+
+        # 初始化组件
+        self._renderer = TileRenderer()
+        self._name_resolver = NameResolver()
+        self._stats_tracker = StatsTracker()
+        self._event_formatter = EventFormatter(self._name_resolver)
+        self._hand_display = HandDisplay(self._renderer, self._name_resolver)
+        self._layout_builder = LayoutBuilder(
+            self._renderer,
+            self._stats_tracker,
+            self._event_formatter,
+            self._hand_display,
+            self._name_resolver,
+        )
+
+        # 状态追踪
         self._wins = [0, 0, 0, 0]
         self._rounds = 0
         self._last_action_str: str = ""
         self._last_reason: str = ""
         self._step = 0
         self._last_actor_seat: int | None = None
-        self._seat_reasons: dict[int, str] = {}  # 每席的决策理由
-        self._seat_decision_times: dict[int, float] = {}  # 每席的决策时间（秒）
-        self._seat_names: dict[int, str] = {}  # 每席的玩家名字
-
-    def _hand_to_rich(self, hand: Counter, dora_tiles: set) -> Text:
-        """将手牌转为 Rich Text，宝牌显示为红色底色。"""
-        from llm.table_snapshot_text import _counter_sorted_str
-        from kernel.replay_json import tile_from_code
-
-        hand_str = _counter_sorted_str(hand)
-        if not hand_str:
-            return Text("（空）", style="dim")
-
-        result = Text()
-        i = 0
-        first = True
-
-        while i < len(hand_str):
-            # 跳过空格
-            if hand_str[i] == " ":
-                i += 1
-                continue
-
-            # 读取牌（可能是 '5sr' 或 '1m' 或 '7z'）
-            if i + 1 < len(hand_str) and hand_str[i + 1] in "mpsz":
-                if i + 2 < len(hand_str) and hand_str[i + 2] == "r":
-                    tile_code = hand_str[i:i + 3]
-                    i += 3
-                else:
-                    tile_code = hand_str[i:i + 2]
-                    i += 2
-
-                if not first:
-                    result.append(" ")
-                first = False
-
-                # 检查是否是宝牌
-                try:
-                    tile = tile_from_code(tile_code)
-                    is_dora = tile in dora_tiles
-                except:
-                    is_dora = False
-
-                result.append(_tile_to_rich(tile_code, is_dora=is_dora))
-            else:
-                i += 1
-
-        return result if result.plain else Text("（空）", style="dim")
-
-    def _render_header(self, state: GameState) -> Table:
-        """渲染顶部场况信息表。"""
-        table = state.table
-        board = state.board
-
-        # 风向和局数
-        wind = "東" if table.prevailing_wind == PrevailingWind.EAST else "南"
-        round_num = table.round_number.value
-
-        header = Table(show_header=False, box=None, padding=(0, 2))
-        header.add_column("key", style="dim")
-        header.add_column("value")
-
-        # 显示局数和本场（如：東1局 第3本場）
-        header.add_row("局", f"{wind}風{round_num}局 第{table.honba}本場")
-        header.add_row("供托", str(table.kyoutaku))
-
-        if board:
-            remaining = len(board.live_wall) - board.live_draw_index
-            header.add_row("余牌", str(remaining))
-
-            # 宝牌指示器
-            if board.revealed_indicators:
-                dora_text = Text.assemble(
-                    *(self._dora_indicators_to_rich(board.revealed_indicators))
-                )
-                header.add_row("宝牌指示器", dora_text)
-
-        # 点数 - 直接渲染为文本，避免嵌套Table的宽度问题
-        score_lines = []
-        for i, s in enumerate(table.scores):
-            player_name = self._seat_names.get(i)
-            label = player_name if player_name else f"S{i}"
-            is_active = (i == self._last_actor_seat)
-            line = Text()
-            # 把分数直接放在标签里测试
-            content = f"{label}: {s}"
-            line.append(content, style="bold bright_cyan" if is_active else "white")
-            score_lines.append(line)
-        scores = Text("\n").join(score_lines)
-
-        # 合并
-        main = Table(show_header=False, box=None)
-        main.add_column(min_width=35)
-        main.add_column(min_width=20)
-        main.add_row(header, scores)
-
-        return main
-
-    def _render_player_tree(self, state: GameState) -> Group:
-        """渲染四家手牌（使用 Group 实现更灵活的间距控制）。"""
-        from rich.columns import Columns
-
-        board = state.board
-        table = state.table
-
-        if not board:
-            return Group(Text("未开始"))
-
-        dealer = table.dealer_seat
-        lines = []
-
-        # 当前动作标题（无缩进）
-        lines.append(Text(f"当前动作: {self._last_action_str}", style="bold bright_yellow"))
-
-        for seat in range(4):
-            # 计算相对风位
-            rel_wind = (seat - dealer) % 4
-            # 高亮上一步执行动作的玩家
-            is_active = (seat == self._last_actor_seat)
-
-            # 手牌
-            hand = board.hands[seat]
-            # 计算宝牌集合
-            from kernel.scoring.dora import dora_from_indicators
-            dora_tiles = set(dora_from_indicators(board.revealed_indicators)) if board.revealed_indicators else set()
-
-            # 在 MUST_DISCARD 阶段，当前玩家把摸牌单独显示
-            is_must_discard = (
-                board.turn_phase == TurnPhase.MUST_DISCARD
-                and seat == board.current_seat
-                and board.last_draw_tile is not None
-            )
-            if is_must_discard:
-                # 从手牌中分离出摸牌
-                from collections import Counter
-                draw_tile = board.last_draw_tile
-                hand_without_draw = Counter(hand)
-                if hand_without_draw[draw_tile] > 0:
-                    hand_without_draw[draw_tile] -= 1
-                    if hand_without_draw[draw_tile] == 0:
-                        del hand_without_draw[draw_tile]
-                # 渲染手牌（不含摸牌）
-                hand_rich = self._hand_to_rich(hand_without_draw, dora_tiles)
-                # 渲染摸牌
-                draw_is_dora = draw_tile in dora_tiles
-                draw_rich = _tile_to_rich(draw_tile.to_code(), is_dora=draw_is_dora)
-                # 合并：手牌 + 摸牌（用空格分隔）
-                hand_text = Text.assemble(hand_rich, " ", draw_rich)
-            else:
-                hand_text = self._hand_to_rich(hand, dora_tiles)
-
-            # 副露
-            melds = board.melds[seat]
-            melds_str = self._melds_to_str(melds, seat, dealer)
-
-            # 牌河
-            river_str = self._river_to_str(board.river, seat, board.revealed_indicators)
-
-            # 立直状态
-            is_riichi = board.riichi[seat] if board.riichi else False
-            riichi_mark = " [立直]" if is_riichi else ""
-            if board.double_riichi and seat in board.double_riichi:
-                riichi_mark = " [双立直]"
-
-            # 判断是否是最后一家（用于树形符号）
-            is_last = (seat == 3)
-            branch_char = "└──" if is_last else "├──"
-
-            # 获取玩家名字
-            player_name = self._seat_names.get(seat, f"S{seat}")
-
-            # 玩家行（风位+名字已包含在 _wind_with_seat 中）
-            player_text = Text.assemble(
-                (f"{branch_char} ", "bright_black"),
-                _wind_with_seat(rel_wind, seat, is_active, player_name),
-                (riichi_mark, "bold bright_red" if riichi_mark else ""),
-                "  ",
-                hand_text,
-            )
-            lines.append(player_text)
-
-            # 副露行（固定渲染）
-            meld_prefix = "│   ├── " if not is_last else "    ├── "
-            meld_content = melds_str if melds_str and melds_str != "无" else "（无）"
-            meld_text = Text.assemble(
-                (meld_prefix, "bright_black"),
-                ("副露: ", "dim"),
-                (meld_content, "bright_magenta" if melds else "dim"),
-            )
-            lines.append(meld_text)
-
-            # 牌河行（固定渲染）
-            river_prefix = "│   ├── " if not is_last else "    ├── "
-            river_line = Text.assemble(
-                (river_prefix, "bright_black"),
-                ("牌河: ", "dim"),
-            )
-            if river_str:
-                river_line.append(river_str)
-            else:
-                river_line.append(Text("（无）", style="dim"))
-            lines.append(river_line)
-
-            # 决策理由行（显示该席位的最后一次理由和时间）
-            seat_reason = self._seat_reasons.get(seat)
-            seat_decision_time = self._seat_decision_times.get(seat, 0)
-            if seat_reason and self.show_reason:
-                reason_prefix = "│   └── " if not is_last else "    └── "
-                time_str = f"({seat_decision_time:.1f}s) " if seat_decision_time > 0 else ""
-                reason_label = "决策理由"
-
-                # 计算可用宽度并换行
-                prefix_len = len(reason_prefix) + len(reason_label) + len(time_str) + 2  # +2 for ": "
-                max_reason_width = 70 - prefix_len
-
-                # 截断并分行显示理由
-                if len(seat_reason) > max_reason_width:
-                    reason_lines = [seat_reason[i:i+max_reason_width] for i in range(0, len(seat_reason), max_reason_width)]
-                else:
-                    reason_lines = [seat_reason]
-
-                for idx, reason_line in enumerate(reason_lines):
-                    if idx == 0:
-                        reason_text = Text.assemble(
-                            (reason_prefix, "bright_black"),
-                            (reason_label, "dim cyan"),
-                            (time_str, "dim"),
-                            (": ", "dim cyan"),
-                            (reason_line, "italic bright_cyan" if seat == self._last_actor_seat else "italic cyan"),
-                        )
-                    else:
-                        # 续行缩进
-                        cont_prefix = "│       " if not is_last else "        "
-                        reason_text = Text.assemble(
-                            (cont_prefix, "bright_black"),
-                            (reason_line, "italic bright_cyan" if seat == self._last_actor_seat else "italic cyan"),
-                        )
-                    lines.append(reason_text)
-            else:
-                # 占位行保持结构
-                lines.append(Text("│" + " " * 79 if not is_last else " " * 80, style="bright_black"))
-
-            # 空行分隔（除了最后一家）- 两行间距
-            if not is_last:
-                lines.append(Text("│", style="bright_black"))
-                lines.append(Text("│", style="bright_black"))
-
-        return Group(*lines)
-
-    def _melds_to_str_compact(self, melds, owner_seat: int, dealer_seat: int) -> str:
-        """副露列表 -> 紧凑字符串（每副露只显示牌型，省略鸣牌来源）。"""
-        parts = []
-        for m in melds:
-            tiles_s = "".join(t.to_code() for t in m.tiles)
-            if m.kind.value == "chi":
-                parts.append(f"吃[{tiles_s}]")
-            elif m.kind.value == "pon":
-                parts.append(f"碰[{tiles_s}]")
-            elif m.kind.value == "daiminkan":
-                parts.append(f"杠[{tiles_s}]")
-            elif m.kind.value == "ankan":
-                parts.append(f"暗[{tiles_s}]")
-            elif m.kind.value == "shankuminkan":
-                parts.append(f"加[{tiles_s}]")
-        return " ".join(parts) if parts else "无"
-
-    def _hand_to_str_with_dora(self, hand, revealed_indicators: tuple) -> str:
-        """手牌 -> 字符串，宝牌用 [] 包裹高亮。"""
-        from kernel.scoring.dora import dora_from_indicators
-
-        dora_tiles = set()
-        if revealed_indicators:
-            dora_tiles = set(dora_from_indicators(revealed_indicators))
-
-        # 获取排序后的手牌列表
-        from llm.table_snapshot_text import _counter_sorted_str
-        hand_str = _counter_sorted_str(hand)
-
-        # 如果手牌为空
-        if not hand_str:
-            return ""
-
-        # 解析手牌并标记宝牌
-        parts = []
-        i = 0
-        while i < len(hand_str):
-            # 跳过空格
-            if hand_str[i] == " ":
-                i += 1
-                continue
-            # 读取牌（可能是 '5sr' 或 '1m' 或 '7z'）
-            if i + 1 < len(hand_str) and hand_str[i + 1] in "mpsz":
-                if i + 2 < len(hand_str) and hand_str[i + 2] == "r":
-                    tile_code = hand_str[i:i + 3]
-                    i += 3
-                else:
-                    tile_code = hand_str[i:i + 2]
-                    i += 2
-
-                # 检查是否是宝牌
-                from kernel.replay_json import tile_from_code
-                try:
-                    tile = tile_from_code(tile_code)
-                    is_dora = tile in dora_tiles
-                    # 赤五也算宝牌（当宝牌是5时）
-                    if not is_dora and tile.is_red:
-                        for d in dora_tiles:
-                            if d.suit == tile.suit and d.rank == 5:
-                                is_dora = True
-                                break
-
-                    if is_dora:
-                        parts.append(f"[{tile_code}]")
-                    else:
-                        parts.append(tile_code)
-                except:
-                    parts.append(tile_code)
-            else:
-                i += 1
-
-        return " ".join(parts)
-
-    def _dora_indicators_to_rich(self, indicators: tuple) -> list:
-        """宝牌指示器列表 -> Rich Text 列表（正常颜色，不特殊处理）。"""
-        result = []
-        for i, tile in enumerate(indicators):
-            if i > 0:
-                result.append((" ", ""))
-            # 宝牌指示器使用正常颜色，不特殊处理
-            result.append(_tile_to_rich(tile.to_code()))
-        return result
-
-    def _melds_to_str(self, melds, owner_seat: int, dealer_seat: int) -> str:
-        """副露列表 -> 可读字符串。"""
-        from llm.table_snapshot_text import _meld_segment
-        if not melds:
-            return "无"
-        return " ".join(_meld_segment(m, owner_seat, dealer_seat) for m in melds)
-
-    def _river_to_str(self, river, seat: int, revealed_indicators: tuple = ()) -> Text:
-        """牌河 -> 可读字符串（带颜色），宝牌显示为亮青色。"""
-        from rich.text import Text
-        from kernel.scoring.dora import dora_from_indicators
-
-        result = Text()
-        first = True
-
-        # 计算宝牌集合
-        dora_tiles = set(dora_from_indicators(revealed_indicators)) if revealed_indicators else set()
-
-        for e in river:
-            if e.seat != seat:
-                continue
-            if not first:
-                result.append(" ")
-            first = False
-
-            tile_code = e.tile.to_code()
-            # 检查是否是宝牌
-            is_dora = e.tile in dora_tiles
-            tile_text = _tile_to_rich(tile_code, is_dora=is_dora)
-
-            if e.riichi:
-                result.append("[", style="dim")
-                result.append(tile_text)
-                result.append("]", style="dim")
-            else:
-                result.append(tile_text)
-        return result
-
-    def _render_stats(self) -> Text:
-        """渲染统计信息面板（返回 Text）。"""
-        from wcwidth import wcswidth
-
-        lines = []
-        for i in range(4):
-            # 使用玩家名字（如果有）或座位号
-            player_name = self._seat_names.get(i)
-            if player_name:
-                seat_label = player_name
-            else:
-                seat_label = f"S{i}"
-            wins = self._wins[i]
-            rate = f"{wins}/{self._rounds}" if self._rounds > 0 else "—"
-            pct = f"({wins/max(self._rounds,1)*100:.0f}%)" if self._rounds > 0 else "(—)"
-            # 计算显示宽度并填充（中文字符宽度为2）
-            display_width = wcswidth(seat_label)
-            padding = max(0, 8 - display_width)
-            lines.append(f"{seat_label}{' ' * padding} {wins}    {rate} {pct}")
-        return Text("\n".join(lines))
-
-    def _render_recent_events(self, events: tuple[GameEvent, ...]) -> Group:
-        """渲染最近事件面板（返回 Group，不包 Panel）。"""
-        lines = []
-        for ev in events[-2:]:  # 只显示最近2条
-            line = self._format_event(ev)
-            if line:
-                lines.append(line)
-
-        if not lines:
-            return Group(Text("无", style="dim"))
-
-        return Group(*lines)
-
-    def _format_event(self, ev: GameEvent) -> Text | None:
-        """单个事件 -> Rich Text。"""
-        if isinstance(ev, RoundBeginEvent):
-            dealer_name = self._seat_names.get(ev.dealer_seat, f"S{ev.dealer_seat}")
-            return Text.assemble(
-                (f"{dealer_name} 配牌 ", "dim"),
-                ("宝牌: ", "dim"),
-                _tile_to_rich(ev.dora_indicator.to_code(), is_dora=True),
-            )
-
-        if isinstance(ev, DrawTileEvent):
-            src = "岭上" if ev.is_rinshan else "本墙"
-            player_name = self._seat_names.get(ev.seat, _WIND_NAMES[ev.seat])
-            return Text.assemble(
-                (player_name, "cyan"),
-                (f" 从{src}摸 ", "dim"),
-                _tile_to_rich(ev.tile.to_code()),
-            )
-
-        if isinstance(ev, DiscardTileEvent):
-            riichi = " 立直" if ev.declare_riichi else ""
-            tg = "摸切" if ev.is_tsumogiri else "手切"
-            player_name = self._seat_names.get(ev.seat, _WIND_NAMES[ev.seat])
-            return Text.assemble(
-                (player_name, "cyan"),
-                (f" 打 ", "dim"),
-                _tile_to_rich(ev.tile.to_code()),
-                (f" ({tg}{riichi})", "dim"),
-            )
-
-        if isinstance(ev, CallEvent):
-            cn = {"chi": "吃", "pon": "碰", "daiminkan": "大明杠",
-                  "ankan": "暗杠", "shankuminkan": "加杠"}.get(ev.call_kind, ev.call_kind)
-            player_name = self._seat_names.get(ev.seat, _WIND_NAMES[ev.seat])
-            return Text.assemble(
-                (player_name, "bright_magenta"),
-                (f" {cn}", "bright_magenta"),
-            )
-
-        if isinstance(ev, RonEvent):
-            player_name = self._seat_names.get(ev.seat, _WIND_NAMES[ev.seat])
-            discarder_name = self._seat_names.get(ev.discard_seat, _WIND_NAMES[ev.discard_seat])
-            return Text.assemble(
-                (player_name, "bold bright_red"),
-                (" 荣和 ", "bold bright_red"),
-                _tile_to_rich(ev.win_tile.to_code()),
-                (f" ← {discarder_name}", "dim"),
-            )
-
-        if isinstance(ev, TsumoEvent):
-            rs = "岭上" if ev.is_rinshan else ""
-            player_name = self._seat_names.get(ev.seat, _WIND_NAMES[ev.seat])
-            return Text.assemble(
-                (player_name, "bold bright_red"),
-                (f" 自摸和了 {rs}", "bold bright_red"),
-                _tile_to_rich(ev.win_tile.to_code()),
-            )
-
-        if isinstance(ev, HandOverEvent):
-            if ev.winners:
-                winners = "、".join(self._seat_names.get(w, _WIND_NAMES[w]) for w in ev.winners)
-                return Text.assemble(
-                    ("局终: ", "bold yellow"),
-                    (f"{winners} 和了", "bright_yellow"),
-                )
-            return Text("局终: 流局", style="dim")
-
-        if isinstance(ev, FlowEvent):
-            names = {
-                FlowKind.EXHAUSTED: "荒牌",
-                FlowKind.NINE_NINE: "九种九牌",
-                FlowKind.FOUR_WINDS: "四风连打",
-                FlowKind.FOUR_KANS: "四杠散",
-                FlowKind.FOUR_RIICHI: "四家立直",
-                FlowKind.THREE_RON: "三家和",
-            }
-            return Text.assemble(
-                ("流局: ", "dim"),
-                (names.get(ev.flow_kind, ev.flow_kind.value), "yellow"),
-            )
-
-        return None
-
-    def _update_stats(self, events: tuple[GameEvent, ...]) -> None:
-        """更新和了统计。"""
-        for ev in events:
-            if isinstance(ev, HandOverEvent):
-                self._rounds += 1
-                if ev.winners:
-                    for w in ev.winners:
-                        self._wins[w] += 1
-
-    def _build_layout(self, state: GameState, events: tuple[GameEvent, ...]) -> Panel:
-        """构建完整布局（固定尺寸）。"""
-        from rich.columns import Columns
-
-        # 场况（左侧）
-        header = self._render_header(state)
-        header_panel = Panel(header, title="场况", border_style="bright_cyan", padding=(0, 1), width=45)
-
-        # 和了统计（右侧）
-        stats = self._render_stats()
-        stats_panel = Panel(stats, title="和了统计", border_style="bright_blue", padding=(0, 1), width=25)
-
-        # 顶部并排：场况 + 统计
-        top_row = Columns([header_panel, stats_panel], equal=False, expand=False)
-
-        # 手牌树（中间，自适应高度）
-        player_tree = self._render_player_tree(state)
-        hand_panel = Panel(
-            player_tree,
-            title="手牌",
-            border_style="green",
-            padding=(0, 2),
-        )
-
-        # 事件（底部）
-        recent = self._render_recent_events(events)
-        event_panel = Panel(recent, title="事件", border_style="yellow", height=4, padding=(0, 1))
-
-        # 主布局：顶部并排 + 手牌 + 事件
-        main_content = Group(top_row, hand_panel, event_panel)
-
-        return Panel(main_content, border_style="bright_blue")
-
-    def step(self, state: GameState, events: tuple[GameEvent, ...], action_str: str = "", reason: str = "", decision_time: float = 0.0):
+        self._seat_reasons: dict[int, str] = {}
+        self._seat_decision_times: dict[int, float] = {}
+        self._seat_names: dict[int, str] = {}
+
+    def set_player_names(self, names: dict[int, str]) -> None:
+        """设置各席玩家名字（同步到所有组件）。
+
+        Args:
+            names: 座位 -> 名字映射，如 {0: "一姬", 1: "八木唯", ...}
         """
-        单步渲染（供外部调用）。
+        self._seat_names = names
+        self._name_resolver.set_seat_names(names)
+        self._stats_tracker.set_seat_names(names)
+
+    # === 公共接口（向后兼容） ===
+
+    def step(
+        self,
+        state: GameState,
+        events: tuple,
+        action_str: str = "",
+        reason: str = "",
+        decision_time: float = 0.0,
+    ) -> Panel:
+        """单步渲染（供外部调用）。
+
+        Args:
+            state: 游戏状态
+            events: 事件元组
+            action_str: 动作描述
+            reason: 决策理由
+            decision_time: 决策时间
 
         Returns:
             Panel 对象（可用于 Live 更新）
@@ -716,22 +134,55 @@ class LiveMatchViewer:
         self._step += 1
         self._last_action_str = action_str
         self._last_reason = reason
-        # 解析 action_str 获取上一步的行动者（格式: "家{seat} {action}"）
+
+        # 解析 action_str 获取行动者座位
         self._last_actor_seat = None
         if action_str.startswith("家"):
             try:
                 self._last_actor_seat = int(action_str[1])
             except (ValueError, IndexError):
                 pass
-        # 更新对应席位的决策理由和时间
+
+        # 更新决策理由和时间
         if self._last_actor_seat is not None and reason:
             self._seat_reasons[self._last_actor_seat] = reason
             self._seat_decision_times[self._last_actor_seat] = decision_time
-        self._update_stats(events)
-        return self._build_layout(state, events)
 
-    def run_from_replay(self, actions: list, states: list, events_list: list, action_strs: list, reasons: list | None = None):
-        """从回放数据运行动态观战。"""
+        # 使用组件更新统计
+        self._stats_tracker.update_from_events(events)
+
+        # 同步统计状态（用于外部访问）
+        self._wins = list(self._stats_tracker._wins)
+        self._rounds = self._stats_tracker._rounds
+
+        # 使用 LayoutBuilder 构建面板
+        return self._layout_builder.build_panel(
+            state,
+            events,
+            action_str,
+            self._last_actor_seat,
+            self._seat_reasons,
+            self._seat_decision_times,
+            self.show_reason,
+        )
+
+    def run_from_replay(
+        self,
+        actions: list,
+        states: list,
+        events_list: list,
+        action_strs: list,
+        reasons: list | None = None,
+    ) -> None:
+        """从回放数据运行动态观战。
+
+        Args:
+            actions: 动作列表
+            states: 状态列表
+            events_list: 事件列表
+            action_strs: 动作描述列表
+            reasons: 决策理由列表（可选）
+        """
         reasons = reasons or []
         with Live(console=self.console, refresh_per_second=4) as live:
             for i, (state, events, action_str) in enumerate(zip(states, events_list, action_strs)):
@@ -740,9 +191,8 @@ class LiveMatchViewer:
                 live.update(panel)
                 time.sleep(self.delay)
 
-    def run(self, result: RunResult):
-        """
-        从 RunResult 运行回放观战。
+    def run(self, result: RunResult) -> None:
+        """从 RunResult 运行回放观战。
 
         注意：RunResult 只包含最终状态和 action wire，不包含中间状态。
         要完整观战，需要在 runner 中集成实时回调。
@@ -750,9 +200,12 @@ class LiveMatchViewer:
         self.console.print("[dim]提示: RunResult 不包含中间状态，请使用 run_with_callback 或从 replay 运行[/]")
         self.console.print(f"终局: {result.final_state.phase.value}")
 
-    def run_from_replay_file(self, replay_path: str | Path, delay: float | None = None):
-        """
-        从牌谱 JSON 文件运行动态回放。
+    def run_from_replay_file(
+        self,
+        replay_path: str,
+        delay: float | None = None,
+    ) -> None:
+        """从牌谱 JSON 文件运行动态回放。
 
         Args:
             replay_path: 牌谱文件路径
@@ -761,7 +214,9 @@ class LiveMatchViewer:
         import json
         from pathlib import Path
 
-        from kernel.replay import replay_from_actions
+        from kernel import apply
+        from kernel.engine.state import initial_game_state
+        from kernel.replay import ReplayError, replay_from_actions
         from kernel.replay_json import actions_from_match_log
 
         path = Path(replay_path)
@@ -770,32 +225,25 @@ class LiveMatchViewer:
             return
 
         data = json.loads(path.read_text(encoding="utf-8"))
-        reasons = data.get("reasons", [])  # 读取决策理由
+        reasons = data.get("reasons", [])
+
         try:
             actions = actions_from_match_log(data)
         except (ValueError, KeyError, TypeError) as e:
             self.console.print(f"[red]牌谱解析失败: {e}[/]")
             return
 
-        # 回放并实时渲染
-        from kernel.replay import ReplayError
-
         try:
             with Live(console=self.console, refresh_per_second=4) as live:
-                # 显示初始状态
-                from kernel.engine.state import initial_game_state
                 state = initial_game_state()
                 live.update(self.step(state, (), "开始回放"))
                 time.sleep(self.delay if delay is None else delay)
 
-                # 逐步回放
                 for i, action in enumerate(actions):
-                    from kernel import apply
-
                     try:
                         outcome = apply(state, action)
                         state = outcome.new_state
-                        self._update_stats(outcome.events)
+                        self._stats_tracker.update_from_events(outcome.events)
 
                         action_str = f"Step {i+1}: {action.kind.value}"
                         reason = reasons[i] if i < len(reasons) else None
@@ -805,24 +253,60 @@ class LiveMatchViewer:
                         self.console.print(f"[red]回放错误 at step {i}: {e}[/]")
                         break
 
-                # 显示终局
                 live.update(self.step(state, (), f"回放完成: {state.phase.value}"))
 
         except ReplayError as e:
             self.console.print(f"[red]回放失败: {e}[/]")
 
+    # === 内部方法（保留用于测试兼容） ===
+
+    def _hand_to_rich(self, hand, dora_tiles: set) -> Panel:
+        """手牌渲染（兼容旧测试）。"""
+        return self._renderer.render_hand(hand, dora_tiles)
+
+    def _river_to_str(self, river, seat: int, revealed_indicators: tuple = ()) -> Panel:
+        """牌河渲染（兼容旧测试）。"""
+        dora_tiles = self._renderer.compute_dora_tiles(revealed_indicators)
+        return self._renderer.render_river(river, seat, dora_tiles)
+
+    def _format_event(self, ev) -> Panel | None:
+        """事件格式化（兼容旧测试）。"""
+        return self._event_formatter.format_event(ev)
+
+    def _render_header(self, state: GameState) -> Panel:
+        """场况渲染（兼容旧测试）。"""
+        return self._layout_builder._render_header(state, self._last_actor_seat)
+
+    def _melds_to_str(self, melds, owner_seat: int, dealer_seat: int) -> str:
+        """副露格式化（兼容旧测试）。"""
+        return self._hand_display.format_melds(melds, owner_seat, dealer_seat)
+
+    def _dora_indicators_to_rich(self, indicators: tuple) -> list:
+        """宝牌指示器渲染（兼容旧测试）。"""
+        return self._renderer.render_dora_indicators(indicators)
+
+    def _update_stats(self, events: tuple) -> None:
+        """统计更新（兼容旧测试）。"""
+        self._stats_tracker.update_from_events(events)
+        self._wins = list(self._stats_tracker._wins)
+        self._rounds = self._stats_tracker._rounds
+
 
 class LiveMatchCallback:
     """用于集成到 runner 的实时回调类。"""
 
-    def __init__(self, delay: float = 0.5, show_reason: bool = True, target_hands: int = 8):
+    def __init__(
+        self,
+        delay: float = 0.5,
+        show_reason: bool = True,
+        target_hands: int = 8,
+    ) -> None:
         self.viewer = LiveMatchViewer(delay=delay, show_reason=show_reason, target_hands=target_hands)
         self.live: Live | None = None
         self._start_sequence: int = 0
         self._decision_start_time: float | None = None
 
-    def __enter__(self):
-        # 降低刷新率，使用屏幕缓冲减少闪烁
+    def __enter__(self) -> LiveMatchCallback:
         self.live = Live(
             console=self.viewer.console,
             refresh_per_second=2,
@@ -830,39 +314,44 @@ class LiveMatchCallback:
             transient=True,
         )
         self.live.__enter__()
-        # 显示初始加载提示
-        from rich.panel import Panel
         self.live.update(Panel("[dim]正在初始化对局，等待 LLM 响应...", title="AIma", border_style="bright_blue"))
         self._decision_start_time = time.time()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         if self.live:
             self.live.__exit__(exc_type, exc_val, exc_tb)
 
-    def set_player_names(self, names: dict[int, str]):
+    def set_player_names(self, names: dict[int, str]) -> None:
         """设置各席玩家名字。"""
         self.viewer._seat_names = names
+        self.viewer._name_resolver.set_seat_names(names)
+        self.viewer._stats_tracker.set_seat_names(names)
 
-    def on_step(self, state: GameState, events: tuple[GameEvent, ...], action_str: str = "", reason: str = ""):
+    def on_step(
+        self,
+        state: GameState,
+        events: tuple,
+        action_str: str = "",
+        reason: str = "",
+    ) -> None:
         """每步调用。"""
-        # 计算决策时间
         decision_time = 0.0
         if self._decision_start_time is not None:
             decision_time = time.time() - self._decision_start_time
-            self._decision_start_time = time.time()  # 重置计时器用于下一步
+            self._decision_start_time = time.time()
 
         panel = self.viewer.step(state, events, action_str, reason, decision_time)
         if self.live:
             self.live.update(panel)
+
         try:
             time.sleep(self.viewer.delay)
         except KeyboardInterrupt:
-            # 用户中断观战，优雅退出
-            raise SystemExit(130)  # 130 是 Unix 标准的 Ctrl+C 退出码
+            raise SystemExit(130)
 
 
-def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3):
+def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3) -> None:
     """演示：dry-run 模式实时观战。"""
     import random
 
@@ -876,7 +365,6 @@ def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3):
     viewer = LiveMatchViewer(delay=delay, show_reason=False)
 
     with Live(console=viewer.console, refresh_per_second=4) as live:
-        # 初始状态
         state = initial_game_state()
 
         # BEGIN_ROUND
@@ -898,22 +386,20 @@ def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3):
             if not board:
                 break
 
-            # 获取当前需要行动的座位列表
             pending = pending_actor_seats(state)
             if not pending:
                 break
 
-            seat = pending[0]  # 取第一个需要行动的座位
+            seat = pending[0]
             turn_phase = board.turn_phase
 
             if turn_phase == TurnPhase.NEED_DRAW:
                 if not board.live_wall:
-                    break  # 荒牌
+                    break
                 action = Action(ActionKind.DRAW, seat=seat)
                 action_str = f"家{seat} 摸牌"
 
             elif turn_phase == TurnPhase.MUST_DISCARD:
-                # 随机弃牌
                 hand = board.hands[seat]
                 if not hand:
                     break
@@ -922,16 +408,14 @@ def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3):
                 action_str = f"家{seat} 打 {tile.to_code()}"
 
             elif turn_phase == TurnPhase.CALL_RESPONSE:
-                # 检查是否有鸣牌/荣和机会
                 from kernel.api.legal_actions import legal_actions
+
                 legals = legal_actions(state, seat)
-                # 如果只有 PASS_CALL 一个选项，不渲染（直接执行）
                 has_real_choice = any(la.kind.name != "PASS_CALL" for la in legals)
                 action = Action(ActionKind.PASS_CALL, seat=seat)
                 if has_real_choice:
                     action_str = f"家{seat} 过牌"
                 else:
-                    # 无意义过牌，执行但不渲染
                     outcome = apply(state, action)
                     state = outcome.new_state
                     continue

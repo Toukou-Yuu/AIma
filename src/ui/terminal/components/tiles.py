@@ -66,20 +66,35 @@ def tile_to_rich(tile_code: str, is_dora: bool = False) -> Text:
     return Text(tile_code.replace("r", ""), style=style)
 
 
-def wind_with_seat(wind_idx: int, seat: int, is_active: bool = False) -> Text:
-    """生成带样式的风位+座位标签，如'东(S0)'。
+def wind_with_seat(
+    wind_idx: int,
+    seat: int,
+    is_active: bool = False,
+    player_name: str | None = None,
+) -> Text:
+    """生成带样式的风位+座位标签，如'东(S0)' 或 '东家 一姬'。
 
     Args:
         wind_idx: 相对风位索引 (0=东, 1=南, 2=西, 3=北)
         seat: 绝对座位号 (0-3)
         is_active: 是否为当前操作席（高亮显示）
+        player_name: 玩家名字（可选，显示为"东家 一姬"格式）
     """
     wind = _WIND_NAMES[wind_idx]
     style = "bold bright_cyan" if is_active else "bright_white"
-    return Text.assemble(
-        (wind, style),
-        (f"(S{seat})", "dim")
-    )
+
+    if player_name:
+        # 显示为 "东家 一姬" 格式
+        return Text.assemble(
+            (f"{wind}家 ", style),
+            (player_name, style),
+        )
+    else:
+        # 没有名字时显示 "东(S0)" 格式
+        return Text.assemble(
+            (wind, style),
+            (f"(S{seat})", "dim"),
+        )
 
 
 def parse_hand_tiles(hand_str: str) -> list[Text]:
