@@ -1,39 +1,54 @@
-"""Agent 包 - LLM 玩家代理封装."""
+"""Agent 包 - LLM 玩家代理封装.
+
+重构后的架构：
+- PlayerAgent: 协调类，组合各组件
+- AgentCore: 核心决策逻辑
+- SessionManager: 会话管理
+- PromptBuilder: Prompt 构建
+- DecisionParser: 决策解析
+- PersistenceManager: 持久化管理
+"""
 
 from __future__ import annotations
 
-import json
 import logging
-import time
-from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
+from llm.agent.core import AgentCore, Decision
+from llm.agent.decision_parser import DecisionParser
+from llm.agent.persistence import PersistenceManager
+from llm.agent.prompt import PromptBuilder
+from llm.agent.session import SessionManager
+
 if TYPE_CHECKING:
-    from kernel.api.legal_actions import LegalAction
     from kernel.engine.state import GameState
     from llm.agent.context import EpisodeContext
-    from llm.protocol import ChatMessage, CompletionClient
+    from llm.agent.stats import MatchStats
+    from llm.protocol import CompletionClient
 
 log = logging.getLogger(__name__)
 
-
-@dataclass
-class Decision:
-    """Agent 决策结果."""
-
-    action: "LegalAction"
-    why: str | None
-    history: list["ChatMessage"]
+# 导出 Decision 供外部使用
+__all__ = ["PlayerAgent", "Decision"]
 
 
 class PlayerAgent:
-    """玩家代理 - 封装 LLM 调用和状态管理.
+    """玩家代理 - 协调类（组合模式）.
 
-    设计原则：Agent 是无状态的"纯函数"，只保留长期状态（profile/memory/stats）。
-    运行时状态（本局统计、本场统计、决策历史）存储在 EpisodeContext 中，
-    由外部（runner）管理。
+    设计原则：
+    - Agent 是无状态的"纯函数"，只保留长期状态（profile/memory/stats）
+    - 运行时状态存储在 EpisodeContext 中，由外部（runner）管理
+    - 通过组合各组件实现职责分离
+
+    组件：
+    - _persistence: 持久化管理（load/save profile/memory/stats）
+    - _session: 会话管理（session_id 生成）
+    - _prompt_builder: Prompt 构建（system + user prompt）
+    - _core: 核心决策逻辑（LLM 调用 + 解析）
     """
+
+    # 类型声明
+    _temp_match_stats: "MatchStats | None"
 
     def __init__(
         self,
@@ -43,9 +58,9 @@ class PlayerAgent:
         stats: "PlayerStats | None" = None,
         max_history_rounds: int = 10,
         system_prompt: str | None = None,
-        use_compression: bool = True,  # 默认启用上下文压缩（Phase 1）
-        use_delta: bool = True,        # 默认启用状态差异（Phase 2）
-    ):
+        use_compression: bool = True,
+        use_delta: bool = True,
+    ) -> None:
         """初始化 Agent.
 
         Args:
@@ -64,50 +79,36 @@ class PlayerAgent:
         self.use_compression = use_compression
         self.use_delta = use_delta
 
-        # 加载 profile（长期状态）
-        if profile is not None:
-            self.profile = profile
-        elif player_id is not None:
-            from llm.agent.profile import load_profile
-            loaded = load_profile(player_id)
-            self.profile = loaded if loaded is not None else self._default_profile()
-        else:
-            self.profile = self._default_profile()
+        # 1. 创建持久化管理器
+        self._persistence = PersistenceManager(player_id)
 
-        # 加载 memory（长期状态）
-        if memory is not None:
-            self.memory = memory
-        elif player_id is not None:
-            from llm.agent.memory import load_memory
-            self.memory = load_memory(player_id)
-        else:
-            from llm.agent.memory import PlayerMemory
-            self.memory = PlayerMemory()
-
-        # 加载 stats（长期状态）
-        if stats is not None:
-            self.stats = stats
-        elif player_id is not None:
-            from llm.agent.stats import load_stats
-            self.stats = load_stats(player_id)
-        else:
-            from llm.agent.stats import PlayerStats
-            self.stats = PlayerStats()
-
-    def _default_profile(self) -> "PlayerProfile":
-        """返回默认 profile."""
+        # 2. 加载长期状态（优先使用传入的）
+        from llm.agent.memory import PlayerMemory
         from llm.agent.profile import PlayerProfile
-        return PlayerProfile(
-            id="default",
-            name="DefaultBot",
-            model="gpt-4o-mini",
-            provider="openai",
-            temperature=0.7,
-            max_tokens=1024,
-            timeout_sec=120.0,
-            persona_prompt="",
-            strategy_prompt="",
+        from llm.agent.stats import PlayerStats
+
+        self.profile = profile if profile is not None else self._persistence.load_profile()
+        self.memory = memory if memory is not None else self._persistence.load_memory()
+        self.stats = stats if stats is not None else self._persistence.load_stats()
+
+        # 3. 创建会话管理器
+        self._session = SessionManager(player_id)
+
+        # 4. 创建 Prompt 构建器
+        self._prompt_builder = PromptBuilder(
+            self.profile,
+            self.memory,
+            self.stats,
+            system_prompt,
+            use_compression,
+            use_delta,
         )
+
+        # 5. 创建核心决策组件
+        self._core = AgentCore(self.profile, use_compression, use_delta)
+
+        # 6. 跨局临时状态存储
+        self._temp_match_stats = None
 
     def decide(
         self,
@@ -125,146 +126,26 @@ class PlayerAgent:
         Args:
             state: 当前游戏状态
             seat: 玩家座位
-            episode_ctx: 本局运行时上下文（包含统计、历史等）
+            episode_ctx: 本局运行时上下文
             client: LLM 客户端（dry_run 时可为 None）
-            dry_run: 是否跳过 LLM 调用，直接选第一个合法动作
+            dry_run: 是否跳过 LLM 调用
             session_audit: 是否记录审计日志
             request_delay_seconds: LLM 调用前延迟
 
         Returns:
-            Decision: 包含选择的动作、原因说明和更新后的历史
+            Decision: 包含选择的动作、原因说明和决策历史
         """
-        # 延迟导入避免循环依赖
-        from kernel.api.legal_actions import legal_actions
-        from kernel.api.observation import observation
-        from kernel.engine.actions import ActionKind
-        from llm.agent.prompt_builder import build_decision_prompt, build_system_prompt
-        from llm.parse import extract_json_object
-        from llm.protocol import ChatMessage
-        from llm.validate import explain_text_from_choice, find_matching_legal_action
-        from llm.wire import legal_action_to_wire
-
-        # 1. 获取合法动作
-        acts = legal_actions(state, seat)
-        if not acts:
-            msg = f"no legal_actions for seat {seat}"
-            raise RuntimeError(msg)
-
-        # 2. 唯一合法动作为「过」或「摸牌」时跳过 LLM（无需决策）
-        if len(acts) == 1 and acts[0].kind in (ActionKind.PASS_CALL, ActionKind.DRAW):
-            if session_audit:
-                log.info("llm_skipped singleton %s seat=%s", acts[0].kind.value, seat)
-            return Decision(acts[0], None, episode_ctx.decision_history)
-
-        # 3. dry_run 模式
-        if dry_run or client is None:
-            return Decision(acts[0], None, episode_ctx.decision_history)
-
-        # 4. 构建 observation 和 prompt
-        obs = observation(state, seat, mode="human")
-
-        # Phase 2: 选择帧类型（关键帧 vs 变化帧）
-        if self.use_delta and not episode_ctx.should_send_keyframe():
-            # 发送变化帧（只包含变化）
-            from llm.observation_format import build_delta_observation
-            from llm.agent.prompt_builder import build_delta_decision_prompt
-
-            delta_obs = build_delta_observation(
-                obs,
-                episode_ctx.last_observation,
-                episode_ctx.last_hand
-            )
-            user_content = build_delta_decision_prompt(delta_obs, acts)
-            frame_type = "delta"
-        else:
-            # 发送关键帧（完整状态）
-            if self.use_compression:
-                from llm.agent.prompt_builder import build_compressed_decision_prompt
-                user_content = build_compressed_decision_prompt(obs, acts)
-            else:
-                from llm.agent.prompt_builder import build_decision_prompt
-                user_content = build_decision_prompt(obs, acts)
-            frame_type = "keyframe"
-
-        current_user_msg = ChatMessage(role="user", content=user_content)
-
-        # 5. 拼装消息（使用 profile 的 persona/strategy + memory + stats）
-        messages = [ChatMessage(role="system", content=build_system_prompt(self.profile, self.memory, self.stats, self.system_prompt))]
-
-        # 注入本局决策历史（根据配置选择摘要或完整版）
-        if episode_ctx.decision_history:
-            if self.use_compression:
-                history_text = episode_ctx.format_history_summary()
-                history_header = "本局关键事件"
-            else:
-                history_text = episode_ctx.format_history_for_prompt()
-                history_header = "本局前期决策历史"
-
-            if history_text:
-                history_msg = ChatMessage(
-                    role="user",
-                    content=f"{history_header}：\n{history_text}\n---"
-                )
-                messages.append(history_msg)
-
-        messages.append(current_user_msg)
-
-        # Phase 2: 更新上下文帧信息
-        episode_ctx.update_frame(obs)
-
-        # DEBUG: 记录帧类型
-        if session_audit:
-            log.debug("llm_frame seat=%s type=%s", seat, frame_type)
-
-        # DEBUG: 保存最后一次请求到文件
-        _debug_save_last_prompt(messages)
-
-        # 调用 LLM
-        if request_delay_seconds > 0:
-            time.sleep(request_delay_seconds)
-
-        # 关键：为每个玩家使用独立的 session_id，确保4个AI有独立上下文
-        # 始终生成唯一 session_id，使用 player_id 或座位号
-        session_id = f"majiang_player_{self.player_id or seat}"
-        raw = client.complete(messages, session_id=session_id)
-        if session_audit:
-            head = raw if len(raw) <= 600 else raw[:600] + "…"
-            log.debug("llm raw_head seat=%s %r", seat, head)
-            # 记录历史消息数量
-            hist_len = len(episode_ctx.decision_history)
-            log.debug("llm_history seat=%s history_msgs=%s", seat, hist_len)
-
-        # 7. 解析和校验
-        try:
-            choice = extract_json_object(raw)
-        except (ValueError, TypeError) as e:
-            log.warning("parse failed, fallback first legal: %s", e)
-            return Decision(acts[0], None, episode_ctx.decision_history)
-
-        why = explain_text_from_choice(choice)
-        la = find_matching_legal_action(acts, choice)
-
-        # 8. 构建 assistant 消息内容
-        assistant_content = json.dumps(choice, ensure_ascii=False)
-
-        # 9. 处理匹配失败的情况（仍记录历史）
-        if la is None:
-            log.warning("choice not in legal_actions, fallback first: %s", choice)
-            episode_ctx.record_decision(Decision(acts[0], None, []))
-            return Decision(acts[0], None, episode_ctx.decision_history)
-
-        # 10. 记录审计日志
-        if session_audit:
-            log.info(
-                "llm_choice seat=%s %s",
-                seat,
-                json.dumps(legal_action_to_wire(la), ensure_ascii=False),
-            )
-
-        # 11. 更新历史
-        episode_ctx.record_decision(Decision(la, why, []))
-
-        return Decision(la, why, episode_ctx.decision_history)
+        return self._core.decide(
+            state,
+            seat,
+            episode_ctx=episode_ctx,
+            prompt_builder=self._prompt_builder,
+            session_manager=self._session,
+            client=client,
+            dry_run=dry_run,
+            session_audit=session_audit,
+            request_delay_seconds=request_delay_seconds,
+        )
 
     def update_memory(
         self,
@@ -277,50 +158,35 @@ class PlayerAgent:
             episode_ctx: 本局运行时上下文
             client: 可选的 LLM 客户端（启用 LLM 润色）
         """
-        if self.player_id is None:
-            log.debug("跳过 memory 更新：player_id 为 None")
-            return
+        self.memory = self._persistence.update_memory(
+            self.memory,
+            episode_ctx.episode_stats,
+            client,
+        )
 
-        # 更新 memory
-        if client is not None:
-            from llm.agent.llm_summarizer import LLMSummarizer
-            from llm.agent.memory import save_memory
-            summarizer = LLMSummarizer(client)
-            new_memory = summarizer.polish(self.memory, episode_ctx.episode_stats)
-        else:
-            from llm.agent.memory import EpisodeSummarizer, save_memory
-            summarizer = EpisodeSummarizer()
-            new_memory = summarizer.summarize(episode_ctx.episode_stats, self.memory)
-
-        self.memory = new_memory
-        save_memory(self.player_id, new_memory)
-        log.info("已保存 memory: player_id=%s", self.player_id)
-
-    def update_stats(self, episode_ctx: EpisodeContext, placement: int) -> None:
+    def update_stats(
+        self,
+        episode_ctx: EpisodeContext,
+        placement: int,
+    ) -> None:
         """比赛结束后更新 stats.
 
         Args:
-            episode_ctx: 本局运行时上下文（包含本场统计）
+            episode_ctx: 本局运行时上下文
             placement: 最终排名（1-4）
         """
-        if self.player_id is None:
-            return
-
-        from llm.agent.stats import StatsAggregator, save_stats
-
-        episode_ctx.match_stats.placement = placement
-        aggregator = StatsAggregator()
-        new_stats = aggregator.update(self.stats, episode_ctx.match_stats)
-        self.stats = new_stats
-        save_stats(self.player_id, new_stats)
+        self.stats = self._persistence.update_stats(
+            self.stats,
+            episode_ctx.match_stats,
+            placement,
+        )
 
     def save_match_stats(self, match_stats: "MatchStats") -> None:
-        """保存跨局累积的 match_stats 到 Agent（临时存储，不累积到长期 stats）.
+        """保存跨局累积的 match_stats 到 Agent（临时存储）.
 
         Args:
             match_stats: 本场统计
         """
-        # 使用一个临时属性存储，不修改 self.stats
         self._temp_match_stats = match_stats
 
     def load_match_stats(self) -> "MatchStats":
@@ -331,24 +197,6 @@ class PlayerAgent:
         """
         from llm.agent.stats import MatchStats
 
-        if hasattr(self, '_temp_match_stats'):
+        if self._temp_match_stats is not None:
             return self._temp_match_stats
         return MatchStats()
-
-
-def _debug_save_last_prompt(messages: list[ChatMessage]) -> None:
-    """保存最后一次请求到 logs/last_sent_prompt.log。"""
-    try:
-        log_path = Path("logs/last_sent_prompt.log")
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-
-        lines = []
-        for msg in messages:
-            lines.append(f"[{msg.role}]")
-            lines.append(msg.content)
-            lines.append("")
-
-        log_path.write_text("\n".join(lines), encoding="utf-8")
-    except Exception:
-        # 调试功能失败不应影响主流程
-        pass

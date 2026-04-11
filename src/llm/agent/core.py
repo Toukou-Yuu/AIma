@@ -1,0 +1,216 @@
+"""AgentCore - 核心决策逻辑组件.
+
+职责：
+- 封装决策流程（唯一合法动作、dry-run、LLM 调用）
+- 协调 SessionManager、PromptBuilder、DecisionParser
+- 处理错误和 fallback 逻辑
+- 更新 EpisodeContext
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from llm.agent.decision_parser import DecisionParser
+from llm.agent.session import SessionManager
+
+if TYPE_CHECKING:
+    from collections import Counter
+
+    from kernel.api.legal_actions import LegalAction
+    from kernel.api.observation import Observation
+    from kernel.engine.state import GameState
+    from kernel.tiles.model import Tile
+    from llm.agent.context import EpisodeContext
+    from llm.agent.prompt import PromptBuilder
+    from llm.agent.profile import PlayerProfile
+    from llm.protocol import ChatMessage, CompletionClient
+
+log = logging.getLogger(__name__)
+
+
+@dataclass
+class Decision:
+    """Agent 决策结果."""
+
+    action: "LegalAction"
+    why: str | None
+    history: list[Decision]  # 本局决策历史（决策链）
+
+
+class AgentCore:
+    """核心决策逻辑组件.
+
+    负责将所有决策相关逻辑整合在一起，包括：
+    - 判断是否需要 LLM（唯一合法动作）
+    - dry-run 模式
+    - 构建 prompt
+    - 调用 LLM
+    - 解析响应
+    - 处理 fallback
+    """
+
+    def __init__(
+        self,
+        profile: "PlayerProfile",
+        use_compression: bool = True,
+        use_delta: bool = True,
+    ) -> None:
+        """初始化核心决策组件.
+
+        Args:
+            profile: 玩家 profile（用于配置信息）
+            use_compression: 是否启用压缩格式
+            use_delta: 是否启用 delta 帧优化
+        """
+        self.profile = profile
+        self.use_compression = use_compression
+        self.use_delta = use_delta
+
+    def decide(
+        self,
+        state: "GameState",
+        seat: int,
+        *,
+        episode_ctx: "EpisodeContext",
+        prompt_builder: "PromptBuilder",
+        session_manager: "SessionManager",
+        client: "CompletionClient | None",
+        dry_run: bool = False,
+        session_audit: bool = False,
+        request_delay_seconds: float = 0.0,
+    ) -> Decision:
+        """执行决策.
+
+        Args:
+            state: 当前游戏状态
+            seat: 玩家座位
+            episode_ctx: 本局运行时上下文
+            prompt_builder: Prompt 构建器
+            session_manager: 会话管理器
+            client: LLM 客户端（dry_run 时可为 None）
+            dry_run: 是否跳过 LLM 调用
+            session_audit: 是否记录审计日志
+            request_delay_seconds: LLM 调用前延迟
+
+        Returns:
+            Decision: 包含选择的动作、原因说明和决策历史
+
+        Raises:
+            RuntimeError: 如果没有合法动作
+        """
+        # 延迟导入避免循环依赖
+        from kernel.api.legal_actions import legal_actions
+        from kernel.api.observation import observation
+        from kernel.engine.actions import ActionKind
+
+        # 1. 获取合法动作
+        acts = legal_actions(state, seat)
+        if not acts:
+            raise RuntimeError(f"no legal_actions for seat {seat}")
+
+        # 2. 唯一合法动作为「过」或「摸牌」时跳过 LLM
+        if len(acts) == 1 and acts[0].kind in (ActionKind.PASS_CALL, ActionKind.DRAW):
+            if session_audit:
+                log.info("llm_skipped singleton %s seat=%s", acts[0].kind.value, seat)
+            return Decision(acts[0], None, episode_ctx.decision_history)
+
+        # 3. dry_run 模式
+        if dry_run or client is None:
+            return Decision(acts[0], None, episode_ctx.decision_history)
+
+        # 4. 构建 observation
+        obs = observation(state, seat, mode="human")
+
+        # 5. 判断帧类型
+        should_send_keyframe = episode_ctx.should_send_keyframe()
+        frame_type = prompt_builder.get_frame_type(should_send_keyframe)
+
+        # 6. 构建历史文本
+        history_text = None
+        if episode_ctx.decision_history:
+            if self.use_compression:
+                history_text = episode_ctx.format_history_summary()
+            else:
+                history_text = episode_ctx.format_history_for_prompt()
+
+        # 7. 构建消息
+        messages = prompt_builder.build_messages(
+            obs,
+            acts,
+            history_text,
+            episode_ctx.last_observation,
+            episode_ctx.last_hand,
+            should_send_keyframe,
+        )
+
+        # 8. 更新帧信息
+        episode_ctx.update_frame(obs)
+
+        # 9. 调用 LLM
+        if request_delay_seconds > 0:
+            time.sleep(request_delay_seconds)
+
+        session_id = session_manager.build_session_id(seat)
+        raw = client.complete(messages, session_id=session_id)
+
+        if session_audit:
+            head = raw if len(raw) <= 600 else raw[:600] + "…"
+            log.debug("llm raw_head seat=%s %r", seat, head)
+            log.debug("llm_frame seat=%s type=%s", seat, frame_type)
+            log.debug("llm_history seat=%s history_msgs=%s", seat, len(episode_ctx.decision_history))
+
+        # 10. DEBUG: 保存最后一次请求
+        _debug_save_last_prompt(messages)
+
+        # 11. 解析响应
+        la, why = DecisionParser.parse_llm_response(raw, acts)
+
+        # 12. 处理解析失败
+        if la is None:
+            log.warning("parse or match failed, fallback first legal")
+            fallback = DecisionParser.fallback_action(acts)
+            episode_ctx.record_decision(Decision(fallback, None, []))
+            return Decision(fallback, None, episode_ctx.decision_history)
+
+        # 13. 记录审计日志
+        if session_audit:
+            from llm.wire import legal_action_to_wire
+
+            log.info(
+                "llm_choice seat=%s %s",
+                seat,
+                json.dumps(legal_action_to_wire(la), ensure_ascii=False),
+            )
+
+        # 14. 更新历史
+        episode_ctx.record_decision(Decision(la, why, []))
+
+        return Decision(la, why, episode_ctx.decision_history)
+
+
+def _debug_save_last_prompt(messages: list["ChatMessage"]) -> None:
+    """保存最后一次请求到 logs/last_sent_prompt.log.
+
+    Args:
+        messages: 消息列表
+    """
+    try:
+        log_path = Path("logs/last_sent_prompt.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
+        lines = []
+        for msg in messages:
+            lines.append(f"[{msg.role}]")
+            lines.append(msg.content)
+            lines.append("")
+
+        log_path.write_text("\n".join(lines), encoding="utf-8")
+    except Exception:
+        # 调试功能失败不应影响主流程
+        pass

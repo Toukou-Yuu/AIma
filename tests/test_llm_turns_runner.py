@@ -11,6 +11,7 @@ from kernel import (
     initial_game_state,
     shuffle_deck,
 )
+from llm.config import MatchEndCondition
 from llm.runner import run_llm_match
 from llm.turns import pending_actor_seats
 
@@ -26,7 +27,9 @@ def test_pending_after_begin_round() -> None:
 
 
 def test_run_llm_match_dry_run_advances() -> None:
-    rr = run_llm_match(seed=7, max_player_steps=80, dry_run=True)
+    # 使用 match_end 来限制局数（8局半庄）
+    match_end = MatchEndCondition(value=8)
+    rr = run_llm_match(seed=7, match_end=match_end, dry_run=True)
     assert rr.player_steps > 0
     assert rr.final_state.phase in (
         GamePhase.IN_ROUND,

@@ -6,6 +6,7 @@ import logging
 
 import pytest
 
+from llm.config import MatchEndCondition
 from llm.runner import run_llm_match
 
 
@@ -16,7 +17,9 @@ def caplog_for_runner(caplog: pytest.LogCaptureFixture) -> pytest.LogCaptureFixt
 
 
 def test_session_audit_logs_apply_lines(caplog_for_runner: pytest.LogCaptureFixture) -> None:
-    run_llm_match(seed=2, max_player_steps=8, dry_run=True, session_audit=True)
+    # 使用 match_end 来限制对局步数（单局即可测试）
+    match_end = MatchEndCondition(value=1)  # 只打1局
+    run_llm_match(seed=2, match_end=match_end, dry_run=True, session_audit=True)
     texts = [r.message for r in caplog_for_runner.records]
     assert any("begin_round" in t for t in texts)
     assert any("apply step=" in t for t in texts)
