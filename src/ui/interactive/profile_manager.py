@@ -47,8 +47,7 @@ class ProfileDetailPage(Page):
 
     def __init__(self, player_id: str):
         self.player_id = player_id
-        profile = load_profile_data(player_id)
-        self.title = f"🀄 {profile.get('name', player_id)}" if profile else "角色详情"
+        # 不设 title，由 character_card 完全负责显示
 
     def _render_content(self) -> None:
         # 使用精美卡片渲染

@@ -14,8 +14,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rich.box import HEAVY, ROUNDED
-from rich.console import Group
+from rich.cells import cell_len
+from rich.console import Console, Group
+from rich.padding import Padding
 from rich.panel import Panel
+from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
@@ -79,26 +82,46 @@ def render_character_card(player_id: str, players_dir: str | Path = "configs/pla
             strategy_prompt="",
         )
 
-    # === 标题区：名字 + 策略 + 人设 ===
+    # === 标题区：名字 + 策略 ===
     title_section = Text()
     title_section.append(profile.name, style="bold bright_cyan")
     if profile.strategy_prompt:
         title_section.append(" ", style="")
-        # 截断策略标签
-        strategy_tag = profile.strategy_prompt[:10] if len(profile.strategy_prompt) > 10 else profile.strategy_prompt
-        title_section.append(f"[{strategy_tag}]", style="bold red")
-    title_section.append("\n", style="")
+        title_section.append(f"[{profile.strategy_prompt}]", style="bold red")
+
+    # 卡片宽度（根据最长内容计算，persona 约 185 中文字符 = 370 宽度，需要约 4 行）
+    # 设置为 80 字符，让 persona 自动换行成约 5 行（每行约 80/2=40 中文字符）
+    card_width = 80
+
+    # === 人设区（完整显示，自动换行） ===
+    persona_lines = []
     if profile.persona_prompt:
-        # 截断人设摘要
-        persona_summary = profile.persona_prompt[:40]
-        if len(profile.persona_prompt) > 40:
-            persona_summary += "..."
-        title_section.append(persona_summary, style="dim italic white")
+        # 嵌套 Panel 的宽度损失：外层 border(2)+padding(2) + 内层 border(2)+padding(2) = 8
+        # 内容宽度 = card_width - 8
+        content_width = card_width - 8
+        text = profile.persona_prompt
+        line = ""
+        for char in text:
+            new_width = cell_len(line + char)
+            if new_width > content_width:
+                persona_lines.append(line)
+                line = char
+            else:
+                line += char
+        if line:
+            persona_lines.append(line)
+
+        # 构建多行 Text 对象
+        persona_text = Text()
+        for i, ln in enumerate(persona_lines):
+            if i > 0:
+                persona_text.append("\n")
+            persona_text.append(ln, style="dim italic white")
 
     # === ASCII 形象占位区 ===
     ascii_section = Text()
-    ascii_section.append("  ┌──┐  \n", style="bright_black")
-    ascii_section.append("  │？│  ", style="bright_black dim")
+    ascii_section.append("  ┌──┐\n", style="bright_black")
+    ascii_section.append("  │？│", style="bright_black dim")
     ascii_section.append(" ← 未来添加 ASCII 形象", style="dim italic")
 
     # === 综合统计（一行紧凑） ===
@@ -116,7 +139,7 @@ def render_character_card(player_id: str, players_dir: str | Path = "configs/pla
     )
 
     # === 核心统计（进度条可视化） ===
-    stats_grid = Table.grid(padding=(0, 2), expand=True)
+    stats_grid = Table.grid(padding=(0, 2))
     stats_grid.add_column("label", style="dim", width=8)
     stats_grid.add_column("bar", width=16)
     stats_grid.add_column("value", width=8)
@@ -128,7 +151,7 @@ def render_character_card(player_id: str, players_dir: str | Path = "configs/pla
     stats_grid.add_row("立直成功", make_progress_bar(stats.riichi_success_rate * 100, color="magenta"), f"{stats.riichi_success_rate * 100:.1f}%")
 
     # === 顺位分布（彩色进度条） ===
-    place_grid = Table.grid(padding=(0, 2), expand=True)
+    place_grid = Table.grid(padding=(0, 2))
     place_grid.add_column("place", style="dim", width=4)
     place_grid.add_column("bar", width=20)
     place_grid.add_column("pct", style="bold", width=8)
@@ -167,28 +190,32 @@ def render_character_card(player_id: str, players_dir: str | Path = "configs/pla
             memory_section.append(f"  • {p_short}\n", style="cyan")
 
     # === 组合成紧凑卡片 ===
-    card_grid = Table.grid(padding=(1, 0))
+    card_grid = Table.grid(padding=(0, 0))
     card_grid.add_column()
 
-    card_grid.add_row(Panel(title_section, border_style="bright_cyan", box=HEAVY, padding=(0, 1), expand=True))
-    card_grid.add_row(Panel(ascii_section, border_style="bright_black", padding=(0, 1), expand=True))
-    card_grid.add_row(Panel(summary_line, border_style="yellow", padding=(0, 1), expand=True))
-    card_grid.add_row(Panel(stats_grid, border_style="blue", padding=(0, 1), expand=True))
-    card_grid.add_row(Panel(place_grid, border_style="green", padding=(0, 1), expand=True))
+    card_grid.add_row(Panel(title_section, border_style="bright_cyan", box=HEAVY, padding=(0, 1)))
+    if profile.persona_prompt:
+        # persona 使用分隔线 + Padding，避免 Panel 裁剪
+        card_grid.add_row(Rule(style="bright_black"))
+        card_grid.add_row(Padding(persona_text, (0, 1)))
+    card_grid.add_row(Panel(ascii_section, border_style="bright_black", padding=(0, 1)))
+    card_grid.add_row(Panel(summary_line, border_style="yellow", padding=(0, 1)))
+    card_grid.add_row(Panel(stats_grid, border_style="blue", padding=(0, 1)))
+    card_grid.add_row(Panel(place_grid, border_style="green", padding=(0, 1)))
 
     # 只有有记忆时才显示
     if memory.recent_patterns or memory.play_bias != "neutral":
-        card_grid.add_row(Panel(memory_section, border_style="magenta", padding=(0, 1), expand=True))
+        card_grid.add_row(Panel(memory_section, border_style="magenta", padding=(0, 1)))
 
-    # 外层大卡片
+    # 外层卡片（设置 width 让所有内层 Panel 自动适应）
     return Panel(
         card_grid,
         title="[bold bright_white]👤 角色卡片[/]",
         subtitle=f"[dim]{player_id}[/]",
         border_style="bright_white",
         box=ROUNDED,
+        width=card_width,
         padding=(0, 1),
-        expand=True,
     )
 
 
@@ -215,4 +242,4 @@ def render_all_cards(players_dir: str | Path = "configs/players") -> Group:
     if not cards:
         return Group(Text("无角色配置", style="dim"))
 
-    return Group(Columns(cards, equal=False, expand=True))
+    return Group(Columns(cards, equal=False))
