@@ -8,22 +8,8 @@ from typing import Any
 from kernel.api.legal_actions import LegalAction
 from kernel.engine.actions import ActionKind
 from kernel.tiles.model import Tile
+from llm.constants import CN_TO_TILE_MAP
 from llm.wire import legal_action_to_wire
-
-# 中文牌面反向映射
-CN_TO_TILE_MAP = {
-    "一万": "1m", "二万": "2m", "三万": "3m", "四万": "4m", "五万": "5m",
-    "六万": "6m", "七万": "7m", "八万": "8m", "九万": "9m",
-    "一筒": "1p", "二筒": "2p", "三筒": "3p", "四筒": "4p", "五筒": "5p",
-    "六筒": "6p", "七筒": "7p", "八筒": "8p", "九筒": "9p",
-    "一索": "1s", "二索": "2s", "三索": "3s", "四索": "4s", "五索": "5s",
-    "六索": "6s", "七索": "7s", "八索": "8s", "九索": "9s",
-    "东": "1z", "南": "2z", "西": "3z", "北": "4z",
-    "白": "5z", "发": "6z", "中": "7z",
-    # 赤宝牌
-    "五万赤": "5mr", "五筒赤": "5pr", "五索赤": "5sr",
-    "五万(赤)": "5mr", "五筒(赤)": "5pr", "五索(赤)": "5sr",
-}
 
 
 def cn_to_tile_code(cn: str) -> str | None:

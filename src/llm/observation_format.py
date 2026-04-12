@@ -9,28 +9,10 @@ from typing import TYPE_CHECKING
 from kernel.api.legal_actions import LegalAction
 from kernel.api.observation import Observation, RiverEntry
 from kernel.tiles.model import Tile, Suit
+from llm.constants import TILE_CN_MAP
 
 if TYPE_CHECKING:
     from typing import Any
-
-
-# 牌面中文映射
-TILE_CN_MAP = {
-    # 万子
-    "1m": "一万", "2m": "二万", "3m": "三万", "4m": "四万", "5m": "五万",
-    "6m": "六万", "7m": "七万", "8m": "八万", "9m": "九万",
-    # 筒子
-    "1p": "一筒", "2p": "二筒", "3p": "三筒", "4p": "四筒", "5p": "五筒",
-    "6p": "六筒", "7p": "七筒", "8p": "八筒", "9p": "九筒",
-    # 索子
-    "1s": "一索", "2s": "二索", "3s": "三索", "4s": "四索", "5s": "五索",
-    "6s": "六索", "7s": "七索", "8s": "八索", "9s": "九索",
-    # 字牌
-    "1z": "东", "2z": "南", "3z": "西", "4z": "北",
-    "5z": "白", "6z": "发", "7z": "中",
-    # 赤宝牌
-    "5mr": "五万(赤)", "5pr": "五筒(赤)", "5sr": "五索(赤)",
-}
 
 
 def tile_to_cn(tile: Tile) -> str:

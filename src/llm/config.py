@@ -106,6 +106,9 @@ def load_llm_config(
     3. 座位特定配置（seats.seatN）
     4. 内核全局配置（aima_kernel.yaml）
 
+    **重要**：system_prompt 是必需配置项，必须在 YAML 配置中提供。
+    参考 configs/aima_kernel_template.yaml 中的示例。
+
     Args:
         config_path: 内核配置文件路径
         seat: 座位号（用于读取座位特定配置）
@@ -113,6 +116,9 @@ def load_llm_config(
 
     Returns:
         LLMClientConfig 或 None（如果未配置 API Key）
+
+    Raises:
+        ValueError: 未配置 system_prompt 时抛出，提供配置指引
     """
     cfg = load_kernel_config(config_path)
     llm_cfg = cfg.get("llm", {})
@@ -172,31 +178,24 @@ def load_llm_config(
     if not api_key or api_key in ("your-api-key-here", "your-api-key"):
         return None
 
+    # 检查 system_prompt（必需配置项）
+    if not system_prompt:
+        raise ValueError(
+            "未配置 system_prompt。system_prompt 是必需的配置项。\n\n"
+            "请在 configs/aima_kernel.yaml 的 llm 部分添加 system_prompt 配置。\n"
+            "参考模板文件：configs/aima_kernel_template.yaml\n\n"
+            "示例配置：\n"
+            "llm:\n"
+            "  system_prompt: |\n"
+            "    你是日式麻将（立直麻将）的牌手代理...\n\n"
+            "提示词应包含：牌面编码说明、输出格式要求、决策约束等。"
+        )
+
     # 设置默认值
     if not base_url:
         base_url = "https://api.openai.com/v1" if provider == "openai" else "https://api.anthropic.com"
     if not model:
         model = "gpt-4o-mini" if provider == "openai" else "claude-3-5-haiku-20241022"
-    if not system_prompt:
-        system_prompt = (
-            "你是日式麻将（立直麻将）的牌手代理。你只能从给出的 legal_actions 中"
-            "**精确选择一条**执行。\n"
-            "\n"
-            "【牌面编码说明】\n"
-            "- 万子：1m-9m（如 1m=一万，5m=五万）\n"
-            "- 筒子：1p-9p（如 1p=一筒，5p=五筒）\n"
-            "- 索子：1s-9s（如 1s=一索，5s=五索）\n"
-            "- 字牌：1z=東，2z=南，3z=西，4z=北，5z=白，6z=發，7z=中\n"
-            "\n"
-            "输出要求：仅输出一行 JSON 对象，不要 markdown 代码块，不要 JSON 以外的文字。\n"
-            "JSON 中除下列动作字段外，**必须**包含字符串字段 ``why``："
-            "用符合你人设的语气说明**为何**选这一手（不超过40字）。\n"
-            "**重要**：`why` 字段必须体现你的人设性格，用角色特有的说话方式，禁止机械分析。\n"
-            "动作字段必须与所选 legal_actions 中某一项完全一致"
-            "（含 kind、seat；discard 须含 tile；需要时含 declare_riichi、meld）。\n"
-            '示例：{"kind":"discard","seat":0,"tile":"3m","why":"现物且维持一向听"}\n'
-            '示例：{"kind":"pass_call","seat":1,"why":"无役无法荣和"}'
-        )
 
     return LLMClientConfig(
         provider=provider,
