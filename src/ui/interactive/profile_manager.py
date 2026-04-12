@@ -15,6 +15,7 @@ from ui.interactive.utils import (
     load_profile_data,
     load_profile_stats,
 )
+from ui.terminal.components.character_card import render_character_card
 
 console = Console()
 
@@ -40,7 +41,7 @@ class ProfileMenuPage(MenuPage):
 
 
 class ProfileDetailPage(Page):
-    """角色详情页."""
+    """角色详情页（精美卡片式）。"""
 
     border_style = "bright_magenta"
 
@@ -50,63 +51,10 @@ class ProfileDetailPage(Page):
         self.title = f"🀄 {profile.get('name', player_id)}" if profile else "角色详情"
 
     def _render_content(self) -> None:
-        profile = load_profile_data(self.player_id)
-        if profile is None:
-            console.print("[red]角色配置不存在[/red]")
-            Prompt.press_any_key()
-            return
-
-        # 兼容两种字段名
-        persona = profile.get("persona") or profile.get("persona_prompt", "")
-        strategy = profile.get("strategy") or profile.get("strategy_prompt", "")
-
-        # 显示信息
-        from rich.console import Group
-        info = Group(
-            f"[dim]ID:[/dim]      {self.player_id}",
-            "",
-            f"[dim]人格:[/dim]    {persona}",
-            "",
-            f"[dim]策略:[/dim]    {strategy}",
-        )
-        console.print(info)
-
-        console.print("\n[bold]统计:[/bold]")
-        self._show_stats()
+        # 使用精美卡片渲染
+        card = render_character_card(self.player_id, PLAYERS_DIR)
+        console.print(card)
         Prompt.press_any_key()
-
-    def _show_stats(self) -> None:
-        stats = load_profile_stats(self.player_id)
-        if stats is None or stats.get("total_games", 0) == 0:
-            console.print("  [dim]暂无对局记录[/dim]")
-            return
-
-        table = Table(show_header=False, box=None, padding=(0, 2))
-        table.add_column(style="dim")
-        table.add_column()
-
-        total_games = stats["total_games"]
-        total_hands = stats["total_hands"]
-
-        table.add_row("对局数:", str(total_games))
-        table.add_row(
-            "和了:",
-            f"{stats['wins']} ({stats['wins'] / max(total_hands, 1) * 100:.1f}%)"
-        )
-        table.add_row(
-            "放铳:",
-            f"{stats['deal_ins']} ({stats['deal_ins'] / max(total_hands, 1) * 100:.1f}%)"
-        )
-        table.add_row(
-            "立直:",
-            f"{stats['riichi_count']} ({stats['riichi_count'] / max(total_hands, 1) * 100:.1f}%)"
-        )
-        table.add_row(
-            "场均得点:",
-            f"{stats['total_points'] / max(total_games, 1):+.0f}"
-        )
-
-        console.print(table)
 
 
 class CreateProfilePage(Page):

@@ -224,26 +224,13 @@ def _merge_config(
 
 
 def _cmd_show_stats(player_id: str) -> int:
-    """显示玩家统计."""
-    from llm.agent.stats import load_stats
-    stats = load_stats(player_id)
+    """显示玩家统计（精美卡片式）。"""
+    from rich.console import Console
+    from ui.terminal.components.character_card import render_character_card
 
-    print(f"\n【{player_id} 统计数据】")
-    print(f"累计对局: {stats.total_games}场")
-    print(f"累计局数: {stats.total_hands}局")
-    print(f"\n和了: {stats.wins}次 ({stats.win_rate:.1%})")
-    print(f"放铳: {stats.deal_ins}次 ({stats.deal_in_rate:.1%})")
-    print(f"立直: {stats.riichi_count}次 ({stats.riichi_rate:.1%})")
-    if stats.riichi_count > 0:
-        print(f"  └ 立直成功: {stats.riichi_wins}次 ({stats.riichi_success_rate:.1%})")
-        print(f"  └ 立直放铳: {stats.riichi_deal_ins}次 ({stats.riichi_deal_in_rate:.1%})")
-    print(f"\n平均顺位: {stats.avg_placement:.2f}")
-    print(f"场均得点: {stats.avg_points_per_game:+.1f}")
-    print(f"\n顺位分布:")
-    print(f"  一位: {stats.first_place_count} ({stats.first_place_count/stats.total_games:.1%})")
-    print(f"  二位: {stats.second_place_count} ({stats.second_place_count/stats.total_games:.1%})")
-    print(f"  三位: {stats.third_place_count} ({stats.third_place_count/stats.total_games:.1%})")
-    print(f"  四位: {stats.fourth_place_count} ({stats.fourth_place_count/stats.total_games:.1%})")
+    console = Console()
+    card = render_character_card(player_id)
+    console.print(card)
     return 0
 
 

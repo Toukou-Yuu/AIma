@@ -10,6 +10,7 @@
 - event_formatter: EventFormatter 事件格式化组件
 - layout_builder: LayoutBuilder 布局构建组件
 - name_resolver: NameResolver 名字解析组件
+- character_card: 角色卡片渲染组件
 """
 
 # 基础函数
@@ -22,6 +23,7 @@ from .stats_tracker import StatsTracker
 from .event_formatter import EventFormatter
 from .layout_builder import LayoutBuilder
 from .name_resolver import NameResolver
+from .character_card import render_character_card, render_all_cards
 
 __all__ = [
     # 基础函数
@@ -36,4 +38,7 @@ __all__ = [
     'EventFormatter',
     'LayoutBuilder',
     'NameResolver',
+    # 角色卡片
+    'render_character_card',
+    'render_all_cards',
 ]
