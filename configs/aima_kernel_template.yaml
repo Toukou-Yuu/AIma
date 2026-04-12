@@ -11,6 +11,11 @@ llm:
   # 服务提供商：openai 或 anthropic
   provider: openai
 
+  # Prompt 格式选择：natural（中文自然语言）或 json（结构化）
+  # natural：手牌按花色分组显示，动作用中文描述（"打三万"），LLM 更易理解
+  # json：结构化 JSON 格式，输出更精确，适合需要精确匹配的场景
+  prompt_format: natural
+
   # API 配置
   api_key: "your-api-key-here"  # 必填：填入你的 API Key
   base_url: "https://api.openai.com/v1"  # OpenAI 官方地址

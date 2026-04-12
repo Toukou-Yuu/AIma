@@ -279,6 +279,7 @@ def run_llm_match(
     clear_history_on_new_hand: bool = False,
     players: list[dict[str, Any]] | None = None,
     system_prompt: str | None = None,
+    prompt_format: str = "natural",  # natural 或 json
     enable_conversation_logging: bool = False,
 ) -> RunResult:
     """
@@ -305,6 +306,10 @@ def run_llm_match(
     hand_number = 0
     win_counts: list[int] = [0, 0, 0, 0]
     hands_finished: list[int] = [0]
+    # prompt_format 转换为 use_compression
+    # natural → use_compression=False（自然语言格式）
+    # json → use_compression=True（JSON 格式）
+    use_compression = prompt_format == "json"
     # 每席 Agent 实例（支持 players 配置）
     if players:
         # 按配置创建指定玩家
@@ -316,6 +321,7 @@ def run_llm_match(
                 player_id=player_id,
                 max_history_rounds=max_history_rounds,
                 system_prompt=system_prompt,
+                use_compression=use_compression,
             )
         # 未指定的座位使用默认
         for s in range(4):
@@ -323,6 +329,7 @@ def run_llm_match(
                 seat_agents[s] = PlayerAgent(
                     max_history_rounds=max_history_rounds,
                     system_prompt=system_prompt,
+                    use_compression=use_compression,
                 )
     else:
         # 全部使用默认
@@ -330,6 +337,7 @@ def run_llm_match(
             s: PlayerAgent(
                 max_history_rounds=max_history_rounds,
                 system_prompt=system_prompt,
+                use_compression=use_compression,
             ) for s in range(4)
         }
     # MatchContext：跨局状态管理（Context Object 模式）

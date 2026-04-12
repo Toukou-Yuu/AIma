@@ -393,6 +393,7 @@ def _cmd_watch_dry_run(
             clear_history_on_new_hand=clear_history_per_hand,
             players=players,
             system_prompt=llm_cfg.system_prompt if llm_cfg else None,
+            prompt_format=llm_cfg.prompt_format if llm_cfg else "natural",
             enable_conversation_logging=enable_conversation_logging,
         )
         print(
@@ -643,6 +644,7 @@ def main(argv: list[str] | None = None) -> int:
                 clear_history_on_new_hand=cfg.clear_history_per_hand,
                 players=cfg.players,
                 system_prompt=llm_cfg.system_prompt if llm_cfg else None,
+                prompt_format=llm_cfg.prompt_format if llm_cfg else "natural",
                 enable_conversation_logging=cfg.enable_conversation_logging,
             )
     else:
@@ -659,6 +661,7 @@ def main(argv: list[str] | None = None) -> int:
             clear_history_on_new_hand=cfg.clear_history_per_hand,
             players=cfg.players,
             system_prompt=llm_cfg.system_prompt if llm_cfg else None,
+            prompt_format=llm_cfg.prompt_format if llm_cfg else "natural",
             enable_conversation_logging=cfg.enable_conversation_logging,
         )
     print(

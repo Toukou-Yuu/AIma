@@ -21,6 +21,7 @@ class LLMClientConfig:
     timeout_sec: float = 120.0
     max_tokens: int = 1024
     system_prompt: str = ""  # 系统提示词
+    prompt_format: Literal["natural", "json"] = "natural"  # Prompt 格式
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +128,9 @@ def load_llm_config(
     timeout_sec = float(llm_cfg.get("timeout_sec", 120))
     max_tokens = int(llm_cfg.get("max_tokens", 1024))
     system_prompt = llm_cfg.get("system_prompt", "")
+    prompt_format = llm_cfg.get("prompt_format", "natural")
+    if prompt_format not in ("natural", "json"):
+        raise ValueError(f"prompt_format must be 'natural' or 'json', got {prompt_format!r}")
 
     # 座位特定配置覆盖（优先级：座位 > 全局）
     if seat is not None:
@@ -142,6 +146,8 @@ def load_llm_config(
             timeout_sec = float(seat_cfg["timeout_sec"])
         if "max_tokens" in seat_cfg:
             max_tokens = int(seat_cfg["max_tokens"])
+        if seat_cfg.get("prompt_format"):
+            prompt_format = seat_cfg["prompt_format"]
 
     # 对局配置覆盖（优先级：对局 > 座位 > 全局）
     if override_cfg:
@@ -159,6 +165,8 @@ def load_llm_config(
             max_tokens = int(override_cfg["max_tokens"])
         if override_cfg.get("system_prompt"):
             system_prompt = override_cfg["system_prompt"]
+        if override_cfg.get("prompt_format"):
+            prompt_format = override_cfg["prompt_format"]
 
     # 检查 API Key
     if not api_key or api_key in ("your-api-key-here", "your-api-key"):
@@ -198,6 +206,7 @@ def load_llm_config(
         timeout_sec=timeout_sec,
         max_tokens=max_tokens,
         system_prompt=system_prompt,
+        prompt_format=prompt_format,
     )
 
 
