@@ -30,6 +30,8 @@ class ConversationLogger:
     高内聚：只负责对话日志的记录
     低耦合：通过构造函数注入依赖（player_id, session_id）
     资源管理：文件在 __init__ 打开，在 close() 关闭
+
+    改进：header 只在首次写入 Turn 时才写入，避免空文件和多次 header
     """
 
     def __init__(
@@ -46,14 +48,15 @@ class ConversationLogger:
             enabled: 是否启用（支持配置开关）
 
         生命周期：
-        - 创建时：打开文件（追加模式）
-        - 每次调用：写入并刷新
+        - 创建时：打开文件（追加模式），但不立即写 header
+        - 首次 log_turn：写入 header + Turn 内容
         - 结束时：关闭文件
         """
         self.player_id = player_id
         self.session_id = session_id
         self.enabled = enabled
         self._file = None
+        self._header_written = False  # 标记 header 是否已写入
 
         if not enabled:
             return
@@ -68,8 +71,7 @@ class ConversationLogger:
             filepath = output_dir / filename
 
             self._file = open(filepath, "a", encoding="utf-8")
-            # 写入文件头
-            self._write_header(session_id)
+            # 不立即写 header，等首次 log_turn 时再写
         except Exception as e:
             log.error("failed to initialize conversation logger: %s", e)
             self.enabled = False
@@ -95,6 +97,11 @@ class ConversationLogger:
             return
 
         try:
+            # 首次写入时写 header（确保只有真实内容时才有 header）
+            if not self._header_written:
+                self._write_header(self.session_id)
+                self._header_written = True
+
             self._write_turn(turn_number, seat, phase, messages, response)
             self._file.flush()  # 实时刷新，支持 tail -f
         except Exception as e:

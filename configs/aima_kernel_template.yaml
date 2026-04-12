@@ -2,7 +2,7 @@
 # 用法：
 #   1. 复制本文件为 aima_kernel.yaml
 #   2. 填入你的 API Key
-#   3. 运行：python -m llm --kernel-config configs/aima_kernel.yaml
+#   3. 运行：python -m llm --config configs/aima_kernel.yaml
 #
 # 注意：aima_kernel.yaml 已被 gitignore，不会提交到仓库
 

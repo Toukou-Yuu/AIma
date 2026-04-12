@@ -55,6 +55,7 @@ class MatchContext:
         self._match_stats = MatchStats()  # 私有，确保高内聚
         self._episodes: list[EpisodeContext] = []
         self._session_manager = SessionManager(player_id)
+        self._hand_number = 0  # 追踪当前局号
 
     @property
     def seat(self) -> int:
@@ -76,13 +77,17 @@ class MatchContext:
         Returns:
             EpisodeContext: 新的本局上下文
         """
+        self._hand_number += 1  # 局号递增
         ctx = EpisodeContext(self._seat, match_stats=self._match_stats.copy())
 
         # 如果启用对话记录且有 player_id，创建 ConversationLogger
         if enable_conversation_logging and self._player_id is not None:
             from llm.agent.conversation_logger import ConversationLogger
 
-            session_id = self._session_manager.build_session_id(self._seat)
+            # 每局独立 session_id（含局号）
+            session_id = self._session_manager.build_session_id(
+                self._seat, hand_number=self._hand_number
+            )
             ctx.conversation_logger = ConversationLogger(
                 player_id=self._player_id,
                 session_id=session_id,

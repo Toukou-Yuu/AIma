@@ -34,22 +34,24 @@ class SessionManager:
         # 为每个实例生成唯一令牌（UUID 前 8 位）
         self._session_token = str(uuid4())[:8]
 
-    def build_session_id(self, seat: int) -> str:
+    def build_session_id(self, seat: int, hand_number: int = 1) -> str:
         """构建会话 ID.
 
-        会话 ID 格式：majiang_player_{player_id or seat}_{session_token}
+        会话 ID 格式：majiang_player_{player_id or seat}_{session_token}_h{hand_number}
         - player_id 存在时使用 player_id
         - player_id 不存在时使用 seat_{seat}
         - session_token 确保不同实例的唯一性
+        - hand_number 确保每局独立文件
 
         Args:
             seat: 当前座位（0-3）
+            hand_number: 当前局号（默认 1）
 
         Returns:
             会话 ID 字符串
         """
         session_key = self.player_id or f"seat_{seat}"
-        return f"majiang_player_{session_key}_{self._session_token}"
+        return f"majiang_player_{session_key}_{self._session_token}_h{hand_number}"
 
     def get_token(self) -> str:
         """获取当前实例的 session_token.

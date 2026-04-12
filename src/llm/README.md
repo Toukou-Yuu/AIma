@@ -109,7 +109,7 @@ players:
 python -m llm --dry-run --seed 42
 
 # 实际对局
-python -m llm --kernel-config configs/aima_kernel.yaml
+python -m llm --config configs/aima_kernel.yaml
 
 # 生成日志
 python -m llm --log-session my_match

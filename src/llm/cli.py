@@ -162,12 +162,12 @@ def _merge_config(
 ) -> argparse.Namespace:
     """合并 YAML 配置与 CLI 参数，CLI 优先级更高。
 
-    只合并 CLI 显式指定的参数（非 None 或布尔值已设置）。
+    CLI 参数使用 None 作为 sentinel：None 表示"未设置"，使用 YAML 默认值；
+    非 None 表示"用户显式设置"，使用 CLI 值。
     """
-    # YAML 默认值映射
-    # 读取 match_end 配置
+    # 从 YAML 提取默认值
     match_end_cfg = yaml_cfg.get("match", {}).get("match_end", {})
-    defaults = {
+    yaml_defaults = {
         "seed": yaml_cfg.get("match", {}).get("seed", 0),
         "match_end": {
             "type": match_end_cfg.get("type", "hands"),
@@ -189,16 +189,11 @@ def _merge_config(
         "enable_conversation_logging": yaml_cfg.get("llm", {}).get("conversation_logging", {}).get("enabled", False),
     }
 
-    # 显式指定的 CLI 参数覆盖 YAML
+    # 合并：CLI 非 None → 用 CLI；否则用 YAML
     result = argparse.Namespace()
-    for key, default_val in defaults.items():
+    for key, yaml_val in yaml_defaults.items():
         cli_val = getattr(cli_args, key, None)
-        # 对于布尔值，需要检查是否通过命令行显式设置（argparse 无法直接区分）
-        # 这里简化处理：CLI 非 None 值覆盖
-        if cli_val is not None or (isinstance(default_val, bool) and key in sys.argv):
-            setattr(result, key, cli_val)
-        else:
-            setattr(result, key, default_val)
+        setattr(result, key, cli_val if cli_val is not None else yaml_val)
 
     # 特殊处理 --max-hands：转换为 match_end 格式
     if getattr(cli_args, "max_hands", None) is not None:
@@ -212,18 +207,16 @@ def _merge_config(
     if result.log_session is not None:
         result.session_audit = True
 
-    # 特殊处理 replay（没有默认值，CLI 显式指定才覆盖）
+    # 特殊处理 replay：无 YAML 默认值，仅 CLI 显式设置时才有
     result.replay = getattr(cli_args, "replay", None)
 
     # 特殊处理 players：CLI 字符串格式转为列表
     if isinstance(result.players, str) and result.players:
-        # CLI 格式: "id0,id1,id2,id3"
         player_ids = result.players.split(",")
         result.players = [
             {"id": pid.strip() if pid.strip() else "default", "seat": i}
             for i, pid in enumerate(player_ids[:4])
         ]
-        # 补充剩余座位为 default
         for i in range(len(result.players), 4):
             result.players.append({"id": "default", "seat": i})
 
@@ -434,23 +427,15 @@ def main(argv: list[str] | None = None) -> int:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-    # 第一遍解析：只取 --config 和 --kernel-config
-    pre_parser = argparse.ArgumentParser(add_help=False)
-    pre_parser.add_argument("--config", metavar="PATH", help="YAML 配置文件路径")
-    pre_parser.add_argument("--kernel-config", metavar="PATH", default="configs/aima_kernel.yaml",
-                            help="内核配置文件路径（默认 configs/aima_kernel.yaml）")
-    pre_args, remaining = pre_parser.parse_known_args(argv)
-
-    # 加载 YAML 配置
-    # --config 和 --kernel-config 通常指向同一个文件
-    # 如果只传 --kernel-config，也用它读取 players、conversation_logging 等配置
-    config_path = pre_args.config or pre_args.kernel_config
-    yaml_cfg = _load_yaml_config(config_path)
-    kernel_config_path = pre_args.kernel_config
-
-    # 第二遍解析：完整参数列表
+    # 单一 parser：所有参数默认 None（sentinel），表示"未设置"
+    # config 路径有默认值，其他参数通过 YAML 或 CLI 设置
     p = argparse.ArgumentParser(description="AIma LLM 牌手跑局（内核闭环）")
-    p.add_argument("--config", metavar="PATH", help="YAML 配置文件路径")
+    p.add_argument(
+        "--config",
+        metavar="PATH",
+        default="configs/aima_kernel.yaml",
+        help="YAML 配置文件路径（默认 configs/aima_kernel.yaml）",
+    )
     p.add_argument("--seed", type=int, default=None, help="首局洗牌种子（默认 0）")
     p.add_argument(
         "--max-player-steps",
@@ -550,10 +535,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = p.parse_args(argv)
 
+    # 加载 YAML 配置（config 路径总有值，要么默认要么用户指定）
+    yaml_cfg = _load_yaml_config(args.config)
+    kernel_config_path = args.config
+
     # 合并配置（CLI 覆盖 YAML）
     cfg = _merge_config(yaml_cfg, args)
 
-    # Phase 4: --show-stats 模式
+    # --show-stats 模式
     if getattr(args, "show_stats", None):
         return _cmd_show_stats(args.show_stats)
 

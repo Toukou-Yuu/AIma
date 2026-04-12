@@ -342,8 +342,10 @@ def run_llm_match(
         s: MatchContext(s, player_id=player_id_map.get(s)) for s in range(4)
     }
     # EpisodeContext：运行时状态管理（由 MatchContext 创建）
+    # dry_run 时禁用 conversation_logging（避免创建空文件）
+    effective_conversation_logging = enable_conversation_logging and not dry_run
     seat_contexts: dict[int, EpisodeContext] = {
-        s: match_contexts[s].create_episode(enable_conversation_logging=enable_conversation_logging)
+        s: match_contexts[s].create_episode(enable_conversation_logging=effective_conversation_logging)
         for s in range(4)
     }
     state = initial_game_state()
@@ -473,7 +475,7 @@ def run_llm_match(
                     # 新一局开始时，由 MatchContext 创建新的 EpisodeContext（Factory 模式）
                     for s in range(4):
                         seat_contexts[s] = match_contexts[s].create_episode(
-                            enable_conversation_logging=enable_conversation_logging
+                            enable_conversation_logging=effective_conversation_logging
                         )
                 _write_simple_snapshot(
                     simple_log_file,
