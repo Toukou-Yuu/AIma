@@ -9,7 +9,7 @@
 ```bash
 conda env create -f environment.yml
 conda activate aima
-pip install -e ".[rich]"
+pip install -e ".[rich,llm]"
 ```
 
 ### 2. 创建配置文件
@@ -36,11 +36,14 @@ llm:
 # 启动交互式终端（推荐）
 python -m ui.interactive
 
-# 四位魂天神社角色对战（实时观战）
-python -m llm --config configs/player_battle.yaml
-
 # 快速测试（Dry-run，无需 API Key）
-python -m llm --config configs/quick_test.yaml
+python -m llm --dry-run --seed 42
+
+# 实际对局（需要 API Key）
+python -m llm --config configs/aima_kernel.yaml
+
+# 四位魂天神社角色对战
+python -m llm --config configs/player_battle.yaml
 ```
 
 ## 四位角色
@@ -51,6 +54,27 @@ python -m llm --config configs/quick_test.yaml
 | 南 | 八木唯 | 冷淡天才 | "...我不明白" |
 | 西 | 卡维 | 神秘占卜师 | "命运无法改变" |
 | 北 | 藤田佳奈 | 元气偶像 | "牌效好麻烦喵" |
+
+
+## Prompt 格式
+
+采用**中文自然语言格式**，LLM 更易理解，节省约 70% token：
+
+```
+【手牌】(13张)
+万子: 一万 三万 五万 六万 八万
+筒子: 四筒 五筒 五筒(赤) 七筒 七筒
+索子: 一索
+字牌: 东 西西 中
+
+【可选动作】
+打一万, 打三万, 打五万...
+```
+
+LLM 输出格式：
+```json
+{"action": "打三万", "why": "孤立牌，进张面窄"}
+```
 
 ## 配置说明
 
@@ -110,17 +134,20 @@ python -m ui.interactive
 ## 常用命令
 
 ```bash
-# 实时观战
-python -m llm --config configs/player_battle.yaml
+# Dry-run 快速测试（无需 API Key）
+python -m llm --dry-run --seed 42
+
+# 实际对局
+python -m llm --kernel-config configs/aima_kernel.yaml
 
 # 生成日志文件
-python -m llm --config configs/player_battle.yaml --log-session my_match
+python -m llm --log-session my_match
 
 # 从牌谱回放
-python -m llm --watch --replay logs/replay/xxx.json
+python -m llm --replay logs/replay/xxx.json
 
-# 快速测试（无需 API Key）
-python -m llm --config configs/quick_test.yaml
+# 查看帮助
+python -m llm --help
 ```
 
 ## 生成的日志
@@ -137,21 +164,28 @@ configs/
   aima_kernel_template.yaml    # 配置模板
   aima_kernel.yaml             # 你的配置（gitignore）
   player_battle.yaml           # 四位角色对战配置
-  quick_test.yaml              # 快速测试配置
 
 configs/players/               # 角色配置
-  ichihime/                    # 一姬（猫耳巫女）
-  yui/                         # 八木唯（天才少女）
-  kavi/                        # 卡维（占卜师）
-  kana/                        # 藤田佳奈（偶像）
+  ichihime/profile.yaml        # 一姬人格配置
+  yui/profile.yaml             # 八木唯人格配置
+  kavi/profile.yaml            # 卡维人格配置
+  kana/profile.yaml            # 膝田佳奈人格配置
+  # memory.json, stats.json 已 gitignore
 
 src/
-  kernel/                      # 日麻规则内核
-  llm/                         # LLM 编排与角色系统
+  kernel/                      # 日麻规则内核（K0-K15 已完成）
+  llm/                         # LLM 编排与 Agent 系统
+    agent/                     # PlayerAgent + 状态管理组件
+    README.md                  # LLM 模块文档
   ui/                          # 交互式终端与观战
 ```
 
 ## 开发
+
+```bash
+pip install -e ".[dev,llm]"
+pytest tests/ -q
+```
 
 ```bash
 pip install -e ".[dev,llm]"
