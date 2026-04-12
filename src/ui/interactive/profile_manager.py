@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from prompt_toolkit.styles import Style
 from rich.console import Console
 from rich.panel import Panel
@@ -34,6 +36,7 @@ class ProfileMenuPage(MenuPage):
         choices.extend([
             questionary.Separator(),
             questionary.Choice("创建新角色", value="create"),
+            questionary.Choice("为角色添加 ASCII 形象", value="add_ascii"),
             questionary.Separator(),
             questionary.Choice("返回主菜单", value="back"),
         ])
@@ -138,6 +141,72 @@ class CreateProfilePage(Page):
         ).ask()
 
 
+class AddAsciiPage(Page):
+    """为角色添加 ASCII 形象页."""
+
+    title = "添加 ASCII 形象"
+    border_style = "bright_yellow"
+
+    def _render_content(self) -> None:
+        from scripts.ascii_converter import image_to_unicode_art_halfblock
+
+        # 步骤 1: 选择角色
+        profiles = list_profiles()
+        if not profiles:
+            console.print("[red]没有可用的角色[/red]")
+            Prompt.press_any_key()
+            return
+
+        import questionary
+        choices = [questionary.Choice(p['name'], value=p['id']) for p in profiles]
+        choices.append(questionary.Choice("取消", value="cancel"))
+
+        player_id = questionary.select(
+            "选择角色:",
+            choices=choices,
+            qmark="",
+            pointer=">",
+        ).ask()
+
+        if player_id == "cancel" or not player_id:
+            return
+
+        # 步骤 2: 输入图片路径（清晰提示）
+        console.print(f"\n[dim]当前目录: {Path.cwd()}[/dim]")
+        console.print("[dim]示例: img.png 或 configs/players/kavi/kavi.png[/dim]")
+        image_path_str = Prompt.text("图片路径:")
+        if not image_path_str:
+            return
+
+        image_path = Path(image_path_str)
+        if not image_path.exists():
+            console.print(f"[red]错误: 图片不存在[/red]")
+            console.print(f"[dim]  检查路径: {image_path}[/dim]")
+            Prompt.press_any_key()
+            return
+
+        # 步骤 3: 输入宽度
+        width_str = Prompt.text("输出宽度 (字符数，默认60):", default="60")
+        try:
+            width = int(width_str) if width_str else 60
+        except ValueError:
+            console.print("[red]错误: 宽度必须是数字[/red]")
+            Prompt.press_any_key()
+            return
+
+        # 步骤 4: 生成
+        output_path = PLAYERS_DIR / player_id / "ascii.txt"
+        try:
+            image_to_unicode_art_halfblock(image_path, output_path, width)
+            console.print(f"[green]✓ ASCII 形象已添加[/green]")
+            console.print(f"  [dim]角色: {player_id}[/dim]")
+            console.print(f"  [dim]文件: {output_path}[/dim]")
+        except Exception as e:
+            console.print(f"[red]生成失败: {e}[/red]")
+
+        Prompt.press_any_key()
+
+
 def run() -> None:
     """运行角色管理."""
     while True:
@@ -147,6 +216,8 @@ def run() -> None:
             break
         elif choice == "create":
             CreateProfilePage().run()
+        elif choice == "add_ascii":
+            AddAsciiPage().run()
         elif choice and choice.startswith("view:"):
             player_id = choice.split(":", 1)[1]
             ProfileDetailPage(player_id).run()
