@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from kernel.api.observation import Observation
     from kernel.tiles.model import Tile
     from llm.agent import Decision
+    from llm.agent.conversation_logger import ConversationLogger
 
 
 @dataclass
@@ -35,6 +36,9 @@ class EpisodeContext:
     last_hand: Counter[Tile] | None = field(default=None, repr=False)
     frame_count: int = field(default=0)
     new_riichi_triggered: bool = field(default=False)  # 有人立直后发送关键帧
+
+    # 对话记录器（可选，用于调试）
+    conversation_logger: ConversationLogger | None = field(default=None, repr=False)
 
     def __post_init__(self):
         """初始化后确保 episode_stats 的 seat 正确."""

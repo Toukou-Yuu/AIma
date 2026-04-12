@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from kernel.engine.state import GameState
     from kernel.tiles.model import Tile
     from llm.agent.context import EpisodeContext
+    from llm.agent.conversation_logger import ConversationLogger
     from llm.agent.prompt import PromptBuilder
     from llm.agent.profile import PlayerProfile
     from llm.protocol import ChatMessage, CompletionClient
@@ -81,6 +82,7 @@ class AgentCore:
         prompt_builder: "PromptBuilder",
         session_manager: "SessionManager",
         client: "CompletionClient | None",
+        conversation_logger: "ConversationLogger | None" = None,
         dry_run: bool = False,
         session_audit: bool = False,
         request_delay_seconds: float = 0.0,
@@ -94,6 +96,7 @@ class AgentCore:
             prompt_builder: Prompt 构建器
             session_manager: 会话管理器
             client: LLM 客户端（dry_run 时可为 None）
+            conversation_logger: 对话记录器（可选，用于调试）
             dry_run: 是否跳过 LLM 调用
             session_audit: 是否记录审计日志
             request_delay_seconds: LLM 调用前延迟
@@ -159,26 +162,36 @@ class AgentCore:
         session_id = session_manager.build_session_id(seat)
         raw = client.complete(messages, session_id=session_id)
 
+        # 10. 记录对话（仅真实对局，用于调试）
+        if conversation_logger is not None and not dry_run:
+            conversation_logger.log_turn(
+                turn_number=len(episode_ctx.decision_history) + 1,
+                seat=seat,
+                phase=state.phase.value,
+                messages=messages,
+                response=raw,
+            )
+
         if session_audit:
             head = raw if len(raw) <= 600 else raw[:600] + "…"
             log.debug("llm raw_head seat=%s %r", seat, head)
             log.debug("llm_frame seat=%s type=%s", seat, frame_type)
             log.debug("llm_history seat=%s history_msgs=%s", seat, len(episode_ctx.decision_history))
 
-        # 10. DEBUG: 保存最后一次请求
+        # 11. DEBUG: 保存最后一次请求
         _debug_save_last_prompt(messages)
 
-        # 11. 解析响应
+        # 12. 解析响应
         la, why = DecisionParser.parse_llm_response(raw, acts)
 
-        # 12. 处理解析失败
+        # 13. 处理解析失败
         if la is None:
             log.warning("parse or match failed, fallback first legal")
             fallback = DecisionParser.fallback_action(acts)
             episode_ctx.record_decision(Decision(fallback, None, []))
             return Decision(fallback, None, episode_ctx.decision_history)
 
-        # 13. 记录审计日志
+        # 14. 记录审计日志
         if session_audit:
             from llm.wire import legal_action_to_wire
 
@@ -188,7 +201,7 @@ class AgentCore:
                 json.dumps(legal_action_to_wire(la), ensure_ascii=False),
             )
 
-        # 14. 更新历史
+        # 15. 更新历史
         episode_ctx.record_decision(Decision(la, why, []))
 
         return Decision(la, why, episode_ctx.decision_history)

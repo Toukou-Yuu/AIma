@@ -110,6 +110,7 @@ class MatchSetupPage(Page):
         max_hands = settings.get('max_hands', 8)
         cmd_parts = [
             "python -m llm",
+            f"--kernel-config {KERNEL_CONFIG_PATH}",
             f"--players {player_str}",
             f"--seed {settings['seed']}",
             f"--max-hands {max_hands}",

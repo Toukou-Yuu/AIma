@@ -122,7 +122,7 @@ class PlayerAgent:
         Args:
             state: 当前游戏状态
             seat: 玩家座位
-            episode_ctx: 本局运行时上下文
+            episode_ctx: 本局运行时上下文（含对话记录器）
             client: LLM 客户端（dry_run 时可为 None）
             dry_run: 是否跳过 LLM 调用
             session_audit: 是否记录审计日志
@@ -138,6 +138,7 @@ class PlayerAgent:
             prompt_builder=self._prompt_builder,
             session_manager=self._session,
             client=client,
+            conversation_logger=episode_ctx.conversation_logger,
             dry_run=dry_run,
             session_audit=session_audit,
             request_delay_seconds=request_delay_seconds,

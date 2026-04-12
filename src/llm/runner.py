@@ -279,6 +279,7 @@ def run_llm_match(
     clear_history_on_new_hand: bool = False,
     players: list[dict[str, Any]] | None = None,
     system_prompt: str | None = None,
+    enable_conversation_logging: bool = False,
 ) -> RunResult:
     """
     从 ``PRE_DEAL`` 开局到 ``MATCH_END`` 或满足结束条件。
@@ -296,6 +297,7 @@ def run_llm_match(
     - ``on_step_callback``：可选回调，每步玩家决策后调用（用于实时 UI 观战）。
     - ``match_end``：对局结束条件（局数制/负分结束），默认半庄8局。
     - ``players``：可选，指定对战玩家列表，格式 [{"id": "player_id", "seat": 0}, ...]。
+    - ``enable_conversation_logging``：是否启用对话日志记录（需要 player_id）。
     """
     if simple_log_file is not None:
         simple_log_file.write(f"# AIma 对局可读日志（简体中文） seed={seed}\n\n")
@@ -331,12 +333,18 @@ def run_llm_match(
             ) for s in range(4)
         }
     # MatchContext：跨局状态管理（Context Object 模式）
+    # 需要传递 player_id 以支持对话日志记录
+    player_id_map: dict[int, str | None] = {}
+    if players:
+        for p in players:
+            player_id_map[p["seat"]] = p.get("id")
     match_contexts: dict[int, MatchContext] = {
-        s: MatchContext(s) for s in range(4)
+        s: MatchContext(s, player_id=player_id_map.get(s)) for s in range(4)
     }
     # EpisodeContext：运行时状态管理（由 MatchContext 创建）
     seat_contexts: dict[int, EpisodeContext] = {
-        s: match_contexts[s].create_episode() for s in range(4)
+        s: match_contexts[s].create_episode(enable_conversation_logging=enable_conversation_logging)
+        for s in range(4)
     }
     state = initial_game_state()
     wall_seed = seed
@@ -464,7 +472,9 @@ def run_llm_match(
                     hand_number += 1
                     # 新一局开始时，由 MatchContext 创建新的 EpisodeContext（Factory 模式）
                     for s in range(4):
-                        seat_contexts[s] = match_contexts[s].create_episode()
+                        seat_contexts[s] = match_contexts[s].create_episode(
+                            enable_conversation_logging=enable_conversation_logging
+                        )
                 _write_simple_snapshot(
                     simple_log_file,
                     state,

@@ -55,3 +55,6 @@ src/web/ui/*.local
 # 玩家角色卡（运行时更新，不提交）
 configs/players/*/memory.json
 configs/players/*/stats.json
+
+# 玩家对话日志（调试用，不提交）
+configs/players/*/conversations/

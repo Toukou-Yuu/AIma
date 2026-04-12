@@ -185,7 +185,8 @@ def _merge_config(
         "clear_history_per_hand": yaml_cfg.get("llm", {}).get("clear_history_per_hand", False),
         "session_audit": yaml_cfg.get("logging", {}).get("session_audit", False),
         "show_reason": yaml_cfg.get("watch", {}).get("show_reason", True),
-        "players": yaml_cfg.get("match", {}).get("players"),
+        "players": yaml_cfg.get("match", {}).get("players") or yaml_cfg.get("players"),
+        "enable_conversation_logging": yaml_cfg.get("llm", {}).get("conversation_logging", {}).get("enabled", False),
     }
 
     # 显式指定的 CLI 参数覆盖 YAML
@@ -301,6 +302,7 @@ def _cmd_watch_dry_run(
     kernel_config_path: str = "configs/aima_kernel.yaml",
     log_session: str | None = None,
     session_audit: bool = False,
+    enable_conversation_logging: bool = False,
 ) -> int:
     """实时观战（Rich + dry-run 或真实 LLM 模式）。"""
     # 观战模式下，控制台只显示 WARNING 及以上级别日志，避免干扰 Rich UI
@@ -398,6 +400,7 @@ def _cmd_watch_dry_run(
             clear_history_on_new_hand=clear_history_per_hand,
             players=players,
             system_prompt=llm_cfg.system_prompt if llm_cfg else None,
+            enable_conversation_logging=enable_conversation_logging,
         )
         print(
             f"\nplayer_steps={rr.player_steps} kernel_steps={rr.kernel_steps} "
@@ -439,7 +442,10 @@ def main(argv: list[str] | None = None) -> int:
     pre_args, remaining = pre_parser.parse_known_args(argv)
 
     # 加载 YAML 配置
-    yaml_cfg = _load_yaml_config(pre_args.config)
+    # --config 和 --kernel-config 通常指向同一个文件
+    # 如果只传 --kernel-config，也用它读取 players、conversation_logging 等配置
+    config_path = pre_args.config or pre_args.kernel_config
+    yaml_cfg = _load_yaml_config(config_path)
     kernel_config_path = pre_args.kernel_config
 
     # 第二遍解析：完整参数列表
@@ -573,6 +579,7 @@ def main(argv: list[str] | None = None) -> int:
                 kernel_config_path=kernel_config_path,
                 log_session=cfg.log_session,
                 session_audit=cfg.session_audit,
+                enable_conversation_logging=cfg.enable_conversation_logging,
             )
 
     if cfg.replay:
@@ -647,6 +654,7 @@ def main(argv: list[str] | None = None) -> int:
                 clear_history_on_new_hand=cfg.clear_history_per_hand,
                 players=cfg.players,
                 system_prompt=llm_cfg.system_prompt if llm_cfg else None,
+                enable_conversation_logging=cfg.enable_conversation_logging,
             )
     else:
         rr = run_llm_match(
@@ -662,6 +670,7 @@ def main(argv: list[str] | None = None) -> int:
             clear_history_on_new_hand=cfg.clear_history_per_hand,
             players=cfg.players,
             system_prompt=llm_cfg.system_prompt if llm_cfg else None,
+            enable_conversation_logging=cfg.enable_conversation_logging,
         )
     print(
         f"player_steps={rr.player_steps} kernel_steps={rr.kernel_steps} "

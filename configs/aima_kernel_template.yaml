@@ -47,6 +47,15 @@ llm:
     示例: {"action": "打三万并立直", "why": "听牌，立直增加收益"}
     示例: {"action": "过", "why": "无役无法荣和"}
 
+  # 对话日志配置（用于调试 LLM 上下文）
+  conversation_logging:
+    enabled: false  # 是否启用对话日志记录
+    # 启用后会在 configs/players/{player_id}/conversations/ 下生成 Markdown 文件
+    # 文件命名格式：{YYYYMMDD}-{session_id}.md
+    # 内容格式：类似网页聊天的一问一答（System/User/Assistant）
+    # 支持实时查看：tail -f configs/players/{player_id}/conversations/*.md
+    # 注意：仅记录真实 AI 对局（dry-run/fallback 不记录）
+
   # 多席独立配置（可选）
   # 如果不配置，所有座位使用上方默认配置
   seats:
