@@ -660,8 +660,8 @@ class TestRenderHeader:
         with console.capture() as capture:
             console.print(table)
         text = capture.get()
-        # 默认分数 25000
-        assert "25000" in text
+        # 默认分数 25000（紧凑格式带逗号分隔）
+        assert "25,000" in text or "25000" in text
 
     def test_header_contains_dora_indicators(self) -> None:
         """场况包含宝牌指示器。"""

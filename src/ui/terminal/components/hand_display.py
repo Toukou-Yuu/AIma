@@ -207,13 +207,9 @@ class HandDisplay:
 
             if seat_reason and show_reason:
                 self._render_reason_lines(lines, seat_reason, seat_time, seat, last_actor_seat, is_last)
-            else:
-                # 占位行
-                lines.append(Text("│" + " " * 79 if not is_last else " " * 80, style="bright_black"))
 
-            # 空行分隔
+            # 空行分隔（仅一个）
             if not is_last:
-                lines.append(Text("│", style="bright_black"))
                 lines.append(Text("│", style="bright_black"))
 
         return Group(*lines)

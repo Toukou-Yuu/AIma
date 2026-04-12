@@ -9,10 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from rich.columns import Columns
 from rich.console import Group
 from rich.panel import Panel
-from rich.table import Table
 from rich.text import Text
 
 from ui.terminal.components.event_formatter import EventFormatter
@@ -30,13 +28,8 @@ class LayoutBuilder:
 
     主要职责：
     - 构建完整的观战界面布局
-    - 管理场况面板、统计面板、手牌面板、事件面板
+    - 紧凑的场况和统计面板设计
     """
-
-    # 默认布局尺寸
-    DEFAULT_HEADER_WIDTH = 55
-    DEFAULT_STATS_WIDTH = 35
-    DEFAULT_EVENT_HEIGHT = 4
 
     def __init__(
         self,
@@ -45,9 +38,6 @@ class LayoutBuilder:
         event_formatter: EventFormatter,
         hand_display: HandDisplay,
         name_resolver: NameResolver,
-        header_width: int = DEFAULT_HEADER_WIDTH,
-        stats_width: int = DEFAULT_STATS_WIDTH,
-        event_height: int = DEFAULT_EVENT_HEIGHT,
     ) -> None:
         """初始化布局构建器。
 
@@ -57,19 +47,12 @@ class LayoutBuilder:
             event_formatter: 事件格式化器
             hand_display: 手牌显示组件
             name_resolver: 名字解析器
-            header_width: 场况面板宽度
-            stats_width: 统计面板宽度
-            event_height: 事件面板高度
         """
         self._renderer = renderer
         self._stats_tracker = stats_tracker
         self._event_formatter = event_formatter
         self._hand_display = hand_display
         self._name_resolver = name_resolver
-
-        self._header_width = header_width
-        self._stats_width = stats_width
-        self._event_height = event_height
 
     def build_panel(
         self,
@@ -81,7 +64,7 @@ class LayoutBuilder:
         seat_decision_times: dict[int, float] | None = None,
         show_reason: bool = True,
     ) -> Panel:
-        """构建完整布局面板。
+        """构建完整布局面板（紧凑设计）。
 
         Args:
             state: 游戏状态
@@ -95,27 +78,26 @@ class LayoutBuilder:
         Returns:
             Rich Panel 对象
         """
-        # 场况面板（自适应宽度）
+        # 场况面板（紧凑两行设计）
         header = self._render_header(state, last_actor_seat)
         header_panel = Panel(
             header,
-            title="场况",
+            title="[bold bright_cyan]场况[/]",
             border_style="bright_cyan",
             padding=(0, 1),
-            # 不固定宽度，让内容自适应
         )
 
-        # 统计面板（自适应宽度）
-        stats = self._stats_tracker.render_stats()
+        # 统计面板（紧凑一行设计）
+        stats = self._stats_tracker.render_compact()
         stats_panel = Panel(
             stats,
-            title="和了统计",
+            title="[bold bright_blue]和了[/]",
             border_style="bright_blue",
             padding=(0, 1),
-            # 不固定宽度，让内容自适应
         )
 
-        # 顶部并排（expand=True 让列自适应）
+        # 顶部并排（紧凑）
+        from rich.columns import Columns
         top_row = Columns([header_panel, stats_panel], equal=False, expand=True)
 
         # 手牌树
@@ -129,7 +111,7 @@ class LayoutBuilder:
         )
         hand_panel = Panel(
             player_tree,
-            title="手牌",
+            title="[bold green]手牌[/]",
             border_style="green",
             padding=(0, 2),
         )
@@ -138,9 +120,9 @@ class LayoutBuilder:
         recent = self._event_formatter.render_recent_events(events)
         event_panel = Panel(
             recent,
-            title="事件",
+            title="[bold yellow]事件[/]",
             border_style="yellow",
-            height=self._event_height,
+            height=4,
             padding=(0, 1),
         )
 
@@ -153,15 +135,15 @@ class LayoutBuilder:
         self,
         state: GameState,
         active_seat: int | None = None,
-    ) -> Table:
-        """渲染场况信息表。
+    ) -> Group:
+        """渲染场况信息（紧凑两行设计）。
 
         Args:
             state: 游戏状态
             active_seat: 当前活跃席位
 
         Returns:
-            Rich Table 对象
+            Rich Group 对象（两行紧凑信息）
         """
         from kernel.table.model import PrevailingWind
 
@@ -172,37 +154,49 @@ class LayoutBuilder:
         wind = "東" if table.prevailing_wind == PrevailingWind.EAST else "南"
         round_num = table.round_number.value
 
-        header = Table(show_header=False, box=None, padding=(0, 2))
-        header.add_column("key", style="dim")
-        header.add_column("value")
-
-        # 显示局数和本场
-        header.add_row("局", f"{wind}風{round_num}局 第{table.honba}本場")
-        header.add_row("供托", str(table.kyoutaku))
+        # 第一行：局/供托/余牌/宝牌（紧凑分隔）
+        line1_parts = [
+            (f"{wind}風{round_num}局", "bright_white"),
+            (" · ", "dim"),
+            (f"第{table.honba}本場", "white"),
+            (" | ", "dim"),
+            ("供托", "dim"),
+            (f"{table.kyoutaku}", "yellow"),
+        ]
 
         if board:
             remaining = len(board.live_wall) - board.live_draw_index
-            header.add_row("余牌", str(remaining))
+            line1_parts.extend([
+                (" | ", "dim"),
+                ("余牌", "dim"),
+                (f"{remaining}", "cyan"),
+            ])
 
-            # 宝牌指示器
+            # 宝牌指示器（紧凑显示）
             if board.revealed_indicators:
-                dora_text = Text.assemble(
-                    *(self._renderer.render_dora_indicators(board.revealed_indicators))
-                )
-                header.add_row("宝牌指示器", dora_text)
+                line1_parts.extend([
+                    (" | ", "dim"),
+                    ("宝牌指示器", "dim"),
+                    (" ", ""),
+                ])
+                for tile in board.revealed_indicators:
+                    line1_parts.append(self._renderer.render_single_tile(tile))
 
-        # 点数（每行单独渲染，避免嵌套 Table 截断）
-        score_lines = []
+        line1 = Text.assemble(*line1_parts)
+
+        # 第二行：分数（紧凑分隔）
+        score_parts = []
         for i, s in enumerate(table.scores):
-            label = self._name_resolver.get_name_or_seat(i)
+            if i > 0:
+                score_parts.append((" | ", "dim"))
+            name = self._name_resolver.get_name_or_seat(i)
             is_active = i == active_seat
-            line = Text()
-            content = f"{label}: {s}"
-            line.append(content, style="bold bright_cyan" if is_active else "white")
-            score_lines.append(line)
-        scores = Text("\n").join(score_lines)
+            score_parts.extend([
+                (name, "bright_cyan" if is_active else "white"),
+                (" ", ""),
+                (f"{s:,}", "bold bright_yellow" if is_active else "yellow"),
+            ])
 
-        # 使用 Columns 并排显示场况信息和分数
-        # 左侧：局/供托/余牌/宝牌指示器
-        # 右侧：分数列表
-        return Columns([header, scores], equal=False, expand=True)
+        line2 = Text.assemble(*score_parts)
+
+        return Group(line1, line2)

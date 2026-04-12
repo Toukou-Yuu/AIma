@@ -157,6 +157,17 @@ class TileRenderer:
             result.append(tile_to_rich(tile.to_code()))
         return result
 
+    def render_single_tile(self, tile: Tile) -> Text:
+        """渲染单个 Tile 对象。
+
+        Args:
+            tile: Tile 对象
+
+        Returns:
+            带颜色的 Rich Text 对象
+        """
+        return tile_to_rich(tile.to_code())
+
     def compute_dora_tiles(self, revealed_indicators: tuple | None) -> set:
         """从指示器计算宝牌集合。
 

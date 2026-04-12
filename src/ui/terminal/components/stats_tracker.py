@@ -54,32 +54,39 @@ class StatsTracker:
                     for w in ev.winners:
                         self._wins[w] += 1
 
-    def render_stats(self) -> Text:
-        """渲染统计面板。
+    def render_compact(self) -> Text:
+        """渲染紧凑统计面板（一行显示四家）。
 
         Returns:
-            统计信息 Text
+            紧凑统计信息 Text
         """
-        from wcwidth import wcswidth
-
-        lines = []
+        parts = []
         for i in range(4):
-            player_name = self._seat_names.get(i)
-            if player_name:
-                seat_label = player_name
-            else:
-                seat_label = f"S{i}"
+            if i > 0:
+                parts.append((" | ", "dim"))
 
+            name = self._seat_names.get(i) or f"S{i}"
             wins = self._wins[i]
-            rate = f"{wins}/{self._rounds}" if self._rounds > 0 else "—"
-            pct = f"({wins/max(self._rounds, 1)*100:.0f}%)" if self._rounds > 0 else "(—)"
 
-            # 计算显示宽度并填充
-            display_width = wcswidth(seat_label)
-            padding = max(0, 8 - display_width)
-            lines.append(f"{seat_label}{' ' * padding} {wins}    {rate} {pct}")
+            # 格式: 名字: 和了数(胜率%)
+            if self._rounds > 0:
+                pct = wins / self._rounds * 100
+                pct_str = f"{pct:.0f}%"
+            else:
+                pct_str = "—"
 
-        return Text("\n".join(lines))
+            # 高亮有和了的玩家
+            style = "bright_yellow" if wins > 0 else "white"
+            parts.extend([
+                (name, style),
+                (": ", "dim"),
+                (str(wins), "bold bright_cyan" if wins > 0 else "cyan"),
+                ("(", "dim"),
+                (pct_str, "yellow" if wins > 0 else "dim"),
+                (")", "dim"),
+            ])
+
+        return Text.assemble(*parts)
 
     def get_win_count(self, seat: int) -> int:
         """获取指定席位的和了次数。"""
