@@ -605,6 +605,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     client = None
+    llm_cfg = None
     if not cfg.dry_run:
         llm_cfg = load_llm_config(
             config_path=kernel_config_path,

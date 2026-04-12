@@ -1,17 +1,243 @@
-"""将内核观测与合法动作格式化为模型输入（JSON 文本）。"""
+"""将内核观测与合法动作格式化为模型输入（自然语言格式）。"""
 
 from __future__ import annotations
 
 import json
 from collections import Counter
-from typing import Any
+from typing import TYPE_CHECKING
 
 from kernel.api.legal_actions import LegalAction
 from kernel.api.observation import Observation, RiverEntry
-from kernel.tiles.model import Tile
-from llm.wire import legal_action_to_wire
+from kernel.tiles.model import Tile, Suit
+
+if TYPE_CHECKING:
+    from typing import Any
 
 
+# 牌面中文映射
+TILE_CN_MAP = {
+    # 万子
+    "1m": "一万", "2m": "二万", "3m": "三万", "4m": "四万", "5m": "五万",
+    "6m": "六万", "7m": "七万", "8m": "八万", "9m": "九万",
+    # 筒子
+    "1p": "一筒", "2p": "二筒", "3p": "三筒", "4p": "四筒", "5p": "五筒",
+    "6p": "六筒", "7p": "七筒", "8p": "八筒", "9p": "九筒",
+    # 索子
+    "1s": "一索", "2s": "二索", "3s": "三索", "4s": "四索", "5s": "五索",
+    "6s": "六索", "7s": "七索", "8s": "八索", "9s": "九索",
+    # 字牌
+    "1z": "东", "2z": "南", "3z": "西", "4z": "北",
+    "5z": "白", "6z": "发", "7z": "中",
+    # 赤宝牌
+    "5mr": "五万(赤)", "5pr": "五筒(赤)", "5sr": "五索(赤)",
+}
+
+
+def tile_to_cn(tile: Tile) -> str:
+    """将牌编码转换为中文."""
+    code = tile.to_code()
+    return TILE_CN_MAP.get(code, code)
+
+
+def _hand_to_cn(hand: Counter[Tile] | None) -> str:
+    """将手牌转换为中文格式（按花色分组）."""
+    if hand is None:
+        return "无"
+
+    # 按花色分组
+    suits: dict[Suit, list[tuple[Tile, int]]] = {}
+    for tile, count in hand.items():
+        suit = tile.suit
+        if suit not in suits:
+            suits[suit] = []
+        suits[suit].append((tile, count))
+
+    # 花色名称映射
+    suit_names = {
+        Suit.MAN: "万子",
+        Suit.PIN: "筒子",
+        Suit.SOU: "索子",
+        Suit.HONOR: "字牌",
+    }
+
+    # 构建输出
+    lines = []
+    for suit in [Suit.MAN, Suit.PIN, Suit.SOU, Suit.HONOR]:
+        if suit in suits:
+            tiles = sorted(suits[suit], key=lambda x: x[0].rank)
+            parts = []
+            for tile, count in tiles:
+                cn = tile_to_cn(tile)
+                if count > 1:
+                    parts.append(cn * count)  # "西西" 表示两张西
+                else:
+                    parts.append(cn)
+            lines.append(f"{suit_names[suit]}: {' '.join(parts)}")
+
+    return "\n".join(lines) if lines else "无"
+
+
+def _meld_to_cn(meld: Any) -> str:
+    """将副露转换为中文."""
+    tiles_str = " ".join(tile_to_cn(t) for t in meld.tiles)
+    kind_cn = {
+        "chii": "吃",
+        "pon": "碰",
+        "daiminkan": "明杠",
+        "ankan": "暗杠",
+        "shouminkan": "加杠",
+    }
+    kind_str = kind_cn.get(meld.kind.value, meld.kind.value)
+
+    # 吃碰杠需要显示从哪里拿的
+    extra = ""
+    if meld.called_tile:
+        extra = f"(叫{tile_to_cn(meld.called_tile)}"
+        if meld.from_seat is not None:
+            extra += f" 来自家{meld.from_seat}"
+        extra += ")"
+
+    return f"{kind_str} {tiles_str}{extra}"
+
+
+def _river_to_cn(river: tuple[RiverEntry, ...], my_seat: int) -> str:
+    """将牌河转换为中文."""
+    if not river:
+        return "空"
+
+    entries = []
+    for e in river:
+        seat_name = "我" if e.seat == my_seat else f"家{e.seat}"
+        tile_cn = tile_to_cn(e.tile)
+        suffix = ""
+        if e.is_riichi:
+            suffix = "立直"
+        elif e.is_tsumogiri:
+            suffix = "摸切"
+        entries.append(f"{seat_name}: {tile_cn}{suffix}")
+
+    return ", ".join(entries)
+
+
+def _calculate_wind(seat: int, dealer_seat: int) -> str:
+    """根据座位和庄家计算风位。"""
+    winds = ["东", "南", "西", "北"]
+    return winds[(seat - dealer_seat) % 4]
+
+
+def _action_to_cn(action: LegalAction, my_seat: int) -> str:
+    """将合法动作转换为中文描述."""
+    from kernel.engine.actions import ActionKind
+
+    kind = action.kind
+
+    if kind == ActionKind.DISCARD:
+        tile_cn = tile_to_cn(action.tile)
+        riichi = "并立直" if action.declare_riichi else ""
+        return f"打{tile_cn}{riichi}"
+
+    if kind == ActionKind.PASS_CALL:
+        return "过"
+
+    if kind == ActionKind.DRAW:
+        return "摸牌"
+
+    if kind == ActionKind.RON:
+        tile_cn = tile_to_cn(action.win_tile) if action.win_tile else ""
+        return f"荣和{tile_cn}"
+
+    if kind == ActionKind.TSUMO:
+        return "自摸"
+
+    if kind == ActionKind.OPEN_MELD and action.meld:
+        return _meld_to_cn(action.meld)
+
+    if kind == ActionKind.ANKAN and action.meld:
+        return f"暗杠 {_meld_to_cn(action.meld)}"
+
+    if kind == ActionKind.SHOUMINKAN and action.meld:
+        return f"加杠 {_meld_to_cn(action.meld)}"
+
+    if kind == ActionKind.RIICHI:
+        return "立直宣言"
+
+    return kind.value
+
+
+def build_natural_prompt(obs: Observation, legal: tuple[LegalAction, ...]) -> str:
+    """构建自然语言格式 prompt（更直观，节省 token）.
+
+    格式设计：
+    - 手牌按花色分组，使用中文牌名
+    - 合法动作简洁描述
+    - 避免JSON冗余，减少token消耗
+    """
+    lines = []
+
+    # 1. 基本信息
+    wind = _calculate_wind(obs.seat, obs.dealer_seat)
+    lines.append(f"【当前状态】")
+    lines.append(f"你是家{obs.seat}({wind}位)")
+
+    # 2. 手牌
+    hand_count = sum(obs.hand.values()) if obs.hand else 0
+    lines.append(f"\n【手牌】({hand_count}张)")
+    lines.append(_hand_to_cn(obs.hand))
+
+    # 3. 副露（自家）
+    if obs.melds:
+        lines.append(f"\n【我的副露】")
+        for m in obs.melds:
+            lines.append(_meld_to_cn(m))
+
+    # 4. 他家副露
+    other_melds = []
+    for seat_idx, seat_melds in enumerate(obs.all_melds):
+        if seat_idx != obs.seat and seat_melds:
+            for m in seat_melds:
+                other_melds.append(f"家{seat_idx}: {_meld_to_cn(m)}")
+    if other_melds:
+        lines.append(f"\n【他家副露】")
+        lines.append(", ".join(other_melds))
+
+    # 5. 宝牌指示牌
+    dora_str = ", ".join(tile_to_cn(t) for t in obs.dora_indicators)
+    lines.append(f"\n【宝牌指示牌】{dora_str}")
+
+    # 6. 牌河（完整显示）
+    if obs.river:
+        lines.append(f"\n【牌河】(共{len(obs.river)}张)")
+        lines.append(_river_to_cn(obs.river, obs.seat))
+
+    # 7. 立直状态
+    riichi_players = [i for i, r in enumerate(obs.riichi_state) if r]
+    if riichi_players:
+        lines.append(f"\n【立直中】家{', 家'.join(map(str, riichi_players))}")
+
+    # 8. 分数
+    scores_str = ", ".join(f"家{i}:{s}" for i, s in enumerate(obs.scores))
+    lines.append(f"\n【分数】{scores_str}")
+
+    # 9. 最后打出的牌（用于判断能否荣和）
+    if obs.last_discard:
+        last_cn = tile_to_cn(obs.last_discard)
+        last_seat = obs.last_discard_seat
+        lines.append(f"\n【刚才打出】家{last_seat} 打 {last_cn}")
+
+    # 10. 合法动作
+    lines.append(f"\n【可选动作】")
+    action_strs = [_action_to_cn(a, obs.seat) for a in legal]
+    lines.append(", ".join(action_strs))
+
+    # 11. 提示输出格式
+    lines.append(f"\n【输出要求】")
+    lines.append("选择一个动作，用JSON格式输出，包含 why 字段说明理由（不超过30字）。")
+    lines.append("示例: {\"action\": \"打三万\", \"why\": \"孤立牌，进张面窄\"}")
+
+    return "\n".join(lines)
+
+
+# 保留原有函数供兼容（但不再使用）
 def _hand_dict(hand: Counter[Tile] | None) -> dict[str, int] | None:
     if hand is None:
         return None
@@ -189,7 +415,12 @@ def observation_to_prompt_dict(obs: Observation) -> dict[str, Any]:
 
 
 def build_user_prompt(obs: Observation, legal: tuple[LegalAction, ...]) -> str:
-    """拼装 user 消息：局面 JSON + 合法动作列表。"""
+    """构建用户提示（自然语言格式，更直观）."""
+    return build_natural_prompt(obs, legal)
+
+
+def build_decision_prompt(obs: Observation, legal: tuple[LegalAction, ...]) -> str:
+    """构建决策提示（保留原有JSON格式供调试）."""
     body = {
         "observation": observation_to_prompt_dict(obs),
         "legal_actions": [legal_action_to_wire(la) for la in legal],
