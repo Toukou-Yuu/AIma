@@ -6,7 +6,7 @@ Phase 4: 支持从 stats 注入统计数据.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from kernel.api.legal_actions import LegalAction
 from kernel.api.observation import Observation
@@ -112,7 +112,12 @@ def build_compressed_decision_prompt(
         "observation": compressed_obs,
         "legal_actions": [legal_action_to_wire(la) for la in legal_actions],
     }
-    return json.dumps(body, ensure_ascii=False, indent=2)
+    # 添加输出格式说明（json 格式专用）
+    format_hint = (
+        "\n\n【输出要求】选择 legal_actions 中的一项，用 JSON 输出，含 why 字段。"
+        "\n示例: {\"kind\":\"discard\",\"seat\":0,\"tile\":\"3m\",\"why\":\"现物安全\"}"
+    )
+    return json.dumps(body, ensure_ascii=False, indent=2) + format_hint
 
 
 def build_delta_decision_prompt(
@@ -137,4 +142,9 @@ def build_delta_decision_prompt(
         "delta": delta_obs,
         "legal_actions": [legal_action_to_wire(la) for la in legal_actions],
     }
-    return json.dumps(body, ensure_ascii=False, indent=2)
+    # 添加输出格式说明（json 格式专用）
+    format_hint = (
+        "\n\n【输出要求】选择 legal_actions 中的一项，用 JSON 输出，含 why 字段。"
+        "\n示例: {\"kind\":\"discard\",\"seat\":0,\"tile\":\"3m\",\"why\":\"现物安全\"}"
+    )
+    return json.dumps(body, ensure_ascii=False, indent=2) + format_hint
