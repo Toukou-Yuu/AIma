@@ -53,7 +53,7 @@ def _hand_to_cn(hand: Counter[Tile] | None) -> str:
             for tile, count in tiles:
                 cn = tile_to_cn(tile)
                 if count > 1:
-                    parts.append(cn * count)  # "西西" 表示两张西
+                    parts.append(f"{cn}×{count}")  # "东×3" 表示三张东
                 else:
                     parts.append(cn)
             lines.append(f"{suit_names[suit]}: {' '.join(parts)}")
