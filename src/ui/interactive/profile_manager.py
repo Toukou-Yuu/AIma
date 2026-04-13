@@ -4,18 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from prompt_toolkit.styles import Style
 from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
 
-from ui.interactive.framework import MenuPage, Page, Prompt
+from ui.interactive.framework import BACK, MenuPage, Page, Prompt, is_back
 from ui.interactive.utils import (
     PLAYERS_DIR,
     create_profile,
     list_profiles,
-    load_profile_data,
-    load_profile_stats,
 )
 from ui.terminal.components.character_card import render_character_card
 
@@ -37,8 +32,6 @@ class ProfileMenuPage(MenuPage):
             questionary.Separator(),
             questionary.Choice("创建新角色", value="create"),
             questionary.Choice("为角色添加 ASCII 形象", value="add_ascii"),
-            questionary.Separator(),
-            questionary.Choice("返回主菜单", value="back"),
         ])
         return choices
 
@@ -70,6 +63,8 @@ class CreateProfilePage(Page):
 
         # 步骤 1: ID
         player_id = Prompt.text("角色标识 (用于文件夹名，如: ichihime_v2):")
+        if is_back(player_id):
+            return BACK
         if not player_id:
             return
 
@@ -85,11 +80,13 @@ class CreateProfilePage(Page):
 
         # 步骤 2: 名称
         name = Prompt.text("显示名称 (牌桌上的名字):", default=player_id) or player_id
+        if is_back(name):
+            return BACK
 
         # 步骤 3: 选择模板
         template_choice = self._select_template()
-        if not template_choice:
-            return
+        if is_back(template_choice):
+            return BACK
 
         # 步骤 4: 是否自定义 prompt
         default_persona = PERSONA_TEMPLATES[template_choice]["persona"]
@@ -97,10 +94,14 @@ class CreateProfilePage(Page):
             f"是否自定义人格描述? (默认: {default_persona[:30]}...)",
             default=False,
         )
+        if is_back(customize):
+            return BACK
 
         custom_persona = None
         if customize:
             custom_persona = Prompt.multiline("输入自定义人格描述:")
+            if is_back(custom_persona):
+                return BACK
 
         # 创建
         try:
@@ -112,21 +113,13 @@ class CreateProfilePage(Page):
 
         Prompt.press_any_key()
 
-    def _select_template(self) -> str | None:
+    def _select_template(self) -> str | object:
         """选择人格模板."""
-        from .utils import PERSONA_TEMPLATES
         import questionary
-        from prompt_toolkit.styles import Style
 
-        style = Style.from_dict({
-            "selected": "ansicyan bold",
-            "highlighted": "ansicyan bold",
-            "pointer": "ansicyan bold",
-            "separator": "#666666",
-            "instruction": "#555555",
-        })
+        from .utils import PERSONA_TEMPLATES
 
-        return questionary.select(
+        return Prompt.select(
             "",
             choices=[
                 questionary.Choice(PERSONA_TEMPLATES['aggressive']['name'], value="aggressive"),
@@ -134,11 +127,8 @@ class CreateProfilePage(Page):
                 questionary.Choice(PERSONA_TEMPLATES['balanced']['name'], value="balanced"),
                 questionary.Choice(PERSONA_TEMPLATES['adaptive']['name'], value="adaptive"),
             ],
-            qmark="",
-            pointer=">",
-            instruction="[上下键选择，回车确认]",
-            style=style,
-        ).ask()
+            instruction="[上下键选择，回车确认，Esc返回]",
+        )
 
 
 class AddAsciiPage(Page):
@@ -158,23 +148,22 @@ class AddAsciiPage(Page):
             return
 
         import questionary
-        choices = [questionary.Choice(p['name'], value=p['id']) for p in profiles]
-        choices.append(questionary.Choice("取消", value="cancel"))
 
-        player_id = questionary.select(
+        choices = [questionary.Choice(p['name'], value=p['id']) for p in profiles]
+        player_id = Prompt.select(
             "选择角色:",
             choices=choices,
-            qmark="",
-            pointer=">",
-        ).ask()
+        )
 
-        if player_id == "cancel" or not player_id:
-            return
+        if is_back(player_id):
+            return BACK
 
         # 步骤 2: 输入图片路径（清晰提示）
         console.print(f"\n[dim]当前目录: {Path.cwd()}[/dim]")
         console.print("[dim]示例: img.png 或 configs/players/kavi/kavi.png[/dim]")
         image_path_str = Prompt.text("图片路径:")
+        if is_back(image_path_str):
+            return BACK
         if not image_path_str:
             return
 
@@ -187,6 +176,8 @@ class AddAsciiPage(Page):
 
         # 步骤 3: 输入宽度
         width_str = Prompt.text("输出宽度 (字符数，默认60):", default="60")
+        if is_back(width_str):
+            return BACK
         try:
             width = int(width_str) if width_str else 60
         except ValueError:
@@ -212,7 +203,7 @@ def run() -> None:
     while True:
         choice = ProfileMenuPage().run()
 
-        if choice in ("back", "esc", None):
+        if choice is None or is_back(choice):
             break
         elif choice == "create":
             CreateProfilePage().run()

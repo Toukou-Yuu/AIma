@@ -8,7 +8,7 @@ import yaml
 from rich.console import Console
 from rich.table import Table
 
-from ui.interactive.framework import MenuPage, Page
+from ui.interactive.framework import MenuPage, Page, is_back
 
 console = Console()
 
@@ -46,6 +46,7 @@ class MainMenuPage(MenuPage):
     """主菜单."""
 
     title = "AIma 麻将 AI 终端"
+    allow_back = False
 
     def _render_header(self) -> None:
         """重写标题渲染，添加模型信息."""
@@ -89,4 +90,6 @@ class MainMenuPage(MenuPage):
 def show_main_menu() -> str:
     """显示主菜单."""
     result = MainMenuPage().run()
+    if is_back(result):
+        return "quit"
     return result or "quit"

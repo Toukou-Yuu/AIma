@@ -795,3 +795,80 @@ class TestLiveMatchCallback:
         callback = LiveMatchCallback()
         callback.set_player_names({0: "一姬", 1: "八木唯", 2: "卡维", 3: "藤田佳奈"})
         assert callback.viewer._seat_names[0] == "一姬"
+
+
+# =============================================================================
+# interactive 导航测试
+# =============================================================================
+
+
+class TestInteractiveNavigation:
+    """统一返回导航测试。"""
+
+    def test_page_interrupt_returns_back_by_default(self) -> None:
+        """普通页面的 Ctrl+C 会返回上一层。"""
+        from ui.interactive.framework import BACK, Page
+
+        class SamplePage(Page):
+            def _render_content(self) -> None:
+                return None
+
+        assert SamplePage()._on_interrupt() is BACK
+
+    def test_main_menu_back_maps_to_quit(self, monkeypatch) -> None:
+        """主菜单作为根节点，会把返回动作映射为退出。"""
+        from ui.interactive.framework import BACK
+        from ui.interactive.main_menu import MainMenuPage, show_main_menu
+
+        monkeypatch.setattr(MainMenuPage, "run", lambda self: BACK)
+        assert show_main_menu() == "quit"
+
+    def test_replay_menu_without_records_returns_back(self, monkeypatch) -> None:
+        """无牌谱时直接返回上一层，而不是留在死路页面。"""
+        from ui.interactive.framework import BACK
+        from ui.interactive.replay import Prompt, ReplayMenuPage
+
+        monkeypatch.setattr(Prompt, "press_any_key", lambda message="按任意键继续...": None)
+        monkeypatch.setattr(ReplayMenuPage, "_get_choices", lambda self: [])
+
+        assert ReplayMenuPage()._render_content() is BACK
+
+    def test_prompt_confirm_uses_select_navigation(self, monkeypatch) -> None:
+        """确认输入走统一选择协议，而不是 questionary.confirm。"""
+        from ui.interactive.framework import Prompt
+
+        monkeypatch.setattr(Prompt, "select", lambda *args, **kwargs: False)
+        assert Prompt.confirm("确认开始?") is False
+
+    def test_prompt_number_propagates_back(self, monkeypatch) -> None:
+        """数字输入收到返回信号时，不会吞掉导航动作。"""
+        from ui.interactive.framework import BACK, Prompt
+
+        monkeypatch.setattr(Prompt, "_read_text", lambda *args, **kwargs: BACK)
+        assert Prompt.number("输入观战延迟") is BACK
+
+
+class TestQuickStartMenu:
+    """demo 菜单测试。"""
+
+    def test_quick_start_build_command_with_watch(self) -> None:
+        """观战模式会生成完整的 dry-run demo 命令。"""
+        from ui.interactive.match_setup import QuickStartConfig
+
+        config = QuickStartConfig(seed="42", watch=True, delay="0.5")
+        assert config.build_command() == (
+            "python -m llm --dry-run --seed 42 --log-session quick --watch --watch-delay 0.5"
+        )
+
+    def test_quick_start_menu_hides_delay_when_watch_disabled(self) -> None:
+        """关闭观战后，配置菜单不再显示延迟设置。"""
+        from ui.interactive.match_setup import QuickStartConfig, QuickStartMenuPage
+
+        config = QuickStartConfig(seed="0", watch=False, delay="0.3")
+        choices = QuickStartMenuPage(config)._get_choices()
+        values = [choice.value for choice in choices if hasattr(choice, "value")]
+
+        assert "start" in values
+        assert "seed" in values
+        assert "watch" in values
+        assert "delay" not in values

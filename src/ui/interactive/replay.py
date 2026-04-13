@@ -8,7 +8,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from ui.interactive.framework import MenuPage, Page, Prompt
+from ui.interactive.framework import BACK, MenuPage, Page, Prompt, is_back
 
 console = Console()
 
@@ -30,10 +30,6 @@ class ReplayMenuPage(MenuPage):
         choices = []
         for label, path in replays:
             choices.append(questionary.Choice(label, value=str(path)))
-        choices.extend([
-            questionary.Separator(),
-            questionary.Choice("返回", value="back"),
-        ])
         return choices
 
     def _list_replays(self) -> list[tuple[str, Path]]:
@@ -62,13 +58,13 @@ class ReplayMenuPage(MenuPage):
 
         return result
 
-    def _render_content(self) -> str | None:
+    def _render_content(self) -> str | object | None:
         """重写以处理无牌谱情况."""
         choices = self._get_choices()
         if not choices:
             console.print("[dim]暂无牌谱记录[/dim]")
             Prompt.press_any_key()
-            return "back"
+            return BACK
         return super()._render_content()
 
 
@@ -80,6 +76,8 @@ class ReplayPlayerPage(Page):
 
     def _render_content(self) -> None:
         delay = Prompt.number("回放延迟(秒):", default="0.5")
+        if is_back(delay):
+            return BACK
 
         cmd = f'python -m llm --replay "{self.replay_path}" --watch --watch-delay {delay}'
 
@@ -99,7 +97,7 @@ def run() -> None:
     """运行牌谱回放."""
     choice = ReplayMenuPage().run()
 
-    if choice in ("back", "esc", None):
+    if choice is None or is_back(choice):
         return
 
     ReplayPlayerPage(choice).run()

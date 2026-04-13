@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import subprocess
+from dataclasses import dataclass
 
-from prompt_toolkit.styles import Style
 from rich.console import Console
 from rich.panel import Panel
 
-from ui.interactive.framework import MenuPage, Page, Prompt
+from ui.interactive.framework import BACK, MenuPage, Page, Prompt, is_back
 from ui.interactive.utils import KERNEL_CONFIG_PATH, list_profiles
 
 console = Console()
@@ -16,7 +16,35 @@ console = Console()
 SEATS = ["东家 (0)", "南家 (1)", "西家 (2)", "北家 (3)"]
 
 
-class SelectPlayerPage(Page):
+@dataclass
+class QuickStartConfig:
+    """demo 演示配置."""
+
+    seed: str = "42"
+    watch: bool = True
+    delay: str = "0.3"
+
+    def seed_label(self) -> str:
+        """种子显示文本."""
+        return "随机" if self.seed == "0" else self.seed
+
+    def build_command(self) -> str:
+        """构建 demo 命令."""
+        cmd_parts = [
+            "python -m llm",
+            "--dry-run",
+            f"--seed {self.seed}",
+            "--log-session quick",
+        ]
+
+        if self.watch:
+            cmd_parts.append("--watch")
+            cmd_parts.append(f"--watch-delay {self.delay}")
+
+        return " ".join(cmd_parts)
+
+
+class SelectPlayerPage(MenuPage):
     """选择玩家页."""
 
     def __init__(self, seat_name: str, profiles: list[dict]):
@@ -24,9 +52,8 @@ class SelectPlayerPage(Page):
         self.profiles = profiles
         self.title = f"选择 {seat_name}"
 
-    def _render_content(self) -> str | None:
+    def _get_choices(self) -> list:
         import questionary
-        from prompt_toolkit.styles import Style
 
         choices = [
             questionary.Choice("默认 AI (dry-run)", value="default"),
@@ -34,23 +61,10 @@ class SelectPlayerPage(Page):
         ]
         for p in self.profiles:
             choices.append(questionary.Choice(p['name'], value=p["id"]))
+        return choices
 
-        style = Style.from_dict({
-            "selected": "ansicyan bold",
-            "highlighted": "ansicyan bold",
-            "pointer": "ansicyan bold",
-            "separator": "#666666",
-            "instruction": "#555555",
-        })
-
-        return questionary.select(
-            "",
-            choices=choices,
-            qmark="",
-            pointer=">",
-            instruction=f"[选择 {self.seat_name}]",
-            style=style,
-        ).ask()
+    def _get_instruction(self) -> str:
+        return f"[选择 {self.seat_name}，Esc返回]"
 
 
 class MatchSetupPage(Page):
@@ -68,34 +82,44 @@ class MatchSetupPage(Page):
         selected = []
         for seat_name in SEATS:
             choice = SelectPlayerPage(seat_name, profiles).run()
-            if choice is None:
-                return
+            if is_back(choice):
+                return BACK
             selected.append(choice)
 
         # 对局设置
         settings = self._configure_settings()
-        if settings is None:
-            return
+        if is_back(settings):
+            return BACK
 
         # 构建并执行命令
         cmd = self._build_command(selected, settings)
+        if is_back(cmd):
+            return BACK
         if cmd is None:
-            return
+            return None
 
         self._execute_command(cmd, settings["watch"])
 
-    def _configure_settings(self) -> dict | None:
+    def _configure_settings(self) -> dict | object:
         """配置对局设置."""
         console.print()
         console.print("[dim]对局设置 (直接回车使用默认值)[/dim]")
 
         seed = Prompt.number("随机种子 (0=随机):", default="0")
+        if is_back(seed):
+            return BACK
         max_hands = Prompt.number("局数 (4=东风, 8=半庄):", default="8")
+        if is_back(max_hands):
+            return BACK
         watch = Prompt.confirm("实时观战?", default=True)
+        if is_back(watch):
+            return BACK
 
         delay = "0.5"
         if watch:
             delay = Prompt.number("观战延迟(秒):", default="0.5")
+            if is_back(delay):
+                return BACK
 
         return {
             "seed": seed,
@@ -104,7 +128,7 @@ class MatchSetupPage(Page):
             "delay": delay,
         }
 
-    def _build_command(self, selected: list[str], settings: dict) -> str | None:
+    def _build_command(self, selected: list[str], settings: dict) -> str | object | None:
         """构建执行命令."""
         player_str = ",".join(selected)
         max_hands = settings.get('max_hands', 8)
@@ -132,6 +156,8 @@ class MatchSetupPage(Page):
             console.print("  或使用 --dry-run 模式")
 
             use_dry = Prompt.confirm("是否切换到 Dry-run 模式?", default=True)
+            if is_back(use_dry):
+                return BACK
             if use_dry:
                 cmd_parts = [
                     "python -m llm",
@@ -149,7 +175,10 @@ class MatchSetupPage(Page):
         console.print()
         console.print(Panel(f"[dim]{cmd}[/dim]", title="执行命令", border_style="green"))
 
-        if not Prompt.confirm("确认开始?", default=True):
+        confirmed = Prompt.confirm("确认开始?", default=True)
+        if is_back(confirmed):
+            return BACK
+        if not confirmed:
             return None
 
         return cmd
@@ -193,6 +222,57 @@ def run() -> None:
     MatchSetupPage().run()
 
 
+class QuickStartMenuPage(MenuPage):
+    """demo 配置菜单."""
+
+    title = "demo演示"
+    border_style = "bright_green"
+
+    def __init__(self, config: QuickStartConfig):
+        self.config = config
+
+    def _render_content(self) -> str | object | None:
+        console.print(Panel(
+            self._render_summary(),
+            title="当前配置",
+            border_style="green",
+            padding=(1, 2),
+        ))
+        console.print()
+        return super()._render_content()
+
+    def _render_summary(self) -> str:
+        watch_mode = "实时观战" if self.config.watch else "静默运行"
+        lines = [
+            f"随机种子: {self.config.seed_label()}",
+            f"运行模式: {watch_mode}",
+        ]
+        if self.config.watch:
+            lines.append(f"观战延迟: {self.config.delay} 秒")
+        return "\n".join(lines)
+
+    def _get_choices(self) -> list:
+        import questionary
+
+        choices = [
+            questionary.Choice("开始演示", value="start"),
+            questionary.Separator(),
+            questionary.Choice(
+                f"随机种子: {self.config.seed_label()}",
+                value="seed",
+            ),
+            questionary.Choice(
+                f"实时观战: {'开启' if self.config.watch else '关闭'}",
+                value="watch",
+            ),
+        ]
+        if self.config.watch:
+            choices.append(
+                questionary.Choice(f"观战延迟: {self.config.delay} 秒", value="delay")
+            )
+        return choices
+
+
 class QuickStartPage(Page):
     """快速开始页."""
 
@@ -200,28 +280,79 @@ class QuickStartPage(Page):
     border_style = "bright_green"
 
     def _render_content(self) -> None:
-        seed = Prompt.number("随机种子 (0=随机):", default="42")
-        watch = Prompt.confirm("实时观战?", default=True)
+        config = QuickStartConfig()
 
-        cmd_parts = [
-            "python -m llm",
-            "--dry-run",
-            f"--seed {seed}",
-            "--log-session quick",
-        ]
+        while True:
+            action = QuickStartMenuPage(config).run()
+            if is_back(action):
+                return BACK
+            if action == "start":
+                self._execute_demo(config)
+                return None
+            if action == "seed":
+                self._configure_seed(config)
+            elif action == "watch":
+                config.watch = not config.watch
+            elif action == "delay":
+                self._configure_delay(config)
 
-        if watch:
-            cmd_parts.append("--watch")
-            cmd_parts.append("--watch-delay 0.3")
+    def _configure_seed(self, config: QuickStartConfig) -> None:
+        """配置种子."""
+        import questionary
 
-        cmd = " ".join(cmd_parts)
+        choice = Prompt.select(
+            "选择随机种子:",
+            choices=[
+                questionary.Choice("固定种子 42", value="42"),
+                questionary.Choice("随机种子", value="0"),
+                questionary.Choice("自定义输入", value="custom"),
+            ],
+        )
+        if is_back(choice):
+            return
+        if choice == "custom":
+            custom_seed = Prompt.number("输入随机种子 (0=随机):", default=config.seed)
+            if is_back(custom_seed):
+                return
+            config.seed = custom_seed
+            return
+        config.seed = choice
+
+    def _configure_delay(self, config: QuickStartConfig) -> None:
+        """配置观战延迟."""
+        import questionary
+
+        choice = Prompt.select(
+            "选择观战延迟:",
+            choices=[
+                questionary.Choice("0.1 秒", value="0.1"),
+                questionary.Choice("0.3 秒", value="0.3"),
+                questionary.Choice("0.5 秒", value="0.5"),
+                questionary.Choice("1.0 秒", value="1.0"),
+                questionary.Choice("自定义输入", value="custom"),
+            ],
+        )
+        if is_back(choice):
+            return
+        if choice == "custom":
+            custom_delay = Prompt.number("输入观战延迟(秒):", default=config.delay)
+            if is_back(custom_delay):
+                return
+            config.delay = custom_delay
+            return
+        config.delay = choice
+
+    def _execute_demo(self, config: QuickStartConfig) -> None:
+        """执行 demo."""
+        cmd = config.build_command()
 
         console.print()
         console.print(Panel(f"[dim]{cmd}[/dim]", title="执行命令", border_style="green"))
-        console.print("[dim]💡 提示: 观战中按 Ctrl+C 可随时退出返回菜单[/dim]")
+        if config.watch:
+            console.print("[dim]💡 提示: 观战中按 Ctrl+C 可随时退出返回菜单[/dim]")
 
         try:
-            if watch:
+            if config.watch:
                 # 观战模式：不捕获输出，让 Rich 界面正常显示
                 result = subprocess.run(cmd, shell=True)
                 # 130 是用户按 Ctrl+C 中断的标准退出码
