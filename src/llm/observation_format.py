@@ -448,9 +448,37 @@ def _calculate_hand_changes(
 
 
 def _river_entries_to_actions(river_entries: tuple[RiverEntry, ...]) -> list[str]:
-    """将牌河条目转换为动作描述."""
+    """将牌河条目转换为动作描述（通用函数，不含视角过滤）."""
     actions = []
     for entry in river_entries:
+        seat_name = f"家{entry.seat}"
+        tile_str = entry.tile.to_code()
+        if entry.is_riichi:
+            actions.append(f"{seat_name} 打{tile_str}立直")
+        elif entry.is_tsumogiri:
+            actions.append(f"{seat_name} 摸切{tile_str}")
+        else:
+            actions.append(f"{seat_name} 打{tile_str}")
+    return actions
+
+
+def _get_others_river_actions(
+    river_entries: tuple[RiverEntry, ...],
+    my_seat: int,
+) -> list[str]:
+    """将牌河条目转换为其他家的动作描述（过滤自己）.
+
+    Args:
+        river_entries: 牌河新增条目
+        my_seat: 当前座位号
+
+    Returns:
+        其他家的动作描述列表
+    """
+    actions = []
+    for entry in river_entries:
+        if entry.seat == my_seat:
+            continue  # 过滤自己打的牌
         seat_name = f"家{entry.seat}"
         tile_str = entry.tile.to_code()
         if entry.is_riichi:
@@ -501,11 +529,11 @@ def build_delta_observation(
         for m in curr_obs.melds
     ]
 
-    # 对手动作（从牌河新增条目推断）
+    # 其他家动作（从牌河新增条目推断，过滤自己）
     if curr_obs.river and prev_obs.river:
         new_river = curr_obs.river[len(prev_obs.river):]
         if new_river:
-            delta["others_actions"] = _river_entries_to_actions(new_river)
+            delta["others_actions"] = _get_others_river_actions(new_river, curr_obs.seat)
 
     # 宝牌变化
     if len(curr_obs.dora_indicators) > len(prev_obs.dora_indicators):
