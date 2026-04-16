@@ -8,8 +8,14 @@ from rich.console import Console
 from rich.panel import Panel
 
 from ui.interactive.framework import BACK, MenuPage, Page, Prompt, is_back
-from ui.interactive.session_runner import run_llm_session
+from ui.interactive.match_flow import run_match_session_flow
+from ui.interactive.match_session import (
+    MatchSessionConfig,
+    create_session_stem,
+    load_runtime_options,
+)
 from ui.interactive.utils import KERNEL_CONFIG_PATH, list_profiles
+from llm.config import MatchEndCondition
 
 console = Console()
 
@@ -68,6 +74,18 @@ class QuickStartConfig:
         return "\n".join(lines)
 
 
+@dataclass(frozen=True, slots=True)
+class MatchLaunchPlan:
+    """正式对局启动计划。"""
+
+    players: list[dict[str, object]]
+    seed: int
+    max_hands: int
+    watch_enabled: bool
+    watch_delay: float
+    dry_run: bool
+
+
 class SelectPlayerPage(MenuPage):
     """选择玩家页."""
 
@@ -116,13 +134,13 @@ class MatchSetupPage(Page):
             return BACK
 
         # 构建并执行命令
-        cli_args = self._build_cli_args(selected, settings)
-        if is_back(cli_args):
+        launch_plan = self._build_launch_plan(selected, settings)
+        if is_back(launch_plan):
             return BACK
-        if cli_args is None:
+        if launch_plan is None:
             return None
 
-        self._execute_command(cli_args, settings["watch"])
+        self._execute_match(launch_plan)
 
     def _configure_settings(self) -> dict | object:
         """配置对局设置."""
@@ -152,30 +170,14 @@ class MatchSetupPage(Page):
             "delay": delay,
         }
 
-    def _build_cli_args(self, selected: list[str], settings: dict) -> list[str] | object | None:
-        """构建 ``llm.cli`` 参数。"""
+    def _build_launch_plan(self, selected: list[str], settings: dict) -> MatchLaunchPlan | object | None:
+        """构建正式对局启动计划。"""
         player_str = ",".join(selected)
         max_hands = settings.get('max_hands', 8)
-        cli_args = [
-            "--config",
-            str(KERNEL_CONFIG_PATH),
-            "--players",
-            player_str,
-            "--seed",
-            settings["seed"],
-            "--max-hands",
-            str(max_hands),
-        ]
-
-        if settings["watch"]:
-            cli_args.extend(["--watch", "--watch-delay", settings["delay"]])
-
-        # 添加日志参数（使用空字符串自动生成时间戳文件名）
-        cli_args.extend(["--log-session", ""])
+        dry_run = all(player_id == "default" for player_id in selected)
 
         # 检查是否需要 API Key
-        has_llm = any(s != "default" for s in selected)
-        if has_llm and not KERNEL_CONFIG_PATH.exists():
+        if not dry_run and not KERNEL_CONFIG_PATH.exists():
             console.print()
             console.print("[yellow]⚠️  使用了 LLM 玩家，但未找到内核配置[/yellow]")
             console.print(f"  请创建 {KERNEL_CONFIG_PATH}")
@@ -185,13 +187,7 @@ class MatchSetupPage(Page):
             if is_back(use_dry):
                 return BACK
             if use_dry:
-                cli_args = [
-                    "--dry-run",
-                    "--seed",
-                    settings["seed"],
-                ]
-                if settings["watch"]:
-                    cli_args.extend(["--watch", "--watch-delay", settings["delay"]])
+                dry_run = True
             else:
                 return None
 
@@ -218,23 +214,47 @@ class MatchSetupPage(Page):
         if not confirmed:
             return None
 
-        return cli_args
+        return MatchLaunchPlan(
+            players=[
+                {"id": player_id, "seat": seat}
+                for seat, player_id in enumerate(selected)
+            ],
+            seed=int(settings["seed"]),
+            max_hands=int(max_hands),
+            watch_enabled=bool(settings["watch"]),
+            watch_delay=float(settings["delay"]) if settings["watch"] else 0.0,
+            dry_run=dry_run,
+        )
 
-    def _execute_command(self, cli_args: list[str], watch: bool) -> None:
-        """执行对局会话。"""
-        console.print()
-        console.print("[bold green]🚀 启动对局...[/bold green]")
-        console.print()
+    def _execute_match(self, launch_plan: MatchLaunchPlan) -> None:
+        """启动正式对局会话流。"""
+        session_config = self._build_session_config(launch_plan)
+        run_match_session_flow(session_config)
 
-        result = run_llm_session(cli_args)
-        if result.returncode != 0:
-            console.print(f"\n[red]✗ 对局执行失败 (返回码: {result.returncode})[/red]")
-            console.print("[dim]请检查配置和依赖是否正确安装[/dim]")
-            Prompt.press_any_key()
-            return
-        console.print("\n[dim]✓ 对局已结束[/dim]")
-        console.print()
-        Prompt.press_any_key("终局牌桌已保留，按返回回到菜单...")
+    def _build_session_config(self, launch_plan: MatchLaunchPlan) -> MatchSessionConfig:
+        """构建后台对局会话配置。"""
+        runtime_options = _runtime_options()
+        request_delay = 0.0 if launch_plan.dry_run else float(runtime_options["request_delay_seconds"])
+
+        return MatchSessionConfig(
+            label="正式对局",
+            config_path=KERNEL_CONFIG_PATH,
+            seed=launch_plan.seed,
+            match_end=MatchEndCondition(
+                type="hands",
+                value=launch_plan.max_hands,
+                allow_negative=False,
+            ),
+            dry_run=launch_plan.dry_run,
+            watch_enabled=launch_plan.watch_enabled,
+            watch_delay=launch_plan.watch_delay,
+            request_delay_seconds=request_delay,
+            players=launch_plan.players,
+            max_history_rounds=int(runtime_options["max_history_rounds"]),
+            clear_history_per_hand=bool(runtime_options["clear_history_per_hand"]),
+            enable_conversation_logging=bool(runtime_options["enable_conversation_logging"]),
+            session_stem=create_session_stem("match"),
+        )
 
 
 def run() -> None:
@@ -355,8 +375,6 @@ class QuickStartPage(Page):
 
     def _execute_demo(self, config: QuickStartConfig) -> bool:
         """执行 demo；成功结束后返回 True。"""
-        cli_args = config.build_argv()
-
         console.print()
         console.print(
             Panel(
@@ -367,19 +385,42 @@ class QuickStartPage(Page):
             )
         )
 
-        result = run_llm_session(cli_args)
-        if result.returncode != 0:
-            console.print(f"\n[red]✗ 对局执行失败 (返回码: {result.returncode})[/red]")
-            Prompt.press_any_key()
-            self._clear_screen()
-            return False
-        console.print("\n[dim]✓ 对局已结束[/dim]")
-        console.print()
-        Prompt.press_any_key("终局牌桌已保留，按返回回到菜单...")
+        session_config = self._build_demo_session_config(config)
+        run_match_session_flow(session_config)
         self._clear_screen()
         return True
+
+    def _build_demo_session_config(self, config: QuickStartConfig) -> MatchSessionConfig:
+        """构建 demo 会话配置。"""
+        watch_enabled = bool(config.watch)
+        watch_delay = float(config.delay) if watch_enabled else 0.0
+        return MatchSessionConfig(
+            label="demo演示",
+            config_path=KERNEL_CONFIG_PATH,
+            seed=int(config.seed),
+            match_end=MatchEndCondition(type="hands", value=1, allow_negative=False),
+            dry_run=True,
+            watch_enabled=watch_enabled,
+            watch_delay=watch_delay,
+            request_delay_seconds=0.0,
+            players=None,
+            session_stem=create_session_stem("demo"),
+        )
 
 
 def quick_start() -> None:
     """快速开始."""
     QuickStartPage().run()
+
+
+def _runtime_options() -> dict[str, object]:
+    """读取交互式对局运行参数；缺省时退回安全默认值。"""
+    defaults: dict[str, object] = {
+        "request_delay_seconds": 0.5,
+        "max_history_rounds": 10,
+        "clear_history_per_hand": False,
+        "enable_conversation_logging": False,
+    }
+    if not KERNEL_CONFIG_PATH.exists():
+        return defaults
+    return load_runtime_options(KERNEL_CONFIG_PATH)

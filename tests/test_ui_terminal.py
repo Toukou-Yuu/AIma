@@ -884,13 +884,18 @@ class TestQuickStartMenu:
         """开始演示不再依赖不存在的页面方法。"""
         from ui.interactive.framework import Prompt
         from ui.interactive.match_setup import QuickStartConfig, QuickStartPage
-        from ui.interactive.session_runner import SessionRunResult
 
         page = QuickStartPage()
         config = QuickStartConfig(seed="42", watch=True, delay="0.3")
 
-        monkeypatch.setattr("ui.interactive.match_setup.run_llm_session", lambda argv: SessionRunResult(0))
+        captured: dict[str, object] = {}
+
+        monkeypatch.setattr(
+            "ui.interactive.match_setup.run_match_session_flow",
+            lambda session_config: captured.setdefault("session_config", session_config),
+        )
         monkeypatch.setattr(Prompt, "press_any_key", lambda message="": None)
         monkeypatch.setattr(QuickStartPage, "_clear_screen", lambda self: None)
 
         assert page._execute_demo(config) is True
+        assert captured["session_config"].label == "demo演示"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -179,3 +180,208 @@ def test_replay_detail_run_uses_session_runner(monkeypatch, tmp_path: Path) -> N
         "0.7",
     ]
     assert captured["kwargs"] == {}
+
+
+def test_match_launch_plan_preserves_dry_run_fallback(monkeypatch) -> None:
+    """LLM 配置缺失时切到 dry-run，会进入后台会话配置。"""
+    from pathlib import Path
+
+    from ui.interactive.match_setup import MatchLaunchPlan, MatchSetupPage
+
+    monkeypatch.setattr("ui.interactive.match_setup.KERNEL_CONFIG_PATH", Path("/tmp/non-existent-aima-kernel.yaml"))
+    monkeypatch.setattr(
+        "ui.interactive.match_setup.Prompt.confirm",
+        lambda message, default=True: True,
+    )
+
+    page = MatchSetupPage()
+    plan = page._build_launch_plan(
+        ["ichihime", "default", "default", "default"],
+        {
+            "seed": "7",
+            "max_hands": "4",
+            "watch": True,
+            "delay": "0.4",
+        },
+    )
+
+    assert isinstance(plan, MatchLaunchPlan)
+    assert plan.dry_run is True
+
+
+def test_textual_app_starts_in_home_screen() -> None:
+    """默认启动入口会进入新的 Textual 首页。"""
+    from ui.interactive.tui_app import AImaTextualApp
+
+    async def _scenario() -> None:
+        app = AImaTextualApp()
+        async with app.run_test(headless=True, size=(120, 40)) as pilot:
+            await pilot.pause()
+            assert type(app.screen).__name__ == "HomeScreen"
+
+    asyncio.run(_scenario())
+
+
+def test_textual_app_quick_mode_starts_in_quick_screen() -> None:
+    """quick 参数直接进入 demo 配置 screen。"""
+    from ui.interactive.tui_app import AImaTextualApp
+
+    async def _scenario() -> None:
+        app = AImaTextualApp(start_mode="quick")
+        async with app.run_test(headless=True, size=(120, 40)) as pilot:
+            await pilot.pause()
+            assert type(app.screen).__name__ == "QuickStartScreen"
+
+    asyncio.run(_scenario())
+
+
+def test_textual_quick_start_opens_live_match_screen() -> None:
+    """点击开始演示后，新的 TUI 会进入自动刷新的观战 screen。"""
+    from ui.interactive.tui_app import AImaTextualApp
+
+    async def _scenario() -> None:
+        app = AImaTextualApp(start_mode="quick")
+        async with app.run_test(headless=True, size=(140, 45)) as pilot:
+            await pilot.pause()
+            await pilot.click("#quick-start")
+            await pilot.pause(1.0)
+            assert type(app.screen).__name__ == "LiveMatchScreen"
+
+    asyncio.run(_scenario())
+
+
+def test_textual_quick_start_reaches_settlement_screen() -> None:
+    """demo 对局结束后会进入结算 screen，而不是直接回首页。"""
+    from ui.interactive.tui_app import AImaTextualApp
+
+    async def _scenario() -> None:
+        app = AImaTextualApp(start_mode="quick")
+        async with app.run_test(headless=True, size=(140, 45)) as pilot:
+            await pilot.pause()
+            app.screen.query_one("#quick-delay").value = "0.0"
+            await pilot.click("#quick-start")
+            for _ in range(30):
+                await pilot.pause(0.3)
+                if type(app.screen).__name__ == "MatchSettlementScreen":
+                    break
+            assert type(app.screen).__name__ == "MatchSettlementScreen"
+
+    asyncio.run(_scenario())
+
+
+def test_textual_quick_home_returns_without_hanging() -> None:
+    """demo 配置页返回首页不会再因 screen 自己 pop 自己而卡住。"""
+    from ui.interactive.tui_app import AImaTextualApp
+
+    async def _scenario() -> None:
+        app = AImaTextualApp(start_mode="quick")
+        async with app.run_test(headless=True, size=(140, 45)) as pilot:
+            await pilot.pause()
+            await pilot.click("#quick-home")
+            await pilot.pause(0.5)
+            assert type(app.screen).__name__ == "HomeScreen"
+
+    asyncio.run(_scenario())
+
+
+def test_textual_profile_home_returns_without_hanging() -> None:
+    """角色管理返回首页不会卡在错误的 pop/switch 路径上。"""
+    from ui.interactive.tui_app import AImaTextualApp
+
+    async def _scenario() -> None:
+        app = AImaTextualApp()
+        async with app.run_test(headless=True, size=(140, 45)) as pilot:
+            await pilot.pause()
+            app.screen.query_one("#home-actions").highlighted = 2
+            await pilot.click("#action-open")
+            await pilot.pause()
+            await pilot.click("#profile-home")
+            await pilot.pause(0.5)
+            assert type(app.screen).__name__ == "HomeScreen"
+
+    asyncio.run(_scenario())
+
+
+def test_textual_profile_browser_has_no_redundant_detail_button() -> None:
+    """角色管理页不再显示冗余的查看详情按钮。"""
+    from ui.interactive.tui_app import AImaTextualApp
+
+    async def _scenario() -> None:
+        app = AImaTextualApp()
+        async with app.run_test(headless=True, size=(140, 45)) as pilot:
+            await pilot.pause()
+            app.screen.query_one("#home-actions").highlighted = 2
+            await pilot.click("#action-open")
+            await pilot.pause()
+            assert type(app.screen).__name__ == "ProfileBrowserScreen"
+            assert list(app.screen.query("#profile-view")) == []
+
+    asyncio.run(_scenario())
+
+
+def test_textual_match_setup_player_picker_updates_button_label() -> None:
+    """开始对局页的角色选择走自定义 picker，而不是空白下拉框。"""
+    from ui.interactive.tui_app import AImaTextualApp
+
+    async def _scenario() -> None:
+        app = AImaTextualApp()
+        async with app.run_test(headless=True, size=(140, 45)) as pilot:
+            await pilot.pause()
+            app.screen.query_one("#home-actions").highlighted = 1
+            await pilot.click("#action-open")
+            await pilot.pause()
+            await pilot.click("#match-seat-0")
+            await pilot.pause()
+            await pilot.click("#picker-confirm")
+            await pilot.pause()
+            assert "默认 AI" in str(app.screen.query_one("#match-seat-0").label)
+
+    asyncio.run(_scenario())
+
+
+def test_textual_create_profile_template_picker_updates_summary() -> None:
+    """创建角色的人格模板选择不再依赖空白 Select。"""
+    from ui.interactive.tui_app import AImaTextualApp
+
+    async def _scenario() -> None:
+        app = AImaTextualApp()
+        async with app.run_test(headless=True, size=(140, 45)) as pilot:
+            await pilot.pause()
+            app.screen.query_one("#home-actions").highlighted = 2
+            await pilot.click("#action-open")
+            await pilot.pause()
+            await pilot.click("#profile-create")
+            await pilot.pause()
+            await pilot.click("#profile-template")
+            await pilot.pause()
+            picker = app.screen.query_one("#picker-options")
+            picker.highlighted = 0
+            await pilot.click("#picker-confirm")
+            await pilot.pause()
+            assert "进攻型" in str(app.screen.query_one("#profile-template").label)
+
+    asyncio.run(_scenario())
+
+
+def test_textual_add_ascii_profile_picker_updates_target() -> None:
+    """添加 ASCII 时可切换目标角色，而不是卡在默认第一项。"""
+    from ui.interactive.tui_app import AImaTextualApp
+
+    async def _scenario() -> None:
+        app = AImaTextualApp()
+        async with app.run_test(headless=True, size=(140, 45)) as pilot:
+            await pilot.pause()
+            app.screen.query_one("#home-actions").highlighted = 2
+            await pilot.click("#action-open")
+            await pilot.pause()
+            await pilot.click("#profile-ascii")
+            await pilot.pause()
+            await pilot.click("#ascii-profile")
+            await pilot.pause()
+            picker = app.screen.query_one("#picker-options")
+            picker.highlighted = 2
+            await pilot.click("#picker-confirm")
+            await pilot.pause()
+            assert "卡维" in str(app.screen.query_one("#ascii-profile").label)
+
+    asyncio.run(_scenario())
