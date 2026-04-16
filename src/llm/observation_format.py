@@ -63,11 +63,11 @@ def _meld_to_cn(meld: Any) -> str:
     """将副露转换为中文."""
     tiles_str = " ".join(tile_to_cn(t) for t in meld.tiles)
     kind_cn = {
-        "chii": "吃",
+        "chi": "吃",
         "pon": "碰",
-        "daiminkan": "明杠",
+        "daiminkan": "大明杠",
         "ankan": "暗杠",
-        "shouminkan": "加杠",
+        "shankuminkan": "加杠",
     }
     kind_str = kind_cn.get(meld.kind.value, meld.kind.value)
 
@@ -107,7 +107,7 @@ def _calculate_wind(seat: int, dealer_seat: int) -> str:
     return winds[(seat - dealer_seat) % 4]
 
 
-def _action_to_cn(action: LegalAction, my_seat: int) -> str:
+def action_to_natural_text(action: LegalAction, my_seat: int) -> str:
     """将合法动作转换为中文描述."""
     from kernel.engine.actions import ActionKind
 
@@ -125,7 +125,8 @@ def _action_to_cn(action: LegalAction, my_seat: int) -> str:
         return "摸牌"
 
     if kind == ActionKind.RON:
-        tile_cn = tile_to_cn(action.win_tile) if action.win_tile else ""
+        win_tile = getattr(action, "win_tile", None) or getattr(action, "tile", None)
+        tile_cn = tile_to_cn(win_tile) if win_tile else ""
         return f"荣和{tile_cn}"
 
     if kind == ActionKind.TSUMO:
@@ -135,10 +136,10 @@ def _action_to_cn(action: LegalAction, my_seat: int) -> str:
         return _meld_to_cn(action.meld)
 
     if kind == ActionKind.ANKAN and action.meld:
-        return f"暗杠 {_meld_to_cn(action.meld)}"
+        return _meld_to_cn(action.meld)
 
-    if kind == ActionKind.SHOUMINKAN and action.meld:
-        return f"加杠 {_meld_to_cn(action.meld)}"
+    if kind == ActionKind.SHANKUMINKAN and action.meld:
+        return _meld_to_cn(action.meld)
 
     if kind == ActionKind.RIICHI:
         return "立直宣言"
@@ -208,7 +209,7 @@ def build_natural_prompt(obs: Observation, legal: tuple[LegalAction, ...]) -> st
 
     # 10. 合法动作
     lines.append(f"\n【可选动作】")
-    action_strs = [_action_to_cn(a, obs.seat) for a in legal]
+    action_strs = [action_to_natural_text(a, obs.seat) for a in legal]
     lines.append(", ".join(action_strs))
 
     # 11. 提示输出格式
@@ -237,14 +238,6 @@ def _river_entries(river: tuple[RiverEntry, ...]) -> list[dict[str, Any]]:
         }
         for e in river
     ]
-
-
-def _calculate_wind(seat: int, dealer_seat: int) -> str:
-    """根据座位和庄家计算风位。"""
-    winds = ["東", "南", "西", "北"]
-    # (seat - dealer_seat) % 4 得到相对风位
-    return winds[(seat - dealer_seat) % 4]
-
 
 def build_compressed_observation(
     obs: Observation,

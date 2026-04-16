@@ -183,6 +183,9 @@ def _merge_config(
         "watch_delay": yaml_cfg.get("watch", {}).get("delay", 0.3),
         "max_history_rounds": yaml_cfg.get("llm", {}).get("max_history_rounds", 10),
         "clear_history_per_hand": yaml_cfg.get("llm", {}).get("clear_history_per_hand", False),
+        "history_budget": yaml_cfg.get("llm", {}).get("history_budget", yaml_cfg.get("llm", {}).get("max_history_rounds", 10)),
+        "session_scope": yaml_cfg.get("llm", {}).get("session_scope", "per_hand"),
+        "compression_level": yaml_cfg.get("llm", {}).get("compression_level", "collapse"),
         "session_audit": yaml_cfg.get("logging", {}).get("session_audit", False),
         "show_reason": yaml_cfg.get("watch", {}).get("show_reason", True),
         "players": yaml_cfg.get("match", {}).get("players") or yaml_cfg.get("players"),
@@ -206,6 +209,14 @@ def _merge_config(
     # 特殊处理：若 log_session 非 null，自动启用 session_audit
     if result.log_session is not None:
         result.session_audit = True
+
+    # 旧参数兼容：未显式设置 history_budget 时，沿用 max_history_rounds
+    if getattr(cli_args, "history_budget", None) is None and getattr(cli_args, "max_history_rounds", None) is not None:
+        result.history_budget = result.max_history_rounds
+
+    # 旧参数兼容：仅在未显式设置 session_scope 时生效
+    if getattr(cli_args, "session_scope", None) is None and result.clear_history_per_hand:
+        result.session_scope = "per_hand"
 
     # 特殊处理 replay：无 YAML 默认值，仅 CLI 显式设置时才有
     result.replay = getattr(cli_args, "replay", None)
@@ -279,6 +290,9 @@ def _cmd_watch_dry_run(
     dry_run: bool = True,
     max_history_rounds: int = 10,
     clear_history_per_hand: bool = False,
+    history_budget: int | None = None,
+    session_scope: str = "per_hand",
+    compression_level: str = "collapse",
     show_reason: bool = True,
     llm_override: dict[str, Any] | None = None,
     players: list[dict[str, Any]] | None = None,
@@ -381,6 +395,9 @@ def _cmd_watch_dry_run(
             on_step_callback=callback.on_step,
             max_history_rounds=max_history_rounds,
             clear_history_on_new_hand=clear_history_per_hand,
+            history_budget=llm_cfg.history_budget if llm_cfg else history_budget,
+            session_scope=llm_cfg.session_scope if llm_cfg else session_scope,
+            compression_level=llm_cfg.compression_level if llm_cfg else compression_level,
             players=players,
             system_prompt=llm_cfg.system_prompt if llm_cfg else None,
             prompt_format=llm_cfg.prompt_format if llm_cfg else "natural",
@@ -505,6 +522,25 @@ def main(argv: list[str] | None = None) -> int:
         help="每局开始时清空该席的历史消息（默认跨局保留）",
     )
     p.add_argument(
+        "--history-budget",
+        type=int,
+        default=None,
+        metavar="N",
+        help="发送给模型的历史预算（默认使用 llm.history_budget 或 max_history_rounds）",
+    )
+    p.add_argument(
+        "--session-scope",
+        choices=("stateless", "per_hand", "per_match"),
+        default=None,
+        help="模型会话边界：不保留/按局保留/按整场保留（默认 per_hand）",
+    )
+    p.add_argument(
+        "--compression-level",
+        choices=("none", "snip", "micro", "collapse"),
+        default=None,
+        help="历史压缩级别（默认 collapse）",
+    )
+    p.add_argument(
         "--players",
         type=str,
         default=None,
@@ -554,6 +590,9 @@ def main(argv: list[str] | None = None) -> int:
                 dry_run=cfg.dry_run,
                 max_history_rounds=cfg.max_history_rounds,
                 clear_history_per_hand=cfg.clear_history_per_hand,
+                history_budget=cfg.history_budget,
+                session_scope=cfg.session_scope,
+                compression_level=cfg.compression_level,
                 show_reason=cfg.show_reason,
                 llm_override=match_llm_override,
                 players=cfg.players,
@@ -633,6 +672,9 @@ def main(argv: list[str] | None = None) -> int:
                 request_delay_seconds=0.0 if cfg.dry_run else cfg.request_delay,
                 max_history_rounds=cfg.max_history_rounds,
                 clear_history_on_new_hand=cfg.clear_history_per_hand,
+                history_budget=cfg.history_budget,
+                session_scope=llm_cfg.session_scope if llm_cfg else cfg.session_scope,
+                compression_level=llm_cfg.compression_level if llm_cfg else cfg.compression_level,
                 players=cfg.players,
                 system_prompt=llm_cfg.system_prompt if llm_cfg else None,
                 prompt_format=llm_cfg.prompt_format if llm_cfg else "natural",
@@ -650,6 +692,9 @@ def main(argv: list[str] | None = None) -> int:
             request_delay_seconds=0.0 if cfg.dry_run else cfg.request_delay,
             max_history_rounds=cfg.max_history_rounds,
             clear_history_on_new_hand=cfg.clear_history_per_hand,
+            history_budget=cfg.history_budget,
+            session_scope=llm_cfg.session_scope if llm_cfg else cfg.session_scope,
+            compression_level=llm_cfg.compression_level if llm_cfg else cfg.compression_level,
             players=cfg.players,
             system_prompt=llm_cfg.system_prompt if llm_cfg else None,
             prompt_format=llm_cfg.prompt_format if llm_cfg else "natural",

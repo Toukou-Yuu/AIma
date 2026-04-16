@@ -16,8 +16,9 @@
 src/llm/agent/
 ├── __init__.py        # PlayerAgent（协调类，无状态纯函数）
 ├── core.py            # AgentCore（核心决策逻辑）
-├── session.py         # SessionManager（会话管理）
-├── prompt.py          # PromptBuilder（Prompt 构建）
+├── session.py         # ModelSessionPolicy + ConversationLogNamer
+├── prompt.py          # PromptProjector（上下文投影）
+├── context_store.py   # ContextStore（结构化历史 + 压缩）
 ├── decision_parser.py # DecisionParser（决策解析）
 ├── persistence.py     # PersistenceManager（持久化管理）
 ├── match_context.py   # MatchContext（跨局状态管理）← Context Object 模式
@@ -43,8 +44,9 @@ src/llm/agent/
 |------|------|------|
 | `PlayerAgent` | `__init__.py` | 协调类，组合所有组件，提供公共接口（无状态） |
 | `AgentCore` | `core.py` | 核心决策逻辑，判断唯一动作、dry-run、LLM调用、解析响应 |
-| `SessionManager` | `session.py` | 会话管理，生成唯一 session_token，构建 session_id |
-| `PromptBuilder` | `prompt.py` | Prompt 构建，整合 profile/memory/stats，选择帧类型 |
+| `ModelSessionPolicy` | `session.py` | 模型会话边界（stateless/per_hand/per_match） |
+| `PromptProjector` | `prompt.py` | Prompt 投影，整合 profile/memory/stats/历史视图 |
+| `ContextStore` | `context_store.py` | 结构化历史存储与预算驱动压缩 |
 | `DecisionParser` | `decision_parser.py` | 决策解析，JSON解析、action匹配、fallback处理 |
 | `PersistenceManager` | `persistence.py` | 持久化管理，load/save profile/memory/stats |
 | `MatchContext` | `match_context.py` | 跨局状态管理（Context Object），创建 EpisodeContext（Factory） |
@@ -57,8 +59,8 @@ src/llm/agent/
 class PlayerAgent:
     def __init__(...):
         self._persistence = PersistenceManager(player_id)  # 持久化
-        self._session = SessionManager(player_id)          # 会话
-        self._prompt_builder = PromptBuilder(...)          # Prompt
+        self._session_policy = ModelSessionPolicy(...)     # 会话策略
+        self._prompt_projector = PromptProjector(...)      # Prompt 投影
         self._core = AgentCore(...)                        # 决策核心
         
         # 加载长期状态
@@ -78,10 +80,10 @@ def decide(...):
 
 ## 会话隔离机制
 
-`SessionManager` 为每个 `PlayerAgent` 实例生成唯一的 `_session_token`（UUID前8位）：
+`ModelSessionPolicy` 为每个 `PlayerAgent` 实例生成唯一的 `_session_token`（UUID前8位）：
 
 ```python
-class SessionManager:
+class ModelSessionPolicy:
     def __init__(self, player_id: str | None = None):
         self._session_token = str(uuid4())[:8]
     
@@ -155,11 +157,11 @@ acts = legal_actions(state, seat)
 if len(acts) == 1 and acts[0].kind in (PASS_CALL, DRAW):
     return Decision(acts[0], None, history)  # 跳过 LLM
 
-# 3. 构建消息（PromptBuilder）
-messages = prompt_builder.build_messages(obs, acts, history_text, ...)
+# 3. 构建消息（PromptProjector）
+messages = prompt_projector.build_messages(...)
 
-# 4. 调用 LLM（SessionManager）
-session_id = session_manager.build_session_id(seat)
+# 4. 调用 LLM（ModelSessionPolicy）
+session_id = session_policy.build_session_id(seat, hand_number=ctx.hand_number)
 raw = client.complete(messages, session_id=session_id)
 
 # 5. 解析响应（DecisionParser）
@@ -223,10 +225,10 @@ seat_contexts[s] = match_contexts[s].create_episode()  # 继承累积的 match_s
 ## 组件级测试示例
 
 ```python
-# 测试 SessionManager
+# 测试 ModelSessionPolicy
 def test_session_manager_isolation():
-    s1 = SessionManager("player_001")
-    s2 = SessionManager("player_001")
+    s1 = ModelSessionPolicy("player_001")
+    s2 = ModelSessionPolicy("player_001")
     assert s1.build_session_id(0) != s2.build_session_id(0)
 
 # 测试 DecisionParser

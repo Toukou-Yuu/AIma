@@ -1,11 +1,4 @@
-"""AgentCore - 核心决策逻辑组件.
-
-职责：
-- 封装决策流程（唯一合法动作、dry-run、LLM 调用）
-- 协调 SessionManager、PromptBuilder、DecisionParser
-- 处理错误和 fallback 逻辑
-- 更新 EpisodeContext
-"""
+"""AgentCore - 核心决策逻辑组件."""
 
 from __future__ import annotations
 
@@ -17,18 +10,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from llm.agent.decision_parser import DecisionParser
-from llm.agent.session import SessionManager
+from llm.agent.context_store import PersistentState, TurnContext
+from llm.agent.session import ModelSessionPolicy
 
 if TYPE_CHECKING:
-    from collections import Counter
-
     from kernel.api.legal_actions import LegalAction
-    from kernel.api.observation import Observation
     from kernel.engine.state import GameState
-    from kernel.tiles.model import Tile
     from llm.agent.context import EpisodeContext
     from llm.agent.conversation_logger import ConversationLogger
-    from llm.agent.prompt import PromptBuilder
+    from llm.agent.prompt import PromptProjector
     from llm.agent.profile import PlayerProfile
     from llm.protocol import ChatMessage, CompletionClient
 
@@ -59,18 +49,18 @@ class AgentCore:
     def __init__(
         self,
         profile: "PlayerProfile",
-        use_compression: bool = True,
+        prompt_mode: str = "natural",
         use_delta: bool = True,
     ) -> None:
         """初始化核心决策组件.
 
         Args:
             profile: 玩家 profile（用于配置信息）
-            use_compression: 是否启用压缩格式
+            prompt_mode: Prompt 投影模式
             use_delta: 是否启用 delta 帧优化
         """
         self.profile = profile
-        self.use_compression = use_compression
+        self.prompt_mode = prompt_mode
         self.use_delta = use_delta
 
     def decide(
@@ -79,8 +69,9 @@ class AgentCore:
         seat: int,
         *,
         episode_ctx: "EpisodeContext",
-        prompt_builder: "PromptBuilder",
-        session_manager: "SessionManager",
+        prompt_projector: "PromptProjector",
+        session_policy: ModelSessionPolicy,
+        persistent_state: PersistentState,
         client: "CompletionClient | None",
         conversation_logger: "ConversationLogger | None" = None,
         dry_run: bool = False,
@@ -93,8 +84,9 @@ class AgentCore:
             state: 当前游戏状态
             seat: 玩家座位
             episode_ctx: 本局运行时上下文
-            prompt_builder: Prompt 构建器
-            session_manager: 会话管理器
+            prompt_projector: Prompt 投影器
+            session_policy: 会话策略
+            persistent_state: 当前长期状态快照
             client: LLM 客户端（dry_run 时可为 None）
             conversation_logger: 对话记录器（可选，用于调试）
             dry_run: 是否跳过 LLM 调用
@@ -132,37 +124,36 @@ class AgentCore:
 
         # 5. 判断帧类型
         should_send_keyframe = episode_ctx.should_send_keyframe()
-        frame_type = prompt_builder.get_frame_type(should_send_keyframe)
+        turn_context = TurnContext(
+            observation=obs,
+            legal_actions=acts,
+            turn_index=len(episode_ctx.decision_history) + 1,
+        )
+        frame_type = prompt_projector.get_frame_type(episode_ctx, should_send_keyframe)
 
-        # 6. 构建历史文本
-        history_text = None
-        if episode_ctx.decision_history:
-            if self.use_compression:
-                history_text = episode_ctx.format_history_summary()
-            else:
-                history_text = episode_ctx.format_history_for_prompt()
-
-        # 7. 构建消息
-        messages = prompt_builder.build_messages(
-            obs,
-            acts,
-            history_text,
-            episode_ctx.last_observation,
-            episode_ctx.last_hand,
-            should_send_keyframe,
+        # 6. 构建消息
+        messages = prompt_projector.build_messages(
+            turn_context,
+            persistent_state=persistent_state,
+            episode_ctx=episode_ctx,
+            should_send_keyframe=should_send_keyframe,
         )
 
-        # 8. 更新帧信息
+        # 7. 更新帧信息
         episode_ctx.update_frame(obs)
 
-        # 9. 调用 LLM
+        # 8. 调用 LLM
         if request_delay_seconds > 0:
             time.sleep(request_delay_seconds)
 
-        session_id = session_manager.build_session_id(seat)
+        session_id = session_policy.build_session_id(
+            seat,
+            hand_number=episode_ctx.hand_number,
+            match_id=episode_ctx.match_id,
+        )
         raw = client.complete(messages, session_id=session_id)
 
-        # 10. 记录对话（仅真实对局，用于调试）
+        # 9. 记录对话（仅真实对局，用于调试）
         if conversation_logger is not None and not dry_run:
             conversation_logger.log_turn(
                 turn_number=len(episode_ctx.decision_history) + 1,
@@ -188,7 +179,12 @@ class AgentCore:
         if la is None:
             log.warning("parse or match failed, fallback first legal")
             fallback = DecisionParser.fallback_action(acts)
-            episode_ctx.record_decision(Decision(fallback, None, []))
+            episode_ctx.record_decision(
+                Decision(fallback, None, []),
+                observation=obs,
+                legal_actions=acts,
+                phase=state.phase.value,
+            )
             return Decision(fallback, None, episode_ctx.decision_history)
 
         # 14. 记录审计日志
@@ -202,7 +198,12 @@ class AgentCore:
             )
 
         # 15. 更新历史
-        episode_ctx.record_decision(Decision(la, why, []))
+        episode_ctx.record_decision(
+            Decision(la, why, []),
+            observation=obs,
+            legal_actions=acts,
+            phase=state.phase.value,
+        )
 
         return Decision(la, why, episode_ctx.decision_history)
 

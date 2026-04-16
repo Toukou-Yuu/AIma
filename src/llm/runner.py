@@ -277,6 +277,9 @@ def run_llm_match(
     on_step_callback: Callable[[GameState, tuple[GameEvent, ...], str, str | None], None] | None = None,
     max_history_rounds: int = 10,
     clear_history_on_new_hand: bool = False,
+    history_budget: int | None = None,
+    session_scope: str = "per_hand",
+    compression_level: str = "collapse",
     players: list[dict[str, Any]] | None = None,
     system_prompt: str | None = None,
     prompt_format: str = "natural",  # natural 或 json
@@ -292,7 +295,10 @@ def run_llm_match(
       非 dry-run 时另写模型解析结果（CLI ``--log-session``）；
       遇 ``ron`` / ``tsumo`` / ``hand_over`` / ``match_end`` 等时另写 ``settlement …`` 行。
     - ``max_history_rounds``：每席 LLM 保留的最大对话轮数（默认 10，设为 0 则禁用历史）。
-    - ``clear_history_on_new_hand``：新一局开始时是否清空历史（默认 False，跨局保留）。
+    - ``clear_history_on_new_hand``：旧版兼容开关；为 True 时强制使用 ``per_hand`` 会话。
+    - ``history_budget``：历史预算（默认回退到 ``max_history_rounds``）。
+    - ``session_scope``：模型会话边界（``stateless``/``per_hand``/``per_match``）。
+    - ``compression_level``：历史压缩级别（``none``/``snip``/``micro``/``collapse``）。
     - ``simple_log_file``：若给定，按内核事件写简体中文可读对局（与 JSON 牌谱并行）。
     - ``request_delay_seconds``：每次调用 LLM 前休眠秒数（减压控/防连接被掐）；``dry_run`` 时不请求，不休眠。
     - ``on_step_callback``：可选回调，每步玩家决策后调用（用于实时 UI 观战）。
@@ -306,10 +312,9 @@ def run_llm_match(
     hand_number = 0
     win_counts: list[int] = [0, 0, 0, 0]
     hands_finished: list[int] = [0]
-    # prompt_format 转换为 use_compression
-    # natural → use_compression=False（自然语言格式）
-    # json → use_compression=True（JSON 格式）
-    use_compression = prompt_format == "json"
+    effective_history_budget = max_history_rounds if history_budget is None else history_budget
+    effective_session_scope = "per_hand" if clear_history_on_new_hand else session_scope
+
     # 每席 Agent 实例（支持 players 配置）
     if players:
         # 按配置创建指定玩家
@@ -320,24 +325,36 @@ def run_llm_match(
             seat_agents[seat] = PlayerAgent(
                 player_id=player_id,
                 max_history_rounds=max_history_rounds,
+                history_budget=effective_history_budget,
                 system_prompt=system_prompt,
-                use_compression=use_compression,
+                prompt_mode=prompt_format,
+                compression_level=compression_level,
+                session_scope=effective_session_scope,
+                use_delta=(prompt_format == "json"),
             )
         # 未指定的座位使用默认
         for s in range(4):
             if s not in seat_agents:
                 seat_agents[s] = PlayerAgent(
                     max_history_rounds=max_history_rounds,
+                    history_budget=effective_history_budget,
                     system_prompt=system_prompt,
-                    use_compression=use_compression,
+                    prompt_mode=prompt_format,
+                    compression_level=compression_level,
+                    session_scope=effective_session_scope,
+                    use_delta=(prompt_format == "json"),
                 )
     else:
         # 全部使用默认
         seat_agents: dict[int, PlayerAgent] = {
             s: PlayerAgent(
                 max_history_rounds=max_history_rounds,
+                history_budget=effective_history_budget,
                 system_prompt=system_prompt,
-                use_compression=use_compression,
+                prompt_mode=prompt_format,
+                compression_level=compression_level,
+                session_scope=effective_session_scope,
+                use_delta=(prompt_format == "json"),
             ) for s in range(4)
         }
     # MatchContext：跨局状态管理（Context Object 模式）

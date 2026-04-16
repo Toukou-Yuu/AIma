@@ -22,6 +22,9 @@ class LLMClientConfig:
     max_tokens: int = 1024
     system_prompt: str = ""  # 系统提示词
     prompt_format: Literal["natural", "json"] = "natural"  # Prompt 格式
+    session_scope: Literal["stateless", "per_hand", "per_match"] = "per_hand"
+    compression_level: Literal["none", "snip", "micro", "collapse"] = "collapse"
+    history_budget: int = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +140,18 @@ def load_llm_config(
     prompt_format = llm_cfg.get("prompt_format", "natural")
     if prompt_format not in ("natural", "json"):
         raise ValueError(f"prompt_format must be 'natural' or 'json', got {prompt_format!r}")
+    session_scope = llm_cfg.get("session_scope", "per_hand")
+    if session_scope not in ("stateless", "per_hand", "per_match"):
+        raise ValueError(
+            f"session_scope must be 'stateless', 'per_hand' or 'per_match', got {session_scope!r}"
+        )
+    compression_level = llm_cfg.get("compression_level", "collapse")
+    if compression_level not in ("none", "snip", "micro", "collapse"):
+        raise ValueError(
+            "compression_level must be 'none', 'snip', 'micro' or 'collapse', "
+            f"got {compression_level!r}"
+        )
+    history_budget = int(llm_cfg.get("history_budget", llm_cfg.get("max_history_rounds", 10)))
 
     # 座位特定配置覆盖（优先级：座位 > 全局）
     if seat is not None:
@@ -154,6 +169,12 @@ def load_llm_config(
             max_tokens = int(seat_cfg["max_tokens"])
         if seat_cfg.get("prompt_format"):
             prompt_format = seat_cfg["prompt_format"]
+        if seat_cfg.get("session_scope"):
+            session_scope = seat_cfg["session_scope"]
+        if seat_cfg.get("compression_level"):
+            compression_level = seat_cfg["compression_level"]
+        if "history_budget" in seat_cfg:
+            history_budget = int(seat_cfg["history_budget"])
 
     # 对局配置覆盖（优先级：对局 > 座位 > 全局）
     if override_cfg:
@@ -173,6 +194,24 @@ def load_llm_config(
             system_prompt = override_cfg["system_prompt"]
         if override_cfg.get("prompt_format"):
             prompt_format = override_cfg["prompt_format"]
+        if override_cfg.get("session_scope"):
+            session_scope = override_cfg["session_scope"]
+        if override_cfg.get("compression_level"):
+            compression_level = override_cfg["compression_level"]
+        if "history_budget" in override_cfg:
+            history_budget = int(override_cfg["history_budget"])
+
+    if prompt_format not in ("natural", "json"):
+        raise ValueError(f"prompt_format must be 'natural' or 'json', got {prompt_format!r}")
+    if session_scope not in ("stateless", "per_hand", "per_match"):
+        raise ValueError(
+            f"session_scope must be 'stateless', 'per_hand' or 'per_match', got {session_scope!r}"
+        )
+    if compression_level not in ("none", "snip", "micro", "collapse"):
+        raise ValueError(
+            "compression_level must be 'none', 'snip', 'micro' or 'collapse', "
+            f"got {compression_level!r}"
+        )
 
     # 检查 API Key
     if not api_key or api_key in ("your-api-key-here", "your-api-key"):
@@ -206,6 +245,9 @@ def load_llm_config(
         max_tokens=max_tokens,
         system_prompt=system_prompt,
         prompt_format=prompt_format,
+        session_scope=session_scope,
+        compression_level=compression_level,
+        history_budget=history_budget,
     )
 
 

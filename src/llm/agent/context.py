@@ -5,15 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from llm.agent.context_store import ContextEvent, ContextStore
 from llm.agent.memory import EpisodeStats
 from llm.agent.stats import MatchStats
 
 if TYPE_CHECKING:
     from collections import Counter
 
+    from kernel.api.legal_actions import LegalAction
     from kernel.api.observation import Observation
     from kernel.tiles.model import Tile
     from llm.agent import Decision
+    from llm.agent.context_store import CompressionLevel
     from llm.agent.conversation_logger import ConversationLogger
 
 
@@ -27,9 +30,12 @@ class EpisodeContext:
     """
 
     seat: int
+    match_id: str = ""
+    hand_number: int = 1
     episode_stats: EpisodeStats = field(default_factory=lambda: EpisodeStats("", 0))
     match_stats: MatchStats = field(default_factory=MatchStats)
     decision_history: list[Decision] = field(default_factory=list)
+    context_store: ContextStore = field(default_factory=ContextStore, repr=False)
 
     # Phase 2: 状态差异法 - 保存上一帧信息
     last_observation: Observation | None = field(default=None, repr=False)
@@ -85,9 +91,6 @@ class EpisodeContext:
         self.last_observation = observation
         self.last_hand = observation.hand.copy() if observation.hand else None
         self.frame_count += 1
-        """初始化后确保 episode_stats 的 seat 正确."""
-        if self.episode_stats.seat != self.seat:
-            self.episode_stats.seat = self.seat
 
     def record_win(self, win_tile: str) -> None:
         """记录和了."""
@@ -116,9 +119,56 @@ class EpisodeContext:
         self.episode_stats.riichi_count += 1
         self.match_stats.riichi_count += 1
 
-    def record_decision(self, decision: Decision) -> None:
-        """记录决策到历史."""
+    def record_decision(
+        self,
+        decision: Decision,
+        *,
+        observation: Observation | None = None,
+        legal_actions: tuple[LegalAction, ...] | None = None,
+        phase: str | None = None,
+    ) -> None:
+        """记录决策到历史与结构化事实仓库。"""
         self.decision_history.append(decision)
+        action = decision.action
+        obs_phase = phase or (observation.phase.value if observation is not None else "")
+        riichi_players: tuple[int, ...] = ()
+        scores: tuple[int, ...] = ()
+        last_discard: str | None = None
+        last_discard_seat: int | None = None
+        if observation is not None:
+            riichi_players = tuple(i for i, flag in enumerate(observation.riichi_state) if flag)
+            scores = tuple(observation.scores)
+            last_discard = observation.last_discard.to_code() if observation.last_discard else None
+            last_discard_seat = observation.last_discard_seat
+        self.context_store.append_event(
+            ContextEvent(
+                turn_index=len(self.decision_history),
+                phase=obs_phase,
+                action_kind=action.kind.value,
+                action_text=self._describe_action(action),
+                why=decision.why,
+                legal_action_count=len(legal_actions) if legal_actions is not None else 0,
+                riichi_players=riichi_players,
+                scores=scores,
+                last_discard=last_discard,
+                last_discard_seat=last_discard_seat,
+            )
+        )
+
+    def project_history(
+        self,
+        *,
+        detailed: bool,
+        history_budget: int,
+        compression_level: CompressionLevel,
+    ) -> str:
+        """根据预算和压缩策略构建历史文本。"""
+        projection = self.context_store.project_history(
+            detailed=detailed,
+            history_budget=history_budget,
+            compression_level=compression_level,
+        )
+        return projection.text
 
     def format_history_summary(self) -> str:
         """生成关键事件摘要（替代逐条记录）.
@@ -163,7 +213,7 @@ class EpisodeContext:
             m = action.meld
             tiles = "/".join(t.to_code() for t in m.tiles) if m.tiles else "?"
             called = m.called_tile.to_code() if m.called_tile else "?"
-            kind_map = {"chii": "吃", "pon": "碰", "daiminkan": "杠"}
+            kind_map = {"chi": "吃", "pon": "碰", "daiminkan": "杠"}
             cn = kind_map.get(m.kind.value, m.kind.value)
             return f"{cn}{tiles}"
 
@@ -212,7 +262,7 @@ class EpisodeContext:
             m = action.meld
             tiles = "/".join(t.to_code() for t in m.tiles) if m.tiles else "?"
             called = m.called_tile.to_code() if m.called_tile else "?"
-            kind_map = {"chii": "吃", "pon": "碰", "daiminkan": "杠"}
+            kind_map = {"chi": "吃", "pon": "碰", "daiminkan": "杠"}
             cn = kind_map.get(m.kind.value, m.kind.value)
             return f"{cn} {tiles} (叫{called})"
 

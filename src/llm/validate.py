@@ -7,7 +7,6 @@ from typing import Any
 
 from kernel.api.legal_actions import LegalAction
 from kernel.engine.actions import ActionKind
-from kernel.tiles.model import Tile
 from llm.constants import CN_TO_TILE_MAP
 from llm.wire import legal_action_to_wire
 
@@ -30,28 +29,29 @@ def parse_cn_action(action_str: str, legal: tuple[LegalAction, ...]) -> LegalAct
     - "自摸" -> tsumo
     - "吃..." -> open_meld
     - "碰..." -> pon
-    - "明杠..." -> daiminkan
+    - "大明杠..." -> daiminkan
     """
     action_str = action_str.strip()
+    normalized = _normalize_action_text(action_str)
 
     # 1. 过
-    if action_str == "过" or action_str == "跳过":
+    if normalized in {"过", "跳过"}:
         for la in legal:
             if la.kind == ActionKind.PASS_CALL:
                 return la
         return None
 
     # 2. 自摸
-    if action_str == "自摸":
+    if normalized == "自摸":
         for la in legal:
             if la.kind == ActionKind.TSUMO:
                 return la
         return None
 
     # 3. 打牌（含立直）
-    if action_str.startswith("打"):
+    if normalized.startswith("打"):
         # 提取牌名
-        match = re.match(r"打(.+?)(并立直)?$", action_str)
+        match = re.match(r"打(.+?)(并立直)?$", normalized)
         if match:
             tile_cn = match.group(1)
             declare_riichi = match.group(2) is not None
@@ -66,23 +66,68 @@ def parse_cn_action(action_str: str, legal: tuple[LegalAction, ...]) -> LegalAct
         return None
 
     # 4. 荣和
-    if action_str.startswith("荣和"):
-        tile_cn = action_str[2:].strip()
+    if normalized.startswith("荣和"):
+        tile_cn = normalized[2:].strip()
         tile_code = cn_to_tile_code(tile_cn) if tile_cn else None
         for la in legal:
             if la.kind == ActionKind.RON:
-                if tile_code and la.win_tile:
-                    if la.win_tile.to_code() == tile_code:
+                win_tile = getattr(la, "win_tile", None) or la.tile
+                if tile_code and win_tile:
+                    if win_tile.to_code() == tile_code:
                         return la
                 elif not tile_code:  # 没指定牌名，匹配任意荣和
                     return la
         return None
 
-    # 5. 吃/碰/杠 - 复杂情况，暂时不解析，回退到旧格式
-    if any(k in action_str for k in ["吃", "碰", "杠"]):
-        return None
+    # 5. 吃/碰/杠 - 与自然语言提示共用同一动作描述函数
+    for la in legal:
+        for alias in _natural_action_aliases(la):
+            if normalized == alias:
+                return la
 
     return None
+
+
+def _normalize_action_text(text: str) -> str:
+    """归一化模型输出动作文本，便于与提示词文案匹配。"""
+    compact = re.sub(r"\s+", "", text.strip())
+    compact = compact.replace("（", "(").replace("）", ")")
+    compact = re.sub(r"(?<!大)明杠", "大明杠", compact)
+    return compact
+
+
+def _natural_action_aliases(action: LegalAction) -> set[str]:
+    """为自然语言动作生成一组可接受别名。"""
+    from llm.observation_format import action_to_natural_text
+
+    base = action_to_natural_text(action, action.seat)
+    aliases = {_normalize_action_text(base)}
+    aliases.add(_normalize_action_text(base.replace("跳过", "过")))
+
+    if action.meld is not None:
+        meld = action.meld
+        kind_alias_map = {
+            "chi": "吃",
+            "pon": "碰",
+            "daiminkan": "大明杠",
+            "ankan": "暗杠",
+            "shankuminkan": "加杠",
+        }
+        kind_text = kind_alias_map.get(meld.kind.value, meld.kind.value)
+        tile_text = "".join(_tile_to_cn_text(t) for t in meld.tiles)
+        aliases.add(_normalize_action_text(f"{kind_text}{tile_text}"))
+        aliases.add(_normalize_action_text(f"{kind_text}{' '.join(_tile_to_cn_text(t) for t in meld.tiles)}"))
+        if meld.called_tile is not None:
+            aliases.add(_normalize_action_text(f"{kind_text}{tile_text}(叫{_tile_to_cn_text(meld.called_tile)})"))
+
+    return aliases
+
+
+def _tile_to_cn_text(tile) -> str:
+    """Tile -> 中文名。"""
+    from llm.observation_format import tile_to_cn
+
+    return tile_to_cn(tile)
 
 
 def explain_text_from_choice(d: dict[str, Any]) -> str | None:

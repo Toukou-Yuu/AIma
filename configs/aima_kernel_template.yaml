@@ -12,9 +12,25 @@ llm:
   provider: openai
 
   # Prompt 格式选择：natural（中文自然语言）或 json（结构化）
-  # natural：手牌按花色分组显示，动作用中文描述（"打三万"），LLM 更易理解
-  # json：结构化 JSON 格式，输出更精确，适合需要精确匹配的场景
+  # natural：始终使用自然语言观测，不再在局中切换为 delta JSON
+  # json：使用结构化观测，可配合 delta 帧减少上下文体积
   prompt_format: natural
+
+  # 模型会话边界：
+  # - stateless：每次请求都不带 session_id
+  # - per_hand：每局独立 session_id（默认，推荐）
+  # - per_match：整场对局复用同一个 session_id
+  session_scope: per_hand
+
+  # 历史压缩策略：
+  # - none：不压缩
+  # - snip：仅裁掉较早记录
+  # - micro：裁掉较早记录并压缩单条历史
+  # - collapse：折叠较早记录为摘要（默认）
+  compression_level: collapse
+
+  # 历史预算：控制发送给模型的历史窗口大小
+  history_budget: 10
 
   # API 配置
   api_key: "your-api-key-here"  # 必填：填入你的 API Key

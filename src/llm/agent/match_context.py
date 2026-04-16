@@ -16,10 +16,12 @@
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 from typing import TYPE_CHECKING
 
 from llm.agent.context import EpisodeContext
-from llm.agent.session import SessionManager
+from llm.agent.session import ConversationLogNamer
 from llm.agent.stats import MatchStats
 
 if TYPE_CHECKING:
@@ -54,7 +56,8 @@ class MatchContext:
         self._player_id = player_id
         self._match_stats = MatchStats()  # 私有，确保高内聚
         self._episodes: list[EpisodeContext] = []
-        self._session_manager = SessionManager(player_id)
+        self._match_id = str(uuid4())[:8]
+        self._log_namer = ConversationLogNamer(player_id)
         self._hand_number = 0  # 追踪当前局号
 
     @property
@@ -78,16 +81,19 @@ class MatchContext:
             EpisodeContext: 新的本局上下文
         """
         self._hand_number += 1  # 局号递增
-        ctx = EpisodeContext(self._seat, match_stats=self._match_stats.copy())
+        ctx = EpisodeContext(
+            self._seat,
+            match_id=self._match_id,
+            hand_number=self._hand_number,
+            match_stats=self._match_stats.copy(),
+        )
 
         # 如果启用对话记录且有 player_id，创建 ConversationLogger
         if enable_conversation_logging and self._player_id is not None:
             from llm.agent.conversation_logger import ConversationLogger
 
             # 每局独立 session_id（含局号）
-            session_id = self._session_manager.build_session_id(
-                self._seat, hand_number=self._hand_number
-            )
+            session_id = self._log_namer.build_log_session_id(self._seat, hand_number=self._hand_number)
             ctx.conversation_logger = ConversationLogger(
                 player_id=self._player_id,
                 session_id=session_id,
@@ -117,6 +123,8 @@ class MatchContext:
         """重置本场状态（新比赛开始）."""
         self._match_stats = MatchStats()
         self._episodes = []
+        self._match_id = str(uuid4())[:8]
+        self._hand_number = 0
 
     def get_stats(self) -> MatchStats:
         """获取本场统计（只读副本）.

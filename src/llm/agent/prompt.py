@@ -1,17 +1,11 @@
-"""PromptBuilder - Prompt 构建组件.
-
-职责：
-- 构建 system prompt（整合 profile/memory/stats）
-- 构建 user prompt（observation + legal_actions）
-- 选择帧类型（keyframe vs delta）
-- 注入历史文本
-"""
+"""PromptProjector - 显式上下文投影组件."""
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
+from llm.agent.context_store import PersistentState, TurnContext
 from llm.agent.prompt_builder import (
     build_compressed_decision_prompt,
     build_decision_prompt,
@@ -20,152 +14,123 @@ from llm.agent.prompt_builder import (
 )
 
 if TYPE_CHECKING:
-    from collections import Counter
-
-    from kernel.api.legal_actions import LegalAction
-    from kernel.api.observation import Observation
-    from kernel.tiles.model import Tile
-    from llm.agent.memory import PlayerMemory
+    from llm.agent.context import EpisodeContext
+    from llm.agent.context_store import CompressionLevel
     from llm.agent.profile import PlayerProfile
-    from llm.agent.stats import PlayerStats
     from llm.protocol import ChatMessage
+
+ProjectionMode = Literal["natural", "json"]
 
 log = logging.getLogger(__name__)
 
 
-class PromptBuilder:
-    """Prompt 构建组件.
-
-    负责将所有信息整合成完整的消息列表，供 LLM 调用使用。
-    """
+class PromptProjector:
+    """将结构化上下文投影为发送给 LLM 的消息。"""
 
     def __init__(
         self,
         profile: "PlayerProfile",
-        memory: "PlayerMemory",
-        stats: "PlayerStats",
+        *,
         system_prompt_base: str | None = None,
-        use_compression: bool = True,
+        prompt_mode: ProjectionMode = "natural",
         use_delta: bool = True,
+        history_budget: int = 10,
+        compression_level: "CompressionLevel" = "collapse",
     ) -> None:
-        """初始化 Prompt 构建器.
-
-        Args:
-            profile: 玩家 profile
-            memory: 玩家 memory
-            stats: 玩家 stats
-            system_prompt_base: 基础系统提示词（从配置文件读取）
-            use_compression: 是否启用压缩格式
-            use_delta: 是否启用 delta 帧优化
-        """
         self.profile = profile
-        self.memory = memory
-        self.stats = stats
         self.system_prompt_base = system_prompt_base
-        self.use_compression = use_compression
+        self.prompt_mode = prompt_mode
         self.use_delta = use_delta
+        self.history_budget = max(0, history_budget)
+        self.compression_level = compression_level
 
     def build_messages(
         self,
-        observation: "Observation",
-        legal_actions: tuple["LegalAction", ...],
-        history_text: str | None = None,
-        last_observation: "Observation | None" = None,
-        last_hand: "Counter[Tile] | None" = None,
+        turn_context: TurnContext,
+        *,
+        persistent_state: PersistentState,
+        episode_ctx: "EpisodeContext",
         should_send_keyframe: bool = True,
     ) -> list["ChatMessage"]:
-        """构建完整的消息列表.
-
-        Args:
-            observation: 当前局面观测
-            legal_actions: 合法动作列表
-            history_text: 本局历史文本（可选）
-            last_observation: 上一帧观测（用于 delta 帧）
-            last_hand: 上一帧手牌（用于 delta 帧）
-            should_send_keyframe: 是否发送关键帧
-
-        Returns:
-            消息列表（system + history + user）
-        """
+        """构建完整消息列表。"""
         from llm.protocol import ChatMessage
 
         messages: list[ChatMessage] = []
 
-        # 1. System prompt
         system_content = build_system_prompt(
             self.profile,
-            self.memory,
-            self.stats,
+            persistent_state.memory,
+            persistent_state.stats,
             self.system_prompt_base,
         )
         messages.append(ChatMessage(role="system", content=system_content))
 
-        # 2. History（如果有）
+        history_text = episode_ctx.project_history(
+            detailed=self.prompt_mode == "natural",
+            history_budget=self.history_budget,
+            compression_level=self.compression_level,
+        )
         if history_text:
-            history_header = "本局关键事件" if self.use_compression else "本局前期决策历史"
-            history_msg = ChatMessage(
-                role="user",
-                content=f"{history_header}：\n{history_text}\n---",
+            header = "本局关键事件" if self.prompt_mode == "json" else "本局历史摘要"
+            messages.append(
+                ChatMessage(
+                    role="user",
+                    content=f"{header}：\n{history_text}\n---",
+                )
             )
-            messages.append(history_msg)
 
-        # 3. User prompt（根据帧类型选择）
         user_content = self._build_user_prompt(
-            observation,
-            legal_actions,
-            last_observation,
-            last_hand,
-            should_send_keyframe,
+            turn_context,
+            episode_ctx=episode_ctx,
+            should_send_keyframe=should_send_keyframe,
         )
         messages.append(ChatMessage(role="user", content=user_content))
-
         return messages
 
     def _build_user_prompt(
         self,
-        observation: "Observation",
-        legal_actions: tuple["LegalAction", ...],
-        last_observation: "Observation | None",
-        last_hand: "Counter[Tile] | None",
+        turn_context: TurnContext,
+        *,
+        episode_ctx: "EpisodeContext",
         should_send_keyframe: bool,
     ) -> str:
-        """构建 user prompt.
+        """构建当前回合的 user prompt。"""
+        observation = turn_context.observation
+        legal_actions = turn_context.legal_actions
 
-        Args:
-            observation: 当前局面观测
-            legal_actions: 合法动作列表
-            last_observation: 上一帧观测
-            last_hand: 上一帧手牌
-            should_send_keyframe: 是否发送关键帧
-
-        Returns:
-            User prompt 内容
-        """
-        # Delta 帧优化
-        if self.use_delta and not should_send_keyframe and last_observation is not None:
+        if self._should_use_delta(episode_ctx, should_send_keyframe):
             from llm.observation_format import build_delta_observation
 
-            delta_obs = build_delta_observation(observation, last_observation, last_hand)
+            delta_obs = build_delta_observation(
+                observation,
+                episode_ctx.last_observation,
+                episode_ctx.last_hand,
+            )
             return build_delta_decision_prompt(delta_obs, legal_actions)
 
-        # 关键帧
-        if self.use_compression:
+        if self.prompt_mode == "json":
             return build_compressed_decision_prompt(observation, legal_actions)
-        else:
-            return build_decision_prompt(observation, legal_actions)
+        return build_decision_prompt(observation, legal_actions)
 
     def get_frame_type(
         self,
+        episode_ctx: "EpisodeContext",
         should_send_keyframe: bool,
     ) -> str:
-        """获取当前帧类型.
-
-        Args:
-            should_send_keyframe: 是否发送关键帧
-
-        Returns:
-            "keyframe" 或 "delta"
-        """
-        if self.use_delta and not should_send_keyframe:
+        """返回当前投影帧类型。"""
+        if self._should_use_delta(episode_ctx, should_send_keyframe):
             return "delta"
         return "keyframe"
+
+    def _should_use_delta(
+        self,
+        episode_ctx: "EpisodeContext",
+        should_send_keyframe: bool,
+    ) -> bool:
+        """仅 JSON 模式允许 delta 帧。"""
+        return (
+            self.prompt_mode == "json"
+            and self.use_delta
+            and not should_send_keyframe
+            and episode_ctx.last_observation is not None
+        )

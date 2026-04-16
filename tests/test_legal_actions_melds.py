@@ -13,6 +13,7 @@ from kernel.hand.melds import MeldKind
 from kernel.play.model import CallResolution, RiverEntry, TurnPhase
 from kernel.table import initial_table_snapshot
 from kernel.tiles.model import Suit, Tile
+from llm.observation_format import action_to_natural_text
 from llm.validate import find_matching_legal_action
 from llm.wire import legal_action_to_wire
 from tests.test_kan import (
@@ -65,6 +66,22 @@ def test_wire_roundtrip_open_meld() -> None:
     )
     w = legal_action_to_wire(dm)
     assert find_matching_legal_action(acts, w) == dm
+
+
+def test_natural_text_roundtrip_open_meld() -> None:
+    b, _t = _board_call_response_daiminkan_ready()
+    g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
+    acts = legal_actions(g, 1)
+    dm = next(
+        a
+        for a in acts
+        if a.kind == ActionKind.OPEN_MELD and a.meld and a.meld.kind == MeldKind.DAIMINKAN
+    )
+    text = action_to_natural_text(dm, dm.seat)
+    assert text.startswith("大明杠")
+    assert find_matching_legal_action(acts, {"action": text, "why": "测试"}) == dm
+    simplified = text.split("(")[0]
+    assert find_matching_legal_action(acts, {"action": simplified, "why": "测试"}) == dm
 
 
 def test_chi_stage_lists_chi_open_meld() -> None:
@@ -138,6 +155,18 @@ def test_chi_stage_lists_chi_open_meld() -> None:
         a for a in acts if a.kind == ActionKind.OPEN_MELD and a.meld and a.meld.kind == MeldKind.CHI
     ]
     assert chi_acts, "应有一条吃 345m 的 OPEN_MELD"
+    assert action_to_natural_text(chi_acts[0], chi_acts[0].seat).startswith("吃")
+
+
+def test_natural_text_roundtrip_shankuminkan() -> None:
+    b, _t = _board_with_pon_for_shankan()
+    d = b.current_seat
+    g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
+    acts = legal_actions(g, d)
+    sk = next(a for a in acts if a.kind == ActionKind.SHANKUMINKAN)
+    text = action_to_natural_text(sk, d)
+    assert text.startswith("加杠")
+    assert find_matching_legal_action(acts, {"action": text, "why": "测试"}) == sk
 
 
 def test_riichi_seat_no_open_meld_in_call_response() -> None:

@@ -14,8 +14,9 @@ src/llm/
 ├── agent/                # Agent 系统
 │   ├── __init__.py       # PlayerAgent（协调类）
 │   ├── core.py           # AgentCore（核心决策逻辑）
-│   ├── session.py        # SessionManager（会话管理）
-│   ├── prompt.py         # PromptBuilder（Prompt 构建）
+│   ├── session.py        # ModelSessionPolicy + ConversationLogNamer
+│   ├── prompt.py         # PromptProjector（显式上下文投影）
+│   ├── context_store.py  # ContextStore（结构化历史 + 压缩）
 │   ├── decision_parser.py # DecisionParser（决策解析）
 │   ├── persistence.py    # PersistenceManager（持久化管理）
 │   ├── match_context.py  # MatchContext（跨局状态管理）
@@ -60,19 +61,14 @@ ctx = mc.create_episode()  # 创建新局上下文
 mc.close_episode(ctx)      # 关闭本局，更新统计
 ```
 
-### PromptBuilder
+### PromptProjector
 
-构建自然语言格式的 Prompt：
+按“长期状态 + 结构化局内历史 + 当前观测”显式投影 Prompt：
 
 ```
-【手牌】(13张)
-万子: 一万 三万 五万 六万 八万
-筒子: 四筒 五筒 五筒(赤) 七筒 七筒
-索子: 一索
-字牌: 东 西西 中
-
-【可选动作】
-打一万, 打三万, 打五万...
+system = base_prompt + persona + memory + stats
+history = ContextStore.project_history(...)
+user = natural/json keyframe or json delta
 ```
 
 ## 配置
@@ -85,6 +81,10 @@ llm:
   api_key: "your-key"
   base_url: "https://api.openai.com/v1"
   model: "gpt-4o-mini"
+  prompt_format: natural
+  session_scope: per_hand
+  compression_level: collapse
+  history_budget: 10
   system_prompt: |
     你是日式麻将牌手...
 
@@ -98,7 +98,7 @@ players:
 ### 角色配置
 
 每个角色在 `configs/players/{id}/` 下有：
-- `profile.yaml` - 人格、策略提示词
+- `profile.json` - 人格、策略提示词
 - `memory.json` - 历史表现记忆（gitignore）
 - `stats.json` - 长期统计（gitignore）
 
@@ -135,4 +135,5 @@ python -m llm --help
 关键设计：
 - **长期状态**：profile/memory/stats（持久化到文件）
 - **跨局状态**：MatchContext 管理（本场统计）
-- **运行时状态**：EpisodeContext（本局统计、决策历史）
+- **运行时状态**：EpisodeContext（本局统计、帧缓存、结构化历史）
+- **投影视图**：ContextStore + PromptProjector 负责预算驱动压缩与 prompt 生成
