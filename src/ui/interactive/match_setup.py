@@ -1,14 +1,14 @@
-"""对局设置与启动 - 使用统一框架重构."""
+"""对局设置与启动 - 使用统一框架重构。"""
 
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass
 
 from rich.console import Console
 from rich.panel import Panel
 
 from ui.interactive.framework import BACK, MenuPage, Page, Prompt, is_back
+from ui.interactive.session_runner import run_llm_session
 from ui.interactive.utils import KERNEL_CONFIG_PATH, list_profiles
 
 console = Console()
@@ -43,6 +43,30 @@ class QuickStartConfig:
 
         return " ".join(cmd_parts)
 
+    def build_argv(self) -> list[str]:
+        """构建 demo CLI 参数。"""
+        argv = [
+            "--dry-run",
+            "--seed",
+            self.seed,
+            "--log-session",
+            "quick",
+        ]
+        if self.watch:
+            argv.extend(["--watch", "--watch-delay", self.delay])
+        return argv
+
+    def summary_text(self) -> str:
+        """当前 demo 配置摘要。"""
+        watch_mode = "实时观战" if self.watch else "静默运行"
+        lines = [
+            f"随机种子: {self.seed_label()}",
+            f"运行模式: {watch_mode}",
+        ]
+        if self.watch:
+            lines.append(f"观战延迟: {self.delay} 秒")
+        return "\n".join(lines)
+
 
 class SelectPlayerPage(MenuPage):
     """选择玩家页."""
@@ -64,7 +88,7 @@ class SelectPlayerPage(MenuPage):
         return choices
 
     def _get_instruction(self) -> str:
-        return f"[选择 {self.seat_name}，Esc返回]"
+        return f"[选择 {self.seat_name}]"
 
 
 class MatchSetupPage(Page):
@@ -92,13 +116,13 @@ class MatchSetupPage(Page):
             return BACK
 
         # 构建并执行命令
-        cmd = self._build_command(selected, settings)
-        if is_back(cmd):
+        cli_args = self._build_cli_args(selected, settings)
+        if is_back(cli_args):
             return BACK
-        if cmd is None:
+        if cli_args is None:
             return None
 
-        self._execute_command(cmd, settings["watch"])
+        self._execute_command(cli_args, settings["watch"])
 
     def _configure_settings(self) -> dict | object:
         """配置对局设置."""
@@ -128,24 +152,26 @@ class MatchSetupPage(Page):
             "delay": delay,
         }
 
-    def _build_command(self, selected: list[str], settings: dict) -> str | object | None:
-        """构建执行命令."""
+    def _build_cli_args(self, selected: list[str], settings: dict) -> list[str] | object | None:
+        """构建 ``llm.cli`` 参数。"""
         player_str = ",".join(selected)
         max_hands = settings.get('max_hands', 8)
-        cmd_parts = [
-            "python -m llm",
-            f"--config {KERNEL_CONFIG_PATH}",
-            f"--players {player_str}",
-            f"--seed {settings['seed']}",
-            f"--max-hands {max_hands}",
+        cli_args = [
+            "--config",
+            str(KERNEL_CONFIG_PATH),
+            "--players",
+            player_str,
+            "--seed",
+            settings["seed"],
+            "--max-hands",
+            str(max_hands),
         ]
 
         if settings["watch"]:
-            cmd_parts.append("--watch")
-            cmd_parts.append(f"--watch-delay {settings['delay']}")
+            cli_args.extend(["--watch", "--watch-delay", settings["delay"]])
 
         # 添加日志参数（使用空字符串自动生成时间戳文件名）
-        cmd_parts.append('--log-session ""')
+        cli_args.extend(["--log-session", ""])
 
         # 检查是否需要 API Key
         has_llm = any(s != "default" for s in selected)
@@ -159,21 +185,32 @@ class MatchSetupPage(Page):
             if is_back(use_dry):
                 return BACK
             if use_dry:
-                cmd_parts = [
-                    "python -m llm",
+                cli_args = [
                     "--dry-run",
-                    f"--seed {settings['seed']}",
+                    "--seed",
+                    settings["seed"],
                 ]
                 if settings["watch"]:
-                    cmd_parts.append("--watch")
-                    cmd_parts.append(f"--watch-delay {settings['delay']}")
+                    cli_args.extend(["--watch", "--watch-delay", settings["delay"]])
             else:
                 return None
 
-        cmd = " ".join(cmd_parts)
-
         console.print()
-        console.print(Panel(f"[dim]{cmd}[/dim]", title="执行命令", border_style="green"))
+        console.print(
+            Panel(
+                "\n".join(
+                    [
+                        f"玩家阵容: {player_str}",
+                        f"随机种子: {settings['seed']}",
+                        f"对局局数: {max_hands}",
+                        f"观战模式: {'开启' if settings['watch'] else '关闭'}",
+                    ]
+                ),
+                title="即将开始",
+                border_style="green",
+                padding=(1, 2),
+            )
+        )
 
         confirmed = Prompt.confirm("确认开始?", default=True)
         if is_back(confirmed):
@@ -181,40 +218,23 @@ class MatchSetupPage(Page):
         if not confirmed:
             return None
 
-        return cmd
+        return cli_args
 
-    def _execute_command(self, cmd: str, watch: bool) -> None:
-        """执行命令."""
+    def _execute_command(self, cli_args: list[str], watch: bool) -> None:
+        """执行对局会话。"""
         console.print()
         console.print("[bold green]🚀 启动对局...[/bold green]")
-        if watch:
-            console.print("[dim]💡 提示: 观战中按 Ctrl+C 可随时退出返回菜单[/dim]")
         console.print()
 
-        try:
-            result = subprocess.run(
-                cmd,
-                shell=True,
-                stderr=subprocess.DEVNULL if watch else None,
-            )
-            if result.returncode != 0:
-                console.print(f"\n[red]✗ 对局执行失败 (返回码: {result.returncode})[/red]")
-                console.print("[dim]请检查配置和依赖是否正确安装[/dim]")
-                Prompt.press_any_key()
-                return
-            console.print("\n[dim]✓ 对局已结束[/dim]")
-            # 终局暂停
-            console.print()
-            Prompt.press_any_key("终局牌桌已保留，按任意键返回菜单...")
-        except KeyboardInterrupt:
-            console.print("\n")
-            console.print(Panel(
-                "[yellow]对局已中断[/yellow]\n"
-                "[dim]日志已保存到 logs/ 目录[/dim]",
-                border_style="yellow",
-                padding=(1, 2),
-            ))
+        result = run_llm_session(cli_args)
+        if result.returncode != 0:
+            console.print(f"\n[red]✗ 对局执行失败 (返回码: {result.returncode})[/red]")
+            console.print("[dim]请检查配置和依赖是否正确安装[/dim]")
             Prompt.press_any_key()
+            return
+        console.print("\n[dim]✓ 对局已结束[/dim]")
+        console.print()
+        Prompt.press_any_key("终局牌桌已保留，按返回回到菜单...")
 
 
 def run() -> None:
@@ -233,23 +253,13 @@ class QuickStartMenuPage(MenuPage):
 
     def _render_content(self) -> str | object | None:
         console.print(Panel(
-            self._render_summary(),
+            self.config.summary_text(),
             title="当前配置",
             border_style="green",
             padding=(1, 2),
         ))
         console.print()
         return super()._render_content()
-
-    def _render_summary(self) -> str:
-        watch_mode = "实时观战" if self.config.watch else "静默运行"
-        lines = [
-            f"随机种子: {self.config.seed_label()}",
-            f"运行模式: {watch_mode}",
-        ]
-        if self.config.watch:
-            lines.append(f"观战延迟: {self.config.delay} 秒")
-        return "\n".join(lines)
 
     def _get_choices(self) -> list:
         import questionary
@@ -287,8 +297,9 @@ class QuickStartPage(Page):
             if is_back(action):
                 return BACK
             if action == "start":
-                self._execute_demo(config)
-                return None
+                if self._execute_demo(config):
+                    return None
+                continue
             if action == "seed":
                 self._configure_seed(config)
             elif action == "watch":
@@ -342,81 +353,31 @@ class QuickStartPage(Page):
             return
         config.delay = choice
 
-    def _execute_demo(self, config: QuickStartConfig) -> None:
-        """执行 demo."""
-        cmd = config.build_command()
+    def _execute_demo(self, config: QuickStartConfig) -> bool:
+        """执行 demo；成功结束后返回 True。"""
+        cli_args = config.build_argv()
 
         console.print()
-        console.print(Panel(f"[dim]{cmd}[/dim]", title="执行命令", border_style="green"))
-        if config.watch:
-            console.print("[dim]💡 提示: 观战中按 Ctrl+C 可随时退出返回菜单[/dim]")
-
-        try:
-            if config.watch:
-                # 观战模式：不捕获输出，让 Rich 界面正常显示
-                result = subprocess.run(cmd, shell=True)
-                # 130 是用户按 Ctrl+C 中断的标准退出码
-                if result.returncode == 130 or result.returncode == -1073741510:
-                    # 用户主动中断，不显示错误
-                    console.print("\n")
-                    console.print(Panel(
-                        "[yellow]对局已中断[/yellow]\n"
-                        "[dim]日志已保存到 logs/simple/quick.txt 和 logs/replay/quick.json[/dim]",
-                        border_style="yellow",
-                        padding=(1, 2),
-                    ))
-                    Prompt.press_any_key()
-                    self._clear_screen()  # 清屏避免残留
-                    return
-                if result.returncode != 0:
-                    console.print(f"\n[red]✗ 对局执行失败 (返回码: {result.returncode})[/red]")
-                    Prompt.press_any_key()
-                    self._clear_screen()  # 清屏避免残留
-                    return
-            else:
-                # 非观战模式：捕获输出用于调试
-                result = subprocess.run(
-                    cmd,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                )
-                # 130 是用户按 Ctrl+C 中断的标准退出码，Windows 可能是 -1073741510
-                if result.returncode == 130 or result.returncode == -1073741510:
-                    console.print("\n")
-                    console.print(Panel(
-                        "[yellow]对局已中断[/yellow]\n"
-                        "[dim]日志已保存到 logs/simple/quick.txt 和 logs/replay/quick.json[/dim]",
-                        border_style="yellow",
-                        padding=(1, 2),
-                    ))
-                    Prompt.press_any_key()
-                    self._clear_screen()  # 清屏避免残留
-                    return
-                if result.returncode != 0:
-                    console.print(f"\n[red]✗ 对局执行失败 (返回码: {result.returncode})[/red]")
-                    if result.stderr:
-                        console.print("[dim]错误信息:[/dim]")
-                        error_text = result.stderr[:2000]
-                        console.print(f"[red]{error_text}[/red]")
-                    Prompt.press_any_key()
-                    self._clear_screen()  # 清屏避免残留
-                    return
-            console.print("\n[dim]✓ 对局已结束[/dim]")
-            # 终局暂停
-            console.print()
-            Prompt.press_any_key("终局牌桌已保留，按任意键返回菜单...")
-            self._clear_screen()  # 清屏避免残留
-        except KeyboardInterrupt:
-            console.print("\n")
-            console.print(Panel(
-                "[yellow]对局已中断[/yellow]\n"
-                "[dim]日志已保存到 logs/simple/quick.txt 和 logs/replay/quick.json[/dim]",
-                border_style="yellow",
+        console.print(
+            Panel(
+                config.summary_text(),
+                title="即将开始 demo",
+                border_style="green",
                 padding=(1, 2),
-            ))
+            )
+        )
+
+        result = run_llm_session(cli_args)
+        if result.returncode != 0:
+            console.print(f"\n[red]✗ 对局执行失败 (返回码: {result.returncode})[/red]")
             Prompt.press_any_key()
-            self._clear_screen()  # 清屏避免残留
+            self._clear_screen()
+            return False
+        console.print("\n[dim]✓ 对局已结束[/dim]")
+        console.print()
+        Prompt.press_any_key("终局牌桌已保留，按返回回到菜单...")
+        self._clear_screen()
+        return True
 
 
 def quick_start() -> None:

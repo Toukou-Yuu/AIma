@@ -345,10 +345,7 @@ class LiveMatchCallback:
         if self.live:
             self.live.update(panel)
 
-        try:
-            time.sleep(self.viewer.delay)
-        except KeyboardInterrupt:
-            raise SystemExit(130)
+        time.sleep(self.viewer.delay)
 
 
 def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3) -> None:

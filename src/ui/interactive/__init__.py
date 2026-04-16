@@ -45,11 +45,11 @@ def main(argv: list[str] | None = None) -> int:
         while True:
             choice = show_main_menu()
 
-            if choice in ("quit", "esc"):
+            if choice == "quit":
                 console.clear()
                 console.print("\n[dim]再见! 👋[/dim]")
                 return 0
-            elif choice == "quick":
+            if choice == "quick":
                 quick_start()
             elif choice == "match":
                 match_run()
@@ -57,7 +57,6 @@ def main(argv: list[str] | None = None) -> int:
                 profile_run()
             elif choice == "replay":
                 replay_run()
-
     except KeyboardInterrupt:
-        console.print("\n\n[dim]已退出[/dim]")
-        return 0
+        console.print("\n[dim]已中断[/dim]")
+        return 130

@@ -127,7 +127,7 @@ class CreateProfilePage(Page):
                 questionary.Choice(PERSONA_TEMPLATES['balanced']['name'], value="balanced"),
                 questionary.Choice(PERSONA_TEMPLATES['adaptive']['name'], value="adaptive"),
             ],
-            instruction="[上下键选择，回车确认，Esc返回]",
+            instruction="[上下键选择，回车确认]",
         )
 
 

@@ -33,8 +33,12 @@ class Page(ABC):
 
     # 页面标题，子类可覆盖
     title: str = ""
+    # 页面副标题
+    subtitle: str = ""
     # 边框颜色
     border_style: str = "bright_cyan"
+    # 标题宽度
+    header_width: int = 68
     # 当前页面是否支持返回上一层
     allow_back: bool = True
 
@@ -45,8 +49,6 @@ class Page(ABC):
 
         try:
             return self._render_content()
-        except KeyboardInterrupt:
-            return self._on_interrupt()
         except Exception as e:
             self._on_error(e)
             return None
@@ -64,20 +66,17 @@ class Page(ABC):
 
     def _render_header(self) -> None:
         """渲染页面标题."""
-        from rich.align import Align
-        from rich.panel import Panel
-        from rich.text import Text
+        from ui.interactive.chrome import render_page_header
 
         if self.title:
-            title = Text(self.title, style="bold bright_cyan")
             console.print()
             console.print(
-                Panel(
-                    Align.center(title),
+                render_page_header(
+                    self.title,
+                    subtitle=self.subtitle or None,
                     border_style=self.border_style,
-                    width=40,
-                    padding=(0, 1),
-                )
+                    width=self.header_width,
+                ),
             )
             console.print()
 
@@ -87,7 +86,7 @@ class Page(ABC):
         ...
 
     def _on_interrupt(self) -> NavigationAction | None:
-        """处理中断（Ctrl+C）."""
+        """处理中断（保留供少量兼容场景使用）。"""
         if self.allow_back:
             console.print("\n[dim]已返回上一层[/dim]")
             return BACK
@@ -121,27 +120,31 @@ class MenuPage(Page):
             ])
 
         style = Style.from_dict({
-            "selected": "ansicyan bold",
-            "highlighted": "ansicyan bold",
-            "pointer": "ansicyan bold",
-            "separator": "#666666",
-            "question": "#444444",
-            "instruction": "#555555",
+            "selected": "bold bg:#16324f #8de1ff",
+            "highlighted": "bold #8de1ff",
+            "pointer": "bold #f6bd60",
+            "separator": "#5c6370",
+            "question": "bold #e5eef7",
+            "instruction": "italic #7f8c8d",
         })
 
-        return questionary.select(
-            "",
-            choices=choices,
-            qmark="",
-            pointer=">",
-            instruction=self._get_instruction(),
-            style=style,
-        ).ask() or BACK
+        while True:
+            answer = questionary.select(
+                "",
+                choices=choices,
+                qmark="",
+                pointer="▸",
+                instruction=self._get_instruction(),
+                style=style,
+            ).ask()
+            if answer is None:
+                continue
+            return answer
 
     def _get_instruction(self) -> str:
         """菜单操作提示."""
         if self.allow_back:
-            return "[↑↓选择，回车确认，Esc返回]"
+            return "[↑↓选择，回车确认]"
         return "[↑↓选择，回车确认]"
 
     @abstractmethod
@@ -153,18 +156,21 @@ class MenuPage(Page):
 class Prompt:
     """统一输入提示类."""
 
+    _ACTION_EDIT = "__edit__"
+    _ACTION_USE_DEFAULT = "__use_default__"
+
     @staticmethod
     def _style():
         from prompt_toolkit.styles import Style
 
         return Style.from_dict({
-            "question": "",
-            "answer": "ansicyan bold",
-            "selected": "ansicyan bold",
-            "highlighted": "ansicyan bold",
-            "pointer": "ansicyan bold",
-            "separator": "#666666",
-            "instruction": "#555555",
+            "question": "bold #e5eef7",
+            "answer": "bold #8de1ff",
+            "selected": "bold bg:#16324f #8de1ff",
+            "highlighted": "bold #8de1ff",
+            "pointer": "bold #f6bd60",
+            "separator": "#5c6370",
+            "instruction": "italic #7f8c8d",
         })
 
     @staticmethod
@@ -182,16 +188,12 @@ class Prompt:
         *,
         multiline: bool = False,
         instruction: str | None = None,
-    ) -> str | NavigationAction:
-        """读取文本输入，并由框架统一处理返回导航."""
+    ) -> str:
+        """读取文本输入。"""
         from prompt_toolkit import PromptSession
         from prompt_toolkit.key_binding import KeyBindings
 
         bindings = KeyBindings()
-
-        @bindings.add("escape")
-        def _go_back(event) -> None:
-            event.app.exit(result=BACK)
 
         if multiline:
             @bindings.add("c-s")
@@ -207,13 +209,54 @@ class Prompt:
             Prompt._build_message(message, instruction),
             default=default,
         )
-        return BACK if answer is BACK else answer
+        return answer
+
+    @staticmethod
+    def _format_default_label(default: str) -> str:
+        """格式化默认值菜单标签。"""
+        compact = default.replace("\n", " ").strip()
+        if len(compact) > 24:
+            compact = compact[:21] + "..."
+        return compact or "(空)"
+
+    @staticmethod
+    def _input_via_menu(
+        message: str,
+        *,
+        default: str = "",
+        multiline: bool = False,
+        edit_label: str,
+        default_label: str | None = None,
+        submit_instruction: str,
+    ) -> str | NavigationAction:
+        """先选操作，再进入输入。"""
+        import questionary
+
+        choices = [questionary.Choice(edit_label, value=Prompt._ACTION_EDIT)]
+        if default_label is not None:
+            choices.append(questionary.Choice(default_label, value=Prompt._ACTION_USE_DEFAULT))
+
+        action = Prompt.select(
+            message,
+            choices=choices,
+            instruction="[↑↓选择操作，回车确认]",
+        )
+        if is_back(action):
+            return BACK
+        if action == Prompt._ACTION_USE_DEFAULT:
+            return default
+        return Prompt._read_text(
+            message,
+            default=default,
+            multiline=multiline,
+            instruction=submit_instruction,
+        )
 
     @staticmethod
     def select(
         message: str,
         choices: list,
-        instruction: str = "[↑↓选择，回车确认，Esc返回]",
+        instruction: str = "[↑↓选择，回车确认]",
         allow_back: bool = True,
     ) -> Any:
         """统一选择输入."""
@@ -226,15 +269,18 @@ class Prompt:
                 questionary.Choice("返回上一层", value=BACK),
             ])
 
-        answer = questionary.select(
-            message,
-            choices=resolved_choices,
-            qmark="",
-            pointer=">",
-            instruction=instruction,
-            style=Prompt._style(),
-        ).ask()
-        return BACK if answer is None else answer
+        while True:
+            answer = questionary.select(
+                message,
+                choices=resolved_choices,
+                qmark="",
+                pointer="▸",
+                instruction=instruction,
+                style=Prompt._style(),
+            ).ask()
+            if answer is None:
+                continue
+            return answer
 
     @staticmethod
     def confirm(message: str, default: bool = True) -> bool | NavigationAction:
@@ -251,34 +297,61 @@ class Prompt:
         answer = Prompt.select(
             message,
             choices=choices,
-            instruction="[↑↓选择，回车确认，Esc返回]",
+            instruction="[↑↓选择，回车确认]",
         )
         return answer
 
     @staticmethod
     def text(message: str, default: str = "") -> str | NavigationAction:
         """文本输入."""
-        return Prompt._read_text(message, default=default, instruction="(Esc返回)")
+        default_label = None
+        if default:
+            default_label = f"使用默认值: {Prompt._format_default_label(default)}"
+        return Prompt._input_via_menu(
+            message,
+            default=default,
+            edit_label="输入内容" if not default else "编辑内容",
+            default_label=default_label,
+            submit_instruction="(输入后回车确认)",
+        )
 
     @staticmethod
     def number(message: str, default: str = "0") -> str | NavigationAction:
         """数字输入."""
-        answer = Prompt._read_text(message, default=default, instruction="(Esc返回)")
+        answer = Prompt._input_via_menu(
+            message,
+            default=default,
+            edit_label="输入数值",
+            default_label=f"使用默认值: {Prompt._format_default_label(default)}",
+            submit_instruction="(输入后回车确认)",
+        )
         return BACK if answer is BACK else (answer or default)
 
     @staticmethod
     def multiline(message: str) -> str | NavigationAction:
         """多行文本输入."""
-        return Prompt._read_text(
+        return Prompt._input_via_menu(
             message,
             multiline=True,
-            instruction="(Ctrl+S确认，Esc返回)",
+            edit_label="开始输入",
+            submit_instruction="(Ctrl+S确认)",
         )
 
     @staticmethod
-    def press_any_key(message: str = "按任意键继续...") -> None:
-        """按任意键继续."""
+    def press_any_key(message: str = "选择返回继续...") -> None:
+        """等待用户通过菜单项继续。"""
         import questionary
+
         console.print()
         console.print(f"[dim]{message}[/dim]")
-        questionary.press_any_key_to_continue(message="").ask()
+        while True:
+            answer = questionary.select(
+                "",
+                choices=[questionary.Choice("返回", value=True)],
+                qmark="",
+                pointer="▸",
+                instruction="[回车返回]",
+                style=Prompt._style(),
+            ).ask()
+            if answer is not None:
+                return

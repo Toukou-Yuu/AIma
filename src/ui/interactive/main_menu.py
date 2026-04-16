@@ -1,94 +1,137 @@
-"""主菜单 - 使用统一框架重构."""
+"""主菜单首页。"""
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import yaml
+from rich.columns import Columns
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
-from ui.interactive.framework import MenuPage, Page, is_back
+from ui.interactive.chrome import (
+    ActionOption,
+    render_action_catalog,
+    render_empty_state,
+    render_status_bar,
+    render_summary_panel,
+)
+from ui.interactive.data import HomeSnapshot, ReplaySummary, build_home_snapshot
+from ui.interactive.framework import MenuPage, is_back
 
 console = Console()
 
+_MAIN_ACTIONS = (
+    ActionOption("quick", "demo演示", "无需 API Key，直接观看一场 dry-run 对局"),
+    ActionOption("match", "开始对局", "选择四位玩家、局数与观战方式"),
+    ActionOption("profile", "角色管理", "查看角色卡片、创建新角色、补充 ASCII 形象"),
+    ActionOption("replay", "牌谱回放", "浏览最近牌谱并进入回放详情"),
+    ActionOption("quit", "退出", "返回终端"),
+)
 
-def _get_model_info() -> str:
-    """获取当前模型配置信息."""
-    config_path = Path("configs/aima_kernel.yaml")
-    if not config_path.exists():
-        return "未配置"
 
-    try:
-        with open(config_path, encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
+def _bool_text(enabled: bool, positive: str, negative: str) -> Text:
+    """渲染布尔状态。"""
+    label = positive if enabled else negative
+    style = "green" if enabled else "yellow"
+    return Text(label, style=style)
 
-        llm_cfg = cfg.get("llm", {})
-        model = llm_cfg.get("model", "default")
-        base_url = llm_cfg.get("base_url", "")
 
-        # 判断是否为本地模型
-        if "localhost" in base_url or "127.0.0.1" in base_url:
-            location = "本地"
-        elif "openai.com" in base_url:
-            location = "OpenAI"
-        elif "deepseek" in base_url:
-            location = "DeepSeek"
-        else:
-            location = "远程"
+def _render_recent_replays_panel(replays: tuple[ReplaySummary, ...]) -> Panel:
+    """渲染最近牌谱摘要。"""
+    table = Table.grid(padding=(0, 2))
+    table.add_column(style="bold bright_white", width=12, no_wrap=True)
+    table.add_column(width=10, no_wrap=True)
+    table.add_column()
 
-        return f"{location}: {model}"
-    except Exception:
-        return "配置读取失败"
+    for replay in replays:
+        table.add_row(
+            replay.time_label,
+            Text(replay.status_label, style="cyan" if replay.ranking_by_seat else "yellow"),
+            Text(
+                f"{replay.reason_label} · {replay.action_count} 动作 · "
+                f"{replay.stem}",
+                style="white",
+            ),
+        )
+
+    return Panel(
+        table,
+        title="[bold bright_magenta]最近牌谱[/]",
+        border_style="bright_magenta",
+        padding=(0, 1),
+    )
 
 
 class MainMenuPage(MenuPage):
-    """主菜单."""
+    """Hub 型主菜单。"""
 
     title = "AIma 麻将 AI 终端"
+    subtitle = "四人 AI 对局、角色管理与牌谱观战"
     allow_back = False
+    header_width = 74
 
-    def _render_header(self) -> None:
-        """重写标题渲染，添加模型信息."""
-        from rich.align import Align
-        from rich.panel import Panel
-        from rich.text import Text
+    def _render_content(self) -> str | object | None:
+        snapshot = build_home_snapshot()
+        self._render_dashboard(snapshot)
+        console.print()
+        console.print(render_action_catalog("主操作", _MAIN_ACTIONS, border_style="bright_green"))
+        console.print(render_status_bar("方向键选择操作 | Enter 确认"))
+        console.print()
+        return super()._render_content()
 
-        if self.title:
-            title = Text(self.title, style="bold bright_cyan")
-            model_info = _get_model_info()
+    def _render_dashboard(self, snapshot: HomeSnapshot) -> None:
+        """渲染首页信息总览。"""
+        model_rows = [
+            ("接入", snapshot.model.headline),
+            (
+                "连接状态",
+                Text(
+                    f"{snapshot.model.connection_label} · {snapshot.model.connection_note}",
+                    style=snapshot.model.connection_style,
+                ),
+            ),
+            ("Prompt", snapshot.model.prompt_format),
+            ("对话日志", _bool_text(snapshot.model.conversation_logging, "已开启", "已关闭")),
+            ("配置状态", _bool_text(snapshot.model.configured, snapshot.model.note, snapshot.model.note)),
+        ]
+        model_panel = render_summary_panel("当前模型", model_rows, border_style="bright_cyan")
 
-            console.print()
-            console.print(
-                Panel(
-                    Align.center(title),
-                    border_style=self.border_style,
-                    width=40,
-                    padding=(0, 1),
-                )
+        roster_rows = [
+            (
+                entry.seat_label,
+                Text(f"{entry.display_name} · {entry.mode_label}", style="white"),
             )
-            # 显示模型信息
-            if model_info:
-                console.print(
-                    Align.center(f"[dim]{model_info}[/dim]"),
-                    width=40,
-                )
-            console.print()
+            for entry in snapshot.roster
+        ]
+        roster_panel = render_summary_panel("默认阵容", roster_rows, border_style="bright_blue")
+
+        console.print(Columns([model_panel, roster_panel], expand=True, equal=True))
+
+        if snapshot.recent_replays:
+            console.print(_render_recent_replays_panel(snapshot.recent_replays))
+        else:
+            console.print(
+                render_empty_state(
+                    "暂无牌谱",
+                    "还没有可回放的对局记录。",
+                    hint="先运行一场 demo 演示或正式对局，首页就会显示最近牌谱。",
+                ),
+            )
+
+    def _get_instruction(self) -> str:
+        return "[↑↓选择主页操作，回车确认]"
 
     def _get_choices(self):
         import questionary
+
         return [
-            questionary.Choice("demo演示", value="quick"),
-            questionary.Choice("开始对局", value="match"),
-            questionary.Choice("角色管理", value="profile"),
-            questionary.Choice("牌谱回放", value="replay"),
-            questionary.Separator(),
-            questionary.Choice("退出", value="quit"),
+            questionary.Choice(option.label, value=option.value)
+            for option in _MAIN_ACTIONS
         ]
 
 
 def show_main_menu() -> str:
-    """显示主菜单."""
+    """显示主菜单。"""
     result = MainMenuPage().run()
     if is_back(result):
         return "quit"

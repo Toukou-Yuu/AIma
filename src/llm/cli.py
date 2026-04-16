@@ -256,7 +256,10 @@ def _cmd_replay(path: str) -> int:
     return 0
 
 
-def _cmd_watch_replay(path: str, delay: float) -> int:
+def _cmd_watch_replay(
+    path: str,
+    delay: float,
+) -> int:
     """从牌谱 JSON 实时观战（Rich）。"""
     try:
         from ui.terminal import LiveMatchViewer
@@ -383,10 +386,11 @@ def _cmd_watch_dry_run(
             prompt_format=llm_cfg.prompt_format if llm_cfg else "natural",
             enable_conversation_logging=enable_conversation_logging,
         )
-        print(
-            f"\nplayer_steps={rr.player_steps} kernel_steps={rr.kernel_steps} "
-            f"reason={rr.stopped_reason!r} phase={rr.final_state.phase.value}"
-        )
+
+    print(
+        f"\nplayer_steps={rr.player_steps} kernel_steps={rr.kernel_steps} "
+        f"reason={rr.stopped_reason!r} phase={rr.final_state.phase.value}"
+    )
 
     # 保存 replay 日志
     if log_session is not None:

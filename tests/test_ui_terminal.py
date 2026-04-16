@@ -841,11 +841,18 @@ class TestInteractiveNavigation:
         assert Prompt.confirm("确认开始?") is False
 
     def test_prompt_number_propagates_back(self, monkeypatch) -> None:
-        """数字输入收到返回信号时，不会吞掉导航动作。"""
+        """数字输入通过菜单返回时，不会吞掉导航动作。"""
         from ui.interactive.framework import BACK, Prompt
 
-        monkeypatch.setattr(Prompt, "_read_text", lambda *args, **kwargs: BACK)
+        monkeypatch.setattr(Prompt, "select", lambda *args, **kwargs: BACK)
         assert Prompt.number("输入观战延迟") is BACK
+
+    def test_prompt_text_can_use_default_without_entering_editor(self, monkeypatch) -> None:
+        """文本输入可以直接通过菜单使用默认值。"""
+        from ui.interactive.framework import Prompt
+
+        monkeypatch.setattr(Prompt, "select", lambda *args, **kwargs: Prompt._ACTION_USE_DEFAULT)
+        assert Prompt.text("显示名称", default="一姬") == "一姬"
 
 
 class TestQuickStartMenu:
@@ -872,3 +879,18 @@ class TestQuickStartMenu:
         assert "seed" in values
         assert "watch" in values
         assert "delay" not in values
+
+    def test_quick_start_execute_demo_uses_config_summary(self, monkeypatch) -> None:
+        """开始演示不再依赖不存在的页面方法。"""
+        from ui.interactive.framework import Prompt
+        from ui.interactive.match_setup import QuickStartConfig, QuickStartPage
+        from ui.interactive.session_runner import SessionRunResult
+
+        page = QuickStartPage()
+        config = QuickStartConfig(seed="42", watch=True, delay="0.3")
+
+        monkeypatch.setattr("ui.interactive.match_setup.run_llm_session", lambda argv: SessionRunResult(0))
+        monkeypatch.setattr(Prompt, "press_any_key", lambda message="": None)
+        monkeypatch.setattr(QuickStartPage, "_clear_screen", lambda self: None)
+
+        assert page._execute_demo(config) is True
