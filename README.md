@@ -1,6 +1,6 @@
 # AIma
 
-让大语言模型打日式麻将。支持四位魂天神社角色（一姬、八木唯、卡维、藤田佳奈）实时对战，提供 Rich 终端观战、牌谱记录与回放。
+让大语言模型打日式麻将。支持四位魂天神社角色（一姬、八木唯、卡维、藤田佳奈）实时对战，提供全屏终端 TUI、动态观战、牌谱记录与回放。
 
 ## 快速开始
 
@@ -11,6 +11,11 @@ conda env create -f environment.yml
 conda activate aima
 pip install -e ".[rich,llm]"
 ```
+
+`rich` 依赖组现在同时包含：
+- `rich`：终端渲染
+- `textual`：全屏 TUI 框架
+- `questionary`：保留给旧交互/辅助逻辑
 
 ### 2. 创建配置文件
 
@@ -36,11 +41,22 @@ llm:
 python start.py
 ```
 
-启动后进入交互式菜单：
+启动后进入全屏终端 TUI 首页：
 - 🎮 **demo演示** - Dry-run 快速演示，无需 API Key
-- 🀄 **开始对局** - 选择4位玩家进行对战
-- 👤 **角色管理** - 查看/创建角色（支持4种人格模板）
-- 📺 **牌谱回放** - 回放历史对局
+- 🀄 **开始对局** - 选择 4 位玩家并配置局数、观战模式
+- 👤 **角色管理** - 预览角色卡片、创建角色、添加 ASCII 形象
+- 📺 **牌谱回放** - 浏览牌谱并进入动态回放
+
+也可以直接进入 demo 配置页：
+
+```bash
+python start.py quick
+```
+
+说明：
+- 观战页是自动刷新的全屏 live 画面
+- 返回/退出等操作通过界面内按钮完成，不依赖 `Esc` / `Ctrl+C`
+- 对局结束后会进入结算页，而不是直接回主菜单
 
 创建角色时可选人格模板：进攻型、防守型、平衡型、变化型。
 
@@ -51,7 +67,7 @@ python start.py
 | 东 | 一姬 | 活泼猫耳巫女 | "喵~大胜利！" |
 | 南 | 八木唯 | 冷淡天才 | "...我不明白" |
 | 西 | 卡维 | 神秘占卜师 | "命运无法改变" |
-| 北 | 膝田佳奈 | 元气偶像 | "牌效好麻烦喵" |
+| 北 | 藤田佳奈 | 元气偶像 | "牌效好麻烦喵" |
 
 ## Prompt 格式
 
@@ -107,6 +123,10 @@ players:                        # 默认玩家配置
 - `logs/simple/{timestamp}.txt` - 可读文本日志
 - `configs/players/{player_id}/conversations/{date}-{session}.md` - LLM 对话日志（需启用 conversation_logging）
 
+其中：
+- `demo演示` 和正式对局结束后都可直接从结算页跳转到回放
+- 回放也使用同一套全屏 TUI，而不是单独的命令行子进程
+
 ## 项目结构
 
 ```
@@ -125,12 +145,14 @@ src/
   kernel/                      # 日麻规则内核（K0-K15 已完成）
   llm/                         # LLM 编排与 Agent 系统
     agent/                     # PlayerAgent + 状态管理组件
-  ui/                          # 交互式终端与观战
+  ui/
+    interactive/              # Textual 全屏 TUI
+    terminal/                 # Rich 牌桌/角色卡片渲染组件
 ```
 
 ## 开发
 
 ```bash
 pip install -e ".[dev,llm]"
-pytest tests/ -q
+pytest -q
 ```
