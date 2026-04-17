@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 PLAYERS_DIR = Path("configs/players")
 KERNEL_CONFIG_PATH = Path("configs/aima_kernel.yaml")
+_INTERNAL_PROFILE_IDS = {"default"}
 
 
 # 角色模板
@@ -47,6 +48,8 @@ def list_profiles() -> list[dict[str, Any]]:
 
     for player_dir in sorted(PLAYERS_DIR.iterdir()):
         if not player_dir.is_dir():
+            continue
+        if player_dir.name in _INTERNAL_PROFILE_IDS:
             continue
         profile_path = player_dir / "profile.json"
         if profile_path.exists():
@@ -103,13 +106,21 @@ def create_profile(
     template = PERSONA_TEMPLATES[template_key]
     persona = custom_persona if custom_persona else template["persona"]
     strategy = template["strategy"]
+    default_profile_path = PLAYERS_DIR / "default" / "profile.json"
+    if not default_profile_path.exists():
+        raise FileNotFoundError(f"缺少默认 profile 模板: {default_profile_path}")
+    default_profile = json.loads(default_profile_path.read_text(encoding="utf-8"))
 
     profile = {
         "id": player_id,
         "name": name,
-        "persona": persona,
-        "strategy": strategy,
-        "model": "default",
+        "model": default_profile["model"],
+        "provider": default_profile["provider"],
+        "temperature": default_profile["temperature"],
+        "max_tokens": default_profile["max_tokens"],
+        "timeout_sec": default_profile["timeout_sec"],
+        "persona_prompt": persona,
+        "strategy_prompt": strategy,
     }
 
     profile_path = player_dir / "profile.json"

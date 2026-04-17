@@ -15,7 +15,7 @@ from typing import Any
 
 from rich.panel import Panel
 
-from llm.config import MatchEndCondition, load_kernel_config, load_llm_config
+from llm.config import LLMRuntimeConfig, MatchEndCondition, load_llm_config, load_llm_runtime_config
 from llm.protocol import build_client
 from llm.runner import RunResult, run_llm_match
 from ui.interactive.utils import load_profile_data
@@ -46,11 +46,8 @@ class MatchSessionConfig:
     dry_run: bool
     watch_enabled: bool
     watch_delay: float
-    request_delay_seconds: float
+    llm_runtime: LLMRuntimeConfig
     players: list[dict[str, Any]] | None = None
-    max_history_rounds: int = 10
-    clear_history_per_hand: bool = False
-    enable_conversation_logging: bool = False
     session_stem: str = ""
 
     @property
@@ -77,6 +74,8 @@ class MatchSessionSnapshot:
     action_label: str
     reason: str
     phase_label: str
+    table_summary: str
+    score_summary: str
     updated_at: float | None
     callback_steps: int
 
@@ -176,18 +175,9 @@ def build_match_logs(stem: str) -> MatchLogBundle:
     )
 
 
-def load_runtime_options(config_path: Path) -> dict[str, Any]:
+def load_runtime_options(config_path: Path) -> LLMRuntimeConfig:
     """读取交互式对局运行参数。"""
-    cfg = load_kernel_config(config_path)
-    llm_cfg = cfg.get("llm", {})
-    return {
-        "request_delay_seconds": float(llm_cfg.get("request_delay", 0.5)),
-        "max_history_rounds": int(llm_cfg.get("max_history_rounds", 10)),
-        "clear_history_per_hand": bool(llm_cfg.get("clear_history_per_hand", False)),
-        "enable_conversation_logging": bool(
-            llm_cfg.get("conversation_logging", {}).get("enabled", False)
-        ),
-    }
+    return load_llm_runtime_config(config_path=config_path)
 
 
 def resolve_player_names(players: list[dict[str, Any]] | None) -> dict[int, str]:
@@ -229,6 +219,8 @@ class MatchSession:
             action_label="等待对局启动",
             reason="",
             phase_label="pending",
+            table_summary="等待牌桌快照",
+            score_summary="",
             updated_at=None,
             callback_steps=0,
         )
@@ -303,6 +295,8 @@ class MatchSession:
         action_label: str,
         reason: str,
         phase_label: str,
+        table_summary: str,
+        score_summary: str,
         callback_steps: int,
     ) -> None:
         with self._lock:
@@ -311,6 +305,8 @@ class MatchSession:
                 action_label=action_label,
                 reason=reason,
                 phase_label=phase_label,
+                table_summary=table_summary,
+                score_summary=score_summary,
                 updated_at=time.time(),
                 callback_steps=callback_steps,
             )
@@ -328,11 +324,15 @@ class MatchSession:
             decision_time = max(0.0, time.time() - snapshot.updated_at)
 
         panel = self._viewer.step(state, events, action_str, reason or "", decision_time)
+        display_action = self._viewer.format_action_label(action_str or "等待动作")
+        table_summary = self._viewer.describe_table(state)
         self._set_snapshot(
             panel=panel,
-            action_label=action_str or "等待动作",
+            action_label=display_action,
             reason=reason or "",
             phase_label=state.phase.value,
+            table_summary=table_summary.summary_line,
+            score_summary=table_summary.score_line,
             callback_steps=self.snapshot.callback_steps + 1,
         )
         if self.config.watch_enabled and self.config.watch_delay > 0:
@@ -358,14 +358,18 @@ class MatchSession:
                     verbose=False,
                     session_audit=True,
                     simple_log_file=log_context.simple_file,
-                    request_delay_seconds=self.config.request_delay_seconds,
+                    request_delay_seconds=0.0 if self.config.dry_run else self.config.llm_runtime.request_delay,
                     on_step_callback=self._on_step,
-                    max_history_rounds=self.config.max_history_rounds,
-                    clear_history_on_new_hand=self.config.clear_history_per_hand,
+                    history_budget=self.config.llm_runtime.history_budget,
+                    context_scope=self.config.llm_runtime.context_scope,
+                    compression_level=self.config.llm_runtime.compression_level,
+                    context_budget_tokens=self.config.llm_runtime.context_budget_tokens,
+                    reserved_output_tokens=self.config.llm_runtime.reserved_output_tokens,
+                    safety_margin_tokens=self.config.llm_runtime.safety_margin_tokens,
                     players=self.config.players,
                     system_prompt=llm_cfg.system_prompt if llm_cfg else None,
-                    prompt_format=llm_cfg.prompt_format if llm_cfg else "natural",
-                    enable_conversation_logging=self.config.enable_conversation_logging,
+                    prompt_format=self.config.llm_runtime.prompt_format,
+                    enable_conversation_logging=self.config.llm_runtime.conversation_logging_enabled,
                 )
                 self.logs.replay_path.write_text(
                     json.dumps(run_result.as_match_log(), ensure_ascii=False, indent=2),

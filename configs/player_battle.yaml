@@ -25,8 +25,9 @@ llm:
   # timeout_sec: 300      # 对局特定超时（秒），覆盖内核配置
   # max_tokens: 2048      # 对局特定最大 token，覆盖内核配置
   request_delay: 0.5      # 请求间隔（秒）
-  # max_history_rounds: 10  # 覆盖内核配置
-  # clear_history_per_hand: false  # 覆盖内核配置
+  # history_budget: 10       # 覆盖历史预算
+  # context_scope: per_match # 覆盖上下文边界
+  # compression_level: collapse
 
 # ==================== 实时观战设置 ====================
 watch:

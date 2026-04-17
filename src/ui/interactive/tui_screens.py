@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from rich.columns import Columns
 from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
@@ -199,6 +198,45 @@ def _render_match_config_panel(session: MatchSession) -> Panel:
     return render_summary_panel("配置摘要", rows, border_style="bright_blue")
 
 
+def _render_live_status_bar(
+    line1: Text,
+    line2: Text | None = None,
+    *,
+    border_style: str = "bright_cyan",
+) -> Panel:
+    content = Group(line1) if line2 is None else Group(line1, line2)
+    return Panel(content, border_style=border_style, padding=(0, 1))
+
+
+def _render_match_live_status_bar(session: MatchSession) -> Panel:
+    status_label, status_style = _match_status(session)
+    snapshot = session.snapshot
+    mode_label = "Dry-run" if session.config.dry_run else "LLM 对局"
+    line1 = Text.assemble(
+        ("状态 ", "dim"),
+        (status_label, status_style),
+        (" | ", "dim"),
+        (snapshot.table_summary or "等待牌桌快照", "white"),
+        (" | ", "dim"),
+        ("步数 ", "dim"),
+        (str(snapshot.callback_steps), "cyan"),
+    )
+    line2 = Text.assemble(
+        ("模式 ", "dim"),
+        (mode_label, "white"),
+        (" | ", "dim"),
+        ("seed ", "dim"),
+        (str(session.config.seed), "yellow"),
+        (" | ", "dim"),
+        ("目标 ", "dim"),
+        (str(session.config.target_hands), "yellow"),
+        (" | ", "dim"),
+        ("最近动作 ", "dim"),
+        (snapshot.action_label, "bold bright_white"),
+    )
+    return _render_live_status_bar(line1, line2, border_style="bright_cyan")
+
+
 def _render_match_log_panel(result: MatchSessionResult) -> Panel:
     rows = [
         ("牌谱日志", str(result.logs.replay_path)),
@@ -302,6 +340,31 @@ def _render_replay_result_panel(result: ReplaySessionResult, delay_seconds: floa
     if result.error_message:
         rows.append(("错误", Text(result.error_message, style="red")))
     return render_summary_panel("回放结果", rows, border_style="bright_magenta")
+
+
+def _render_replay_live_status_bar(session: ReplaySession) -> Panel:
+    status_label, status_style = _replay_status(session)
+    snapshot = session.snapshot
+    line1 = Text.assemble(
+        ("状态 ", "dim"),
+        (status_label, status_style),
+        (" | ", "dim"),
+        ("步骤 ", "dim"),
+        (f"{snapshot.current_step}/{snapshot.total_steps}", "cyan"),
+        (" | ", "dim"),
+        ("速度 ", "dim"),
+        (_format_replay_speed(session.config.delay_seconds), "yellow"),
+        (" | ", "dim"),
+        (snapshot.table_summary or "等待牌桌快照", "white"),
+    )
+    line2 = Text.assemble(
+        ("当前阶段 ", "dim"),
+        (snapshot.phase_label, "white"),
+        (" | ", "dim"),
+        ("最近动作 ", "dim"),
+        (snapshot.action_label, "bold bright_white"),
+    )
+    return _render_live_status_bar(line1, line2, border_style="bright_green")
 
 
 def _render_form_summary(title: str, rows: list[tuple[str, str | Text]], border_style: str = "bright_blue") -> Panel:
@@ -516,7 +579,6 @@ class QuickStartScreen(BaseScreen):
     BORDER_STYLE = "bright_green"
 
     def compose(self) -> ComposeResult:
-        yield Static(self.build_header(), id="screen-header")
         with Horizontal(id="screen-body", classes="pane-row pane-row-large"):
             with Vertical(classes="form-pane"):
                 yield Static(Text("基础设置", style="bold bright_green"), classes="section-title")
@@ -578,7 +640,7 @@ class QuickStartScreen(BaseScreen):
             dry_run=True,
             watch_enabled=watch,
             watch_delay=delay if watch else 0.0,
-            request_delay_seconds=0.0,
+            llm_runtime=_runtime_options(),
             players=None,
             session_stem=create_session_stem("demo"),
         )
@@ -604,9 +666,8 @@ class MatchSetupScreen(BaseScreen):
         self._selected_player_ids = ["default", "default", "default", "default"]
 
     def compose(self) -> ComposeResult:
-        yield Static(self.build_header(), id="screen-header")
         with Horizontal(id="screen-body", classes="pane-row pane-row-large"):
-            with Vertical(classes="form-pane"):
+            with VerticalScroll(classes="form-pane", id="match-form-pane"):
                 yield Static(Text("玩家配置", style="bold bright_yellow"), classes="section-title")
                 for seat, label in enumerate(SEAT_LABELS):
                     yield Button(f"{label}: 默认 AI (dry-run)", id=f"match-seat-{seat}", classes="picker-button")
@@ -715,11 +776,8 @@ class MatchSetupScreen(BaseScreen):
             dry_run=not uses_llm,
             watch_enabled=watch,
             watch_delay=delay if watch else 0.0,
-            request_delay_seconds=0.0 if not uses_llm else float(runtime_options["request_delay_seconds"]),
+            llm_runtime=runtime_options,
             players=players,
-            max_history_rounds=int(runtime_options["max_history_rounds"]),
-            clear_history_per_hand=bool(runtime_options["clear_history_per_hand"]),
-            enable_conversation_logging=bool(runtime_options["enable_conversation_logging"]),
             session_stem=create_session_stem("match"),
         )
         session = MatchSession(config)
@@ -748,11 +806,8 @@ class LiveMatchScreen(BaseScreen):
         self._refresh_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
-        yield Static(self.build_header(), id="screen-header")
         with Vertical(id="screen-body"):
-            with Horizontal(classes="pane-row"):
-                yield Static(classes="pane", id="match-runtime")
-                yield Static(classes="pane", id="match-config")
+            yield Static(classes="pane", id="match-live-status")
             yield Static(classes="live-pane", id="match-live-panel")
         yield Static("", id="status-line")
         with Horizontal(classes="action-bar"):
@@ -773,8 +828,7 @@ class LiveMatchScreen(BaseScreen):
         self._refresh_live()
 
     def _refresh_live(self) -> None:
-        self.query_one("#match-runtime", Static).update(_render_match_runtime_panel(self.session))
-        self.query_one("#match-config", Static).update(_render_match_config_panel(self.session))
+        self.query_one("#match-live-status", Static).update(_render_match_live_status_bar(self.session))
         snapshot = self.session.snapshot
         if snapshot.panel is None:
             self.query_one("#match-live-panel", Static).update(
@@ -814,7 +868,6 @@ class MatchControlScreen(BaseScreen):
         self._refresh_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
-        yield Static(self.build_header(), id="screen-header")
         with Vertical(id="screen-body"):
             with Horizontal(classes="pane-row"):
                 yield Static(classes="pane", id="match-control-runtime")
@@ -886,7 +939,6 @@ class MatchSettlementScreen(BaseScreen):
         self.session = session
 
     def compose(self) -> ComposeResult:
-        yield Static(self.build_header(), id="screen-header")
         with Vertical(id="screen-body"):
             with Horizontal(classes="pane-row"):
                 yield Static(classes="pane", id="settlement-overview")
@@ -944,7 +996,6 @@ class ReplayBrowserScreen(BaseScreen):
         self._replays: tuple[ReplaySummary, ...] = ()
 
     def compose(self) -> ComposeResult:
-        yield Static(self.build_header(), id="screen-header")
         with Horizontal(id="screen-body", classes="pane-row pane-row-large"):
             with Vertical(classes="list-pane"):
                 yield Static(Text("最近牌谱", style="bold bright_magenta"), classes="section-title")
@@ -1034,7 +1085,6 @@ class ReplayDetailScreen(BaseScreen):
         self.delay_seconds = 0.5
 
     def compose(self) -> ComposeResult:
-        yield Static(self.build_header(), id="screen-header")
         with Horizontal(id="screen-body", classes="pane-row pane-row-large"):
             yield Static(classes="detail-pane", id="replay-detail-main")
             yield Static(classes="detail-pane", id="replay-detail-side")
@@ -1097,11 +1147,8 @@ class ReplayLiveScreen(BaseScreen):
         self._refresh_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
-        yield Static(self.build_header(), id="screen-header")
         with Vertical(id="screen-body"):
-            with Horizontal(classes="pane-row"):
-                yield Static(classes="pane", id="replay-runtime")
-                yield Static(classes="pane", id="replay-summary")
+            yield Static(classes="pane", id="replay-live-status")
             yield Static(classes="live-pane", id="replay-live-panel")
         yield Static("", id="status-line")
         with Horizontal(classes="action-bar"):
@@ -1124,10 +1171,7 @@ class ReplayLiveScreen(BaseScreen):
         self._refresh_live()
 
     def _refresh_live(self) -> None:
-        self.query_one("#replay-runtime", Static).update(_render_replay_runtime_panel(self.session))
-        self.query_one("#replay-summary", Static).update(
-            _render_replay_summary_panel(self.session.summary, self.session.config.delay_seconds)
-        )
+        self.query_one("#replay-live-status", Static).update(_render_replay_live_status_bar(self.session))
         snapshot = self.session.snapshot
         if snapshot.panel is None:
             self.query_one("#replay-live-panel", Static).update(
@@ -1167,7 +1211,6 @@ class ProfileBrowserScreen(BaseScreen):
         self._profiles: list[dict[str, Any]] = []
 
     def compose(self) -> ComposeResult:
-        yield Static(self.build_header(), id="screen-header")
         with Horizontal(id="screen-body", classes="pane-row pane-row-large"):
             with Vertical(classes="list-pane"):
                 yield Static(Text("角色列表", style="bold bright_magenta"), classes="section-title")
@@ -1232,7 +1275,6 @@ class ProfileDetailScreen(BaseScreen):
         self.player_id = player_id
 
     def compose(self) -> ComposeResult:
-        yield Static(self.build_header(), id="screen-header")
         with VerticalScroll(id="screen-body", classes="detail-pane"):
             yield Static(render_character_card(self.player_id, PLAYERS_DIR), id="profile-detail-card")
         yield Static("", id="status-line")
@@ -1259,7 +1301,6 @@ class CreateProfileScreen(BaseScreen):
         self._selected_template = "balanced"
 
     def compose(self) -> ComposeResult:
-        yield Static(self.build_header(), id="screen-header")
         with Horizontal(id="screen-body", classes="pane-row pane-row-large"):
             with Vertical(classes="form-pane"):
                 yield Input(placeholder="角色标识（仅字母数字）", id="profile-id")
@@ -1370,7 +1411,6 @@ class AddAsciiScreen(BaseScreen):
         self._selected_profile = self._profile_options[0][1] if self._profile_options else ""
 
     def compose(self) -> ComposeResult:
-        yield Static(self.build_header(), id="screen-header")
         with Horizontal(id="screen-body", classes="pane-row pane-row-large"):
             with Vertical(classes="form-pane"):
                 yield Button("目标角色: 未选择", id="ascii-profile", classes="picker-button")
@@ -1466,13 +1506,5 @@ class AddAsciiScreen(BaseScreen):
         self._refresh_summary()
 
 
-def _runtime_options() -> dict[str, object]:
-    defaults: dict[str, object] = {
-        "request_delay_seconds": 0.5,
-        "max_history_rounds": 10,
-        "clear_history_per_hand": False,
-        "enable_conversation_logging": False,
-    }
-    if not KERNEL_CONFIG_PATH.exists():
-        return defaults
+def _runtime_options():
     return load_runtime_options(KERNEL_CONFIG_PATH)

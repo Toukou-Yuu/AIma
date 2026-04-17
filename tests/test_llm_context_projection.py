@@ -3,23 +3,29 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from kernel import Action, ActionKind, apply, build_deck, initial_game_state, legal_actions, shuffle_deck
-from llm.agent import PlayerAgent
 from llm.agent.context import EpisodeContext
 from llm.agent.context_store import CompressionLevel, ContextEvent, ContextStore, PersistentState, TurnContext
+from llm.agent.event_journal import MatchJournal
+from llm.agent.match_context import MatchContext
 from llm.agent.memory import PlayerMemory
 from llm.agent.profile import PlayerProfile
 from llm.agent.prompt import PromptProjector
 from llm.agent.stats import PlayerStats
+from llm.config import load_llm_runtime_config
 from llm.turns import pending_actor_seats
 from llm.wire import legal_action_to_wire
+from tests.llm_test_utils import build_test_agent
+
+
+_RUNTIME = load_llm_runtime_config(config_path=Path("tests/fixtures/llm_runtime.yaml"))
 
 
 class _TrackingClient:
     def __init__(self, payload: str) -> None:
         self._payload = payload
-        self.session_ids: list[str | None] = []
         self.messages: list[list[object]] = []
 
     def complete(
@@ -27,9 +33,7 @@ class _TrackingClient:
         messages: list[object],
         *,
         model: str | None = None,
-        session_id: str | None = None,
     ) -> str:
-        self.session_ids.append(session_id)
         self.messages.append(messages)
         return self._payload
 
@@ -43,58 +47,83 @@ def _sample_state(seed: int = 21) -> tuple[object, int, tuple[object, ...]]:
     return state, seat, acts
 
 
-def test_default_session_scope_is_per_hand() -> None:
+def test_default_context_scope_is_per_hand() -> None:
     state, seat, acts = _sample_state()
     payload = json.dumps(dict(legal_action_to_wire(acts[0])), ensure_ascii=False)
     client = _TrackingClient(payload)
-    agent = PlayerAgent(system_prompt="你是麻将牌手")
+    agent = build_test_agent(system_prompt="你是麻将牌手")
 
-    ctx1 = EpisodeContext(seat, match_id="matchA", hand_number=1)
-    agent.decide(state, seat, episode_ctx=ctx1, client=client, dry_run=False)
+    ctx = EpisodeContext(seat, match_id="matchA", hand_number=1)
+    agent.decide(state, seat, episode_ctx=ctx, client=client, dry_run=False)
+    agent.decide(state, seat, episode_ctx=ctx, client=client, dry_run=False)
 
-    ctx2 = EpisodeContext(seat, match_id="matchA", hand_number=2)
-    agent.decide(state, seat, episode_ctx=ctx2, client=client, dry_run=False)
-
-    assert client.session_ids[0] != client.session_ids[1]
-    assert client.session_ids[0] is not None
-    assert client.session_ids[0].endswith("_h1")
-    assert client.session_ids[1].endswith("_h2")
+    second_messages = [msg.content for msg in client.messages[1]]
+    assert any("本局我的决策历史" in content for content in second_messages)
+    assert not any("本场前情摘要" in content for content in second_messages)
 
 
-def test_per_match_session_scope_reuses_session_id() -> None:
+def test_per_match_context_scope_reuses_local_match_archive() -> None:
     state, seat, acts = _sample_state(seed=22)
     payload = json.dumps(dict(legal_action_to_wire(acts[0])), ensure_ascii=False)
     client = _TrackingClient(payload)
-    agent = PlayerAgent(system_prompt="你是麻将牌手", session_scope="per_match")
+    agent = build_test_agent(system_prompt="你是麻将牌手", context_scope="per_match")
+    match_ctx = MatchContext(seat)
 
-    ctx1 = EpisodeContext(seat, match_id="matchB", hand_number=1)
+    ctx1 = match_ctx.create_episode()
     agent.decide(state, seat, episode_ctx=ctx1, client=client, dry_run=False)
+    ctx1.end_episode(1200)
+    match_ctx.close_episode(ctx1)
 
-    ctx2 = EpisodeContext(seat, match_id="matchB", hand_number=2)
+    ctx2 = match_ctx.create_episode()
     agent.decide(state, seat, episode_ctx=ctx2, client=client, dry_run=False)
 
-    assert client.session_ids[0] == client.session_ids[1]
-    assert client.session_ids[0] is not None
-    assert client.session_ids[0].endswith("_mmatchB")
+    second_messages = [msg.content for msg in client.messages[1]]
+    assert any("本场前情摘要" in content for content in second_messages)
+    assert any("第1局" in content for content in second_messages)
 
 
-def test_stateless_session_scope_omits_session_id() -> None:
+def test_stateless_context_scope_omits_local_history() -> None:
     state, seat, acts = _sample_state(seed=23)
     payload = json.dumps(dict(legal_action_to_wire(acts[0])), ensure_ascii=False)
     client = _TrackingClient(payload)
-    agent = PlayerAgent(system_prompt="你是麻将牌手", session_scope="stateless")
+    agent = build_test_agent(system_prompt="你是麻将牌手", context_scope="stateless")
 
     ctx = EpisodeContext(seat, match_id="matchC", hand_number=1)
     agent.decide(state, seat, episode_ctx=ctx, client=client, dry_run=False)
+    agent.decide(state, seat, episode_ctx=ctx, client=client, dry_run=False)
 
-    assert client.session_ids == [None]
+    second_messages = [msg.content for msg in client.messages[1]]
+    assert not any("本局我的决策历史" in content for content in second_messages)
+    assert not any("本局公共事件" in content for content in second_messages)
+    assert not any("本场前情摘要" in content for content in second_messages)
+
+
+def test_per_hand_scope_can_include_public_event_history() -> None:
+    g0 = initial_game_state()
+    wall = tuple(shuffle_deck(build_deck(), seed=26))
+    begin_out = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=wall))
+    state = begin_out.new_state
+    seat = pending_actor_seats(state)[0]
+    acts = legal_actions(state, seat)
+    payload = json.dumps(dict(legal_action_to_wire(acts[0])), ensure_ascii=False)
+    client = _TrackingClient(payload)
+    journal = MatchJournal()
+    journal.start_hand(1, begin_out.events)
+    agent = build_test_agent(system_prompt="你是麻将牌手")
+
+    ctx = EpisodeContext(seat, match_id="match-public", hand_number=1, match_journal=journal)
+    agent.decide(state, seat, episode_ctx=ctx, client=client, dry_run=False)
+
+    messages = [msg.content for msg in client.messages[0]]
+    assert any("本局公共事件" in content for content in messages)
+    assert any("第1局开始" in content for content in messages)
 
 
 def test_prompt_projector_reads_latest_memory_snapshot() -> None:
     state, seat, acts = _sample_state(seed=24)
     payload = json.dumps(dict(legal_action_to_wire(acts[0])), ensure_ascii=False)
     client = _TrackingClient(payload)
-    agent = PlayerAgent(system_prompt="你是麻将牌手")
+    agent = build_test_agent(system_prompt="你是麻将牌手")
 
     ctx1 = EpisodeContext(seat, match_id="matchD", hand_number=1)
     agent.decide(state, seat, episode_ctx=ctx1, client=client, dry_run=False)
@@ -110,12 +139,28 @@ def test_prompt_projector_reads_latest_memory_snapshot() -> None:
 
 
 def test_natural_mode_never_switches_to_delta_frame() -> None:
-    profile = PlayerProfile(id="default", name="Default", model="gpt-4o-mini")
+    profile = PlayerProfile(
+        id="default",
+        name="Default",
+        model="gpt-4o-mini",
+        provider="openai",
+        temperature=0.7,
+        max_tokens=1024,
+        timeout_sec=120.0,
+        persona_prompt="",
+        strategy_prompt="",
+    )
     projector = PromptProjector(
         profile,
         system_prompt_base="你是麻将牌手",
         prompt_mode="natural",
+        context_scope=_RUNTIME.context_scope,
         use_delta=True,
+        history_budget=_RUNTIME.history_budget,
+        compression_level=_RUNTIME.compression_level,
+        context_budget_tokens=_RUNTIME.context_budget_tokens,
+        reserved_output_tokens=_RUNTIME.reserved_output_tokens,
+        safety_margin_tokens=_RUNTIME.safety_margin_tokens,
     )
     state, seat, acts = _sample_state(seed=25)
     obs = __import__("kernel").observation(state, seat, mode="human")

@@ -5,7 +5,7 @@ from __future__ import annotations
 from kernel.call import apply_pass_call
 from kernel.deal.model import BoardState
 from kernel.engine.state import GameState
-from kernel.play.model import TurnPhase, kamicha_seat
+from kernel.play.model import TurnPhase, shimocha_seat
 
 
 def clear_call_window(board: BoardState) -> BoardState:
@@ -20,7 +20,7 @@ def clear_call_window(board: BoardState) -> BoardState:
         elif cs.stage == "pon_kan":
             b = apply_pass_call(b, cs.pon_kan_order[cs.pon_kan_idx])
         else:
-            b = apply_pass_call(b, kamicha_seat(cs.discard_seat))
+            b = apply_pass_call(b, shimocha_seat(cs.discard_seat))
     return b
 
 

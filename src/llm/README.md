@@ -14,9 +14,11 @@ src/llm/
 ├── agent/                # Agent 系统
 │   ├── __init__.py       # PlayerAgent（协调类）
 │   ├── core.py           # AgentCore（核心决策逻辑）
-│   ├── session.py        # ModelSessionPolicy + ConversationLogNamer
-│   ├── prompt.py         # PromptProjector（显式上下文投影）
-│   ├── context_store.py  # ContextStore（结构化历史 + 压缩）
+│   ├── session.py        # LocalContextPolicy + ConversationIdNamer
+│   ├── prompt.py         # PromptProjector（块式上下文投影）
+│   ├── context_store.py  # ContextStore（自家决策历史 + 压缩）
+│   ├── event_journal.py  # MatchJournal（公共事件流）
+│   ├── token_budget.py   # 预算估算与渐进式压缩规划
 │   ├── decision_parser.py # DecisionParser（决策解析）
 │   ├── persistence.py    # PersistenceManager（持久化管理）
 │   ├── match_context.py  # MatchContext（跨局状态管理）
@@ -47,8 +49,19 @@ src/llm/
 协调类，组合各组件实现职责分离：
 
 ```python
-agent = PlayerAgent(player_id="kavi")
-decision = agent.decide(state, seat, episode_ctx=ctx, client=client)
+runtime = load_llm_runtime_config(config_path="configs/aima_kernel.yaml")
+agent = PlayerAgent(
+    player_id="kavi",
+    history_budget=runtime.history_budget,
+    prompt_mode=runtime.prompt_format,
+    compression_level=runtime.compression_level,
+    context_scope=runtime.context_scope,
+    context_budget_tokens=runtime.context_budget_tokens,
+    reserved_output_tokens=runtime.reserved_output_tokens,
+    safety_margin_tokens=runtime.safety_margin_tokens,
+    use_delta=(runtime.prompt_format == "json"),
+)
+decision = agent.decide(state, seat, episode_ctx=ctx, client=client, request_delay_seconds=runtime.request_delay)
 ```
 
 ### MatchContext
@@ -63,13 +76,18 @@ mc.close_episode(ctx)      # 关闭本局，更新统计
 
 ### PromptProjector
 
-按“长期状态 + 结构化局内历史 + 当前观测”显式投影 Prompt：
+按“长期状态 + 本地上下文窗口 + 当前观测”显式投影 Prompt：
 
 ```
 system = base_prompt + persona + memory + stats
-history = ContextStore.project_history(...)
+match = MatchJournal archived hands + self archive  # per_match
+public = MatchJournal.project_current_hand(...)     # per_hand/per_match
+self = ContextStore.project_history(...)            # per_hand/per_match
 user = natural/json keyframe or json delta
+planner = PromptBudgetPlanner(...)                  # 经验公式预算驱动压缩
 ```
+
+当前预算器使用经验公式估算输入体积：`1` 个英文字符约 `0.3 token`，`1` 个中文字符约 `0.6 token`。
 
 ## 配置
 
@@ -82,9 +100,12 @@ llm:
   base_url: "https://api.openai.com/v1"
   model: "gpt-4o-mini"
   prompt_format: natural
-  session_scope: per_hand
+  context_scope: per_hand  # AIma 本地上下文边界
   compression_level: collapse
   history_budget: 10
+  context_budget_tokens: 8192
+  reserved_output_tokens: 1024
+  safety_margin_tokens: 512
   system_prompt: |
     你是日式麻将牌手...
 
@@ -135,5 +156,6 @@ python -m llm --help
 关键设计：
 - **长期状态**：profile/memory/stats（持久化到文件）
 - **跨局状态**：MatchContext 管理（本场统计）
-- **运行时状态**：EpisodeContext（本局统计、帧缓存、结构化历史）
-- **投影视图**：ContextStore + PromptProjector 负责预算驱动压缩与 prompt 生成
+- **运行时状态**：EpisodeContext（本局统计、帧缓存、自家决策历史、跨局摘要快照）
+- **公共事实源**：MatchJournal（整桌公开事件流）
+- **投影视图**：LocalContextPolicy + PromptBudgetPlanner + PromptProjector 负责预算驱动压缩与 prompt 生成

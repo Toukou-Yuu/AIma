@@ -16,7 +16,7 @@ from kernel.hand.melds import (
     validate_meld_shape,
 )
 from kernel.hand.multiset import remove_tile, remove_tiles
-from kernel.play.model import TurnPhase, kamicha_seat
+from kernel.play.model import TurnPhase, shimocha_seat
 from kernel.tiles.model import Suit, Tile
 
 
@@ -87,7 +87,7 @@ def enumerate_call_response_open_melds(board: BoardState, seat: int) -> tuple[Me
             )
             try_add(m)
 
-    elif cs.stage == "chi" and seat == kamicha_seat(ds):
+    elif cs.stage == "chi" and seat == shimocha_seat(ds):
         if claimed.suit == Suit.HONOR:
             return ()
         suit = claimed.suit

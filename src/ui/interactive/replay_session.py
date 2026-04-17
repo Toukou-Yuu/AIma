@@ -44,6 +44,8 @@ class ReplaySessionSnapshot:
     panel: Panel | None
     action_label: str
     phase_label: str
+    table_summary: str
+    score_summary: str
     current_step: int
     total_steps: int
     updated_at: float | None
@@ -83,6 +85,8 @@ class ReplaySession:
             panel=None,
             action_label="等待回放启动",
             phase_label="pending",
+            table_summary="等待牌桌快照",
+            score_summary="",
             current_step=0,
             total_steps=max(0, self.summary.action_count),
             updated_at=None,
@@ -199,6 +203,8 @@ class ReplaySession:
         panel: Panel | None,
         action_label: str,
         phase_label: str,
+        table_summary: str,
+        score_summary: str,
         current_step: int,
         total_steps: int,
     ) -> None:
@@ -207,6 +213,8 @@ class ReplaySession:
                 panel=panel,
                 action_label=action_label,
                 phase_label=phase_label,
+                table_summary=table_summary,
+                score_summary=score_summary,
                 current_step=current_step,
                 total_steps=total_steps,
                 updated_at=time.time(),
@@ -237,10 +245,13 @@ class ReplaySession:
 
             state = initial_game_state()
             opening_panel = self._viewer.step(state, (), "开始回放", "")
+            table_summary = self._viewer.describe_table(state)
             self._set_snapshot(
                 panel=opening_panel,
-                action_label="开始回放",
+                action_label=self._viewer.format_action_label("开始回放"),
                 phase_label=state.phase.value,
+                table_summary=table_summary.summary_line,
+                score_summary=table_summary.score_line,
                 current_step=0,
                 total_steps=total_steps,
             )
@@ -258,16 +269,20 @@ class ReplaySession:
                 outcome = apply(state, action)
                 state = outcome.new_state
                 reason = reasons[index - 1] if index - 1 < len(reasons) else ""
+                raw_action_label = f"Step {index}: {action.kind.value}"
                 panel = self._viewer.step(
                     state,
                     outcome.events,
-                    f"Step {index}: {action.kind.value}",
+                    raw_action_label,
                     reason,
                 )
+                table_summary = self._viewer.describe_table(state)
                 self._set_snapshot(
                     panel=panel,
-                    action_label=f"Step {index}: {action.kind.value}",
+                    action_label=self._viewer.format_action_label(raw_action_label),
                     phase_label=state.phase.value,
+                    table_summary=table_summary.summary_line,
+                    score_summary=table_summary.score_line,
                     current_step=index,
                     total_steps=total_steps,
                 )

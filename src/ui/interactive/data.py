@@ -10,8 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
-
+from llm.config import load_kernel_config
 from ui.interactive.utils import KERNEL_CONFIG_PATH, PLAYERS_DIR, load_profile_data
 
 SEAT_LABELS = ("东家", "南家", "西家", "北家")
@@ -142,12 +141,9 @@ _PROBE_CACHE: dict[tuple[str, str, str, str], tuple[float, tuple[str, str, str]]
 _PROBE_IN_FLIGHT: set[tuple[str, str, str, str]] = set()
 _PROBE_LOCK = threading.Lock()
 def _safe_load_yaml(path: Path) -> dict[str, Any]:
-    """安全加载 YAML；失败时返回空 dict。"""
-    if not path.exists():
-        return {}
+    """安全加载已合并配置；失败时返回空 dict。"""
     try:
-        with open(path, encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
+        data = load_kernel_config(path)
     except Exception:
         return {}
     return data if isinstance(data, dict) else {}
@@ -313,7 +309,7 @@ def load_model_summary(config_path: Path = KERNEL_CONFIG_PATH) -> ModelSummary:
             provider_label="未配置",
             model="--",
             configured=False,
-            prompt_format="natural",
+            prompt_format="--",
             conversation_logging=False,
             note="缺少 configs/aima_kernel.yaml",
             connection_label="未连接",
@@ -324,7 +320,7 @@ def load_model_summary(config_path: Path = KERNEL_CONFIG_PATH) -> ModelSummary:
     llm_cfg = cfg.get("llm", {}) if isinstance(cfg.get("llm"), dict) else {}
     api_key = str(llm_cfg.get("api_key", "")).strip()
     configured = api_key not in _PLACEHOLDER_KEYS
-    provider = str(llm_cfg.get("provider", "openai"))
+    provider = str(llm_cfg.get("provider", ""))
     base_url = str(llm_cfg.get("base_url", ""))
     cache_key = (provider, base_url, api_key, str(configured))
     cached_probe = _get_cached_probe_status(cache_key)
@@ -346,9 +342,9 @@ def load_model_summary(config_path: Path = KERNEL_CONFIG_PATH) -> ModelSummary:
             provider,
             base_url,
         ),
-        model=str(llm_cfg.get("model", "default")),
+        model=str(llm_cfg.get("model", "--")),
         configured=configured,
-        prompt_format=str(llm_cfg.get("prompt_format", "natural")),
+        prompt_format=str(llm_cfg.get("prompt_format", "--")),
         conversation_logging=bool(
             (llm_cfg.get("conversation_logging") or {}).get("enabled", False),
         ),

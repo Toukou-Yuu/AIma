@@ -184,11 +184,12 @@ def test_replay_detail_run_uses_session_runner(monkeypatch, tmp_path: Path) -> N
 
 def test_match_launch_plan_preserves_dry_run_fallback(monkeypatch) -> None:
     """LLM 配置缺失时切到 dry-run，会进入后台会话配置。"""
-    from pathlib import Path
-
     from ui.interactive.match_setup import MatchLaunchPlan, MatchSetupPage
 
-    monkeypatch.setattr("ui.interactive.match_setup.KERNEL_CONFIG_PATH", Path("/tmp/non-existent-aima-kernel.yaml"))
+    monkeypatch.setattr(
+        "ui.interactive.match_setup.KERNEL_CONFIG_PATH",
+        Path("/tmp/non-existent-aima-kernel.yaml"),
+    )
     monkeypatch.setattr(
         "ui.interactive.match_setup.Prompt.confirm",
         lambda message, default=True: True,
@@ -207,6 +208,54 @@ def test_match_launch_plan_preserves_dry_run_fallback(monkeypatch) -> None:
 
     assert isinstance(plan, MatchLaunchPlan)
     assert plan.dry_run is True
+
+
+def test_match_session_snapshot_action_label_is_localized(monkeypatch, tmp_path: Path) -> None:
+    """正式对局快照里的最近动作必须使用本地化文案。"""
+    from types import SimpleNamespace
+
+    from rich.panel import Panel
+
+    from llm.config import LLMRuntimeConfig, MatchEndCondition
+    from ui.interactive.match_session import MatchSession, MatchSessionConfig
+
+    monkeypatch.setattr(
+        "ui.interactive.match_session.resolve_player_names",
+        lambda players: {0: "一姬", 1: "二阶堂", 2: "卡维", 3: "默认 AI"},
+    )
+
+    runtime = LLMRuntimeConfig(
+        prompt_format="natural",
+        context_scope="per_hand",
+        compression_level="collapse",
+        history_budget=10,
+        context_budget_tokens=8192,
+        reserved_output_tokens=1024,
+        safety_margin_tokens=512,
+        request_delay=0.0,
+        conversation_logging_enabled=False,
+    )
+    session = MatchSession(
+        MatchSessionConfig(
+            label="test",
+            config_path=tmp_path / "kernel.yaml",
+            seed=42,
+            match_end=MatchEndCondition(type="hands", value=1, allow_negative=False),
+            dry_run=True,
+            watch_enabled=False,
+            watch_delay=0.0,
+            llm_runtime=runtime,
+            players=[{"id": "ichihime", "seat": 0}],
+            session_stem="test-session",
+        ),
+    )
+
+    monkeypatch.setattr(session._viewer, "step", lambda *args, **kwargs: Panel("ok"))
+
+    state = SimpleNamespace(phase=SimpleNamespace(value="in_round"))
+    session._on_step(state, (), "家0 discard", None)
+
+    assert session.snapshot.action_label == "一姬 打牌"
 
 
 def test_textual_app_starts_in_home_screen() -> None:

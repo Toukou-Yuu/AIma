@@ -7,7 +7,7 @@
 
 设计原则：
 - 高内聚：只负责对话日志的记录
-- 低耦合：通过构造函数注入依赖（player_id, session_id）
+- 低耦合：通过构造函数注入依赖（player_id, conversation_id）
 - 资源管理：文件在 __init__ 打开，在 close() 关闭
 """
 
@@ -28,7 +28,7 @@ class ConversationLogger:
     """对话记录器，有明确的生命周期.
 
     高内聚：只负责对话日志的记录
-    低耦合：通过构造函数注入依赖（player_id, session_id）
+    低耦合：通过构造函数注入依赖（player_id, conversation_id）
     资源管理：文件在 __init__ 打开，在 close() 关闭
 
     改进：header 只在首次写入 Turn 时才写入，避免空文件和多次 header
@@ -37,14 +37,14 @@ class ConversationLogger:
     def __init__(
         self,
         player_id: str,
-        session_id: str,
+        conversation_id: str,
         enabled: bool = True,
     ) -> None:
         """初始化对话记录器.
 
         Args:
             player_id: 玩家 ID（用于确定输出目录）
-            session_id: 会话 ID（用于文件命名）
+            conversation_id: 本地对话 ID（用于文件命名）
             enabled: 是否启用（支持配置开关）
 
         生命周期：
@@ -53,7 +53,7 @@ class ConversationLogger:
         - 结束时：关闭文件
         """
         self.player_id = player_id
-        self.session_id = session_id
+        self.conversation_id = conversation_id
         self.enabled = enabled
         self._file = None
         self._header_written = False  # 标记 header 是否已写入
@@ -62,12 +62,12 @@ class ConversationLogger:
             return
 
         try:
-            # 构建输出路径：configs/players/{player_id}/conversations/{YYYYMMDD}-{session_id}.md
+            # 构建输出路径：configs/players/{player_id}/conversations/{YYYYMMDD}-{conversation_id}.md
             date_str = datetime.now().strftime("%Y%m%d")
             output_dir = Path(f"configs/players/{player_id}/conversations")
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            filename = f"{date_str}-{session_id}.md"
+            filename = f"{date_str}-{conversation_id}.md"
             filepath = output_dir / filename
 
             self._file = open(filepath, "a", encoding="utf-8")
@@ -99,7 +99,7 @@ class ConversationLogger:
         try:
             # 首次写入时写 header（确保只有真实内容时才有 header）
             if not self._header_written:
-                self._write_header(self.session_id)
+                self._write_header(self.conversation_id)
                 self._header_written = True
 
             self._write_turn(turn_number, seat, phase, messages, response)
@@ -120,10 +120,10 @@ class ConversationLogger:
             finally:
                 self._file = None
 
-    def _write_header(self, session_id: str) -> None:
+    def _write_header(self, conversation_id: str) -> None:
         """写入文件头（会话信息）."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self._file.write(f"## 对局 {timestamp} (session: {session_id})\n\n")
+        self._file.write(f"## 对局 {timestamp} (conversation: {conversation_id})\n\n")
 
     def _write_turn(
         self,

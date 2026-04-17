@@ -234,7 +234,6 @@ class MatchSetupPage(Page):
     def _build_session_config(self, launch_plan: MatchLaunchPlan) -> MatchSessionConfig:
         """构建后台对局会话配置。"""
         runtime_options = _runtime_options()
-        request_delay = 0.0 if launch_plan.dry_run else float(runtime_options["request_delay_seconds"])
 
         return MatchSessionConfig(
             label="正式对局",
@@ -248,11 +247,8 @@ class MatchSetupPage(Page):
             dry_run=launch_plan.dry_run,
             watch_enabled=launch_plan.watch_enabled,
             watch_delay=launch_plan.watch_delay,
-            request_delay_seconds=request_delay,
+            llm_runtime=runtime_options,
             players=launch_plan.players,
-            max_history_rounds=int(runtime_options["max_history_rounds"]),
-            clear_history_per_hand=bool(runtime_options["clear_history_per_hand"]),
-            enable_conversation_logging=bool(runtime_options["enable_conversation_logging"]),
             session_stem=create_session_stem("match"),
         )
 
@@ -402,7 +398,7 @@ class QuickStartPage(Page):
             dry_run=True,
             watch_enabled=watch_enabled,
             watch_delay=watch_delay,
-            request_delay_seconds=0.0,
+            llm_runtime=_runtime_options(),
             players=None,
             session_stem=create_session_stem("demo"),
         )
@@ -413,14 +409,6 @@ def quick_start() -> None:
     QuickStartPage().run()
 
 
-def _runtime_options() -> dict[str, object]:
-    """读取交互式对局运行参数；缺省时退回安全默认值。"""
-    defaults: dict[str, object] = {
-        "request_delay_seconds": 0.5,
-        "max_history_rounds": 10,
-        "clear_history_per_hand": False,
-        "enable_conversation_logging": False,
-    }
-    if not KERNEL_CONFIG_PATH.exists():
-        return defaults
+def _runtime_options():
+    """读取交互式对局运行参数。"""
     return load_runtime_options(KERNEL_CONFIG_PATH)

@@ -10,7 +10,7 @@ from llm.agent.context_store import PersistentState
 from llm.agent.decision_parser import DecisionParser
 from llm.agent.persistence import PersistenceManager
 from llm.agent.prompt import PromptProjector
-from llm.agent.session import ModelSessionPolicy, SessionScope
+from llm.agent.session import ContextScope
 
 if TYPE_CHECKING:
     from kernel.engine.state import GameState
@@ -36,7 +36,7 @@ class PlayerAgent:
 
     组件：
     - _persistence: 持久化管理（load/save profile/memory/stats）
-    - _session_policy: 模型会话策略（session_id 生成）
+    - _context_scope: 本地上下文边界（stateless/per_hand/per_match）
     - _prompt_projector: Prompt 投影（system + user prompt）
     - _core: 核心决策逻辑（LLM 调用 + 解析）
     """
@@ -47,13 +47,16 @@ class PlayerAgent:
         profile: "PlayerProfile | None" = None,
         memory: "PlayerMemory | None" = None,
         stats: "PlayerStats | None" = None,
-        max_history_rounds: int = 10,
-        history_budget: int | None = None,
+        *,
+        history_budget: int,
+        prompt_mode: str,
+        compression_level: "CompressionLevel",
+        context_scope: ContextScope,
+        context_budget_tokens: int,
+        reserved_output_tokens: int,
+        safety_margin_tokens: int,
+        use_delta: bool,
         system_prompt: str | None = None,
-        prompt_mode: str = "natural",
-        compression_level: "CompressionLevel" = "collapse",
-        session_scope: SessionScope = "per_hand",
-        use_delta: bool = True,
     ) -> None:
         """初始化 Agent.
 
@@ -62,21 +65,25 @@ class PlayerAgent:
             profile: 直接传入的 profile（优先级高于 player_id）
             memory: 直接传入的 memory（优先级高于 player_id）
             stats: 直接传入的 stats（优先级高于 player_id）
-            max_history_rounds: 旧版历史轮数预算（兼容别名）
-            history_budget: 历史预算（默认回退到 max_history_rounds）
+            history_budget: 历史预算
             system_prompt: 系统提示词（从配置文件读取）
             prompt_mode: Prompt 投影模式（natural/json）
             compression_level: 历史压缩级别
-            session_scope: 模型会话作用域
-            use_delta: 是否启用状态差异法（默认启用）
+            context_scope: 本地上下文边界
+            context_budget_tokens: Prompt 输入预算
+            reserved_output_tokens: 预留输出预算
+            safety_margin_tokens: 安全冗余预算
+            use_delta: 是否启用状态差异法
         """
         self.player_id = player_id
-        self.max_history_rounds = max_history_rounds
-        self.history_budget = max(0, history_budget if history_budget is not None else max_history_rounds)
+        self.history_budget = max(0, history_budget)
         self.system_prompt = system_prompt
         self.prompt_mode = prompt_mode
         self.compression_level = compression_level
-        self.session_scope = session_scope
+        self.context_scope = context_scope
+        self.context_budget_tokens = context_budget_tokens
+        self.reserved_output_tokens = reserved_output_tokens
+        self.safety_margin_tokens = safety_margin_tokens
         self.use_delta = use_delta
 
         # 1. 创建持久化管理器
@@ -91,20 +98,21 @@ class PlayerAgent:
         self.memory = memory if memory is not None else self._persistence.load_memory()
         self.stats = stats if stats is not None else self._persistence.load_stats()
 
-        # 3. 创建会话管理器
-        self._session_policy = ModelSessionPolicy(player_id, scope=session_scope)
-
-        # 4. 创建 Prompt 构建器
+        # 3. 创建 Prompt 构建器
         self._prompt_projector = PromptProjector(
             self.profile,
             system_prompt_base=system_prompt,
             prompt_mode=prompt_mode,
+            context_scope=context_scope,
             use_delta=use_delta,
             history_budget=self.history_budget,
             compression_level=compression_level,
+            context_budget_tokens=context_budget_tokens,
+            reserved_output_tokens=reserved_output_tokens,
+            safety_margin_tokens=safety_margin_tokens,
         )
 
-        # 5. 创建核心决策组件
+        # 4. 创建核心决策组件
         self._core = AgentCore(self.profile, prompt_mode=prompt_mode, use_delta=use_delta)
 
     def decide(
@@ -137,7 +145,6 @@ class PlayerAgent:
             seat,
             episode_ctx=episode_ctx,
             prompt_projector=self._prompt_projector,
-            session_policy=self._session_policy,
             persistent_state=PersistentState(self.memory, self.stats),
             client=client,
             conversation_logger=episode_ctx.conversation_logger,

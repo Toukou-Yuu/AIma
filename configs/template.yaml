@@ -32,6 +32,31 @@ match:
 
 # ==================== LLM 运行时设置 ====================
 llm:
+  # 服务提供商
+  provider: openai
+
+  # API 配置
+  api_key: "your-api-key-here"
+  base_url: "https://api.openai.com/v1"
+  model: "gpt-4o-mini"
+
+  # Prompt 格式
+  prompt_format: natural
+
+  # 本地上下文边界
+  context_scope: per_hand
+
+  # 历史压缩级别
+  compression_level: collapse
+
+  # 历史预算
+  history_budget: 10
+
+  # Prompt 输入预算
+  context_budget_tokens: 8192
+  reserved_output_tokens: 1024
+  safety_margin_tokens: 512
+
   # 请求超时（秒）
   timeout_sec: 120
 
@@ -41,27 +66,35 @@ llm:
   # 每次请求间隔（秒）
   request_delay: 0.5
 
-  # 每席保留的最大对话轮数
-  max_history_rounds: 10
+  # 对话日志
+  conversation_logging:
+    enabled: false
 
-  # 每局开始时清空历史
-  clear_history_per_hand: false
+  # 系统提示词
+  system_prompt: |
+    你是日式麻将（立直麻将）的牌手代理。你只能从给出的 legal_actions 中精确选择一条执行。
 
 # ==================== 日志设置 ====================
 logging:
+  json: null
+
   # 会话日志文件名：null(不生成)、""(自动生成)、"自定义名称"
-  session: ""
+  session: null
 
   # 是否启用审计日志
-  session_audit: true
+  session_audit: false
+
+  level: "INFO"
+  file_output: true
+  log_dir: "logs"
 
 # ==================== 实时观战设置 ====================
 watch:
   # 是否启用 Rich 实时终端观战
-  enabled: true
+  enabled: false
 
   # 观战每步间隔（秒）
-  delay: 0.5
+  delay: 0.3
 
   # 是否显示 AI 决策理由
   show_reason: true

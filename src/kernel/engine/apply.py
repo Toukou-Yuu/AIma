@@ -30,7 +30,7 @@ from kernel.flow.model import TenpaiResult
 from kernel.hand.multiset import remove_tile
 from kernel.kan import apply_ankan, apply_shankuminkan
 from kernel.play import apply_discard, apply_draw, board_after_tsumo_win
-from kernel.play.model import TurnPhase, kamicha_seat
+from kernel.play.model import TurnPhase, shimocha_seat
 from kernel.riichi.tenpai import is_tenpai_default
 from kernel.scoring.dora import ura_indicators_for_settlement
 from kernel.scoring.settle import settle_ron_table, settle_tsumo_table
@@ -302,7 +302,7 @@ def _outcome_pass_call(state: GameState, seat: int) -> ApplyOutcome:
 
 def _call_response_active_seat(board: BoardState) -> int | None:
     """
-    当前应答窗口轮到表态的席（荣和：``min(ron_remaining)``；碰杠：``pon_kan_order[idx]``；吃：上家）。
+    当前应答窗口轮到表态的席（荣和：``min(ron_remaining)``；碰杠：``pon_kan_order[idx]``；吃：下家）。
     与 ``CALL_PASS_DRAIN`` 及串行 ``PASS_CALL`` 对齐。
     """
     if board.turn_phase != TurnPhase.CALL_RESPONSE:
@@ -315,7 +315,7 @@ def _call_response_active_seat(board: BoardState) -> int | None:
     if cs.stage == "pon_kan":
         return cs.pon_kan_order[cs.pon_kan_idx]
     if cs.stage == "chi":
-        return kamicha_seat(cs.discard_seat)
+        return shimocha_seat(cs.discard_seat)
     return None
 
 

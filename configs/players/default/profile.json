@@ -1,0 +1,11 @@
+{
+  "id": "default",
+  "name": "DefaultBot",
+  "model": "gpt-4o-mini",
+  "provider": "openai",
+  "temperature": 0.7,
+  "max_tokens": 1024,
+  "timeout_sec": 120.0,
+  "persona_prompt": "",
+  "strategy_prompt": ""
+}

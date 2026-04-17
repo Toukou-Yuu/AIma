@@ -23,6 +23,7 @@ from kernel import (
 from kernel.call.transitions import apply_pass_call, apply_ron
 from kernel.call.win import can_ron_seven_pairs
 from kernel.deal.model import BoardState
+from kernel.hand.melds import Meld, MeldKind
 from kernel.play.model import CallResolution, RiverEntry, TurnPhase
 from tests.test_scoring import _board_sorted_deal, _pool_not_in_wall, _take_n
 
@@ -150,9 +151,9 @@ def test_pass_call_chain_via_engine_reaches_need_draw() -> None:
         elif cs.stage == "pon_kan":
             s = cs.pon_kan_order[cs.pon_kan_idx]
         else:
-            from kernel.play.model import kamicha_seat
+            from kernel.play.model import shimocha_seat
 
-            s = kamicha_seat(cs.discard_seat)
+            s = shimocha_seat(cs.discard_seat)
         g = apply(g, Action(ActionKind.PASS_CALL, seat=s)).new_state
     assert g.board is not None
     assert g.board.turn_phase.name == "NEED_DRAW"
@@ -178,9 +179,9 @@ def test_call_pass_drain_equivalent_to_serial_pass() -> None:
         elif cs.stage == "pon_kan":
             s = cs.pon_kan_order[cs.pon_kan_idx]
         else:
-            from kernel.play.model import kamicha_seat
+            from kernel.play.model import shimocha_seat
 
-            s = kamicha_seat(cs.discard_seat)
+            s = shimocha_seat(cs.discard_seat)
         g_chain = apply(g_chain, Action(ActionKind.PASS_CALL, seat=s)).new_state
         n_pass += 1
     out = apply(g2, Action(ActionKind.CALL_PASS_DRAIN))
@@ -193,3 +194,73 @@ def test_call_pass_drain_rejected_when_first_pending_can_ron() -> None:
     gs = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
     with pytest.raises(IllegalActionError, match="not forced pass"):
         apply(gs, Action(ActionKind.CALL_PASS_DRAIN))
+
+
+def _board_chi_window_only_south_can_claim() -> tuple[BoardState, Tile]:
+    """seat0 舍 4m，仅 seat1 拥有 3m/5m，可测试非下家非法吃。"""
+    b0 = _board_sorted_deal(dealer=0)
+    pool = _pool_not_in_wall(b0)
+    t3 = Tile(Suit.MAN, 3)
+    t4 = Tile(Suit.MAN, 4)
+    t5 = Tile(Suit.MAN, 5)
+    hand1 = Counter({t3: 1, t5: 1})
+    for tile in (t3, t4, t5):
+        assert pool[tile] >= 1
+        pool[tile] -= 1
+        if pool[tile] == 0:
+            del pool[tile]
+    for _ in range(11):
+        tile = next(iter(pool.elements()))
+        hand1[tile] += 1
+        pool[tile] -= 1
+        if pool[tile] == 0:
+            del pool[tile]
+    hands = []
+    for seat in range(4):
+        if seat == 1:
+            hands.append(hand1)
+        else:
+            hands.append(_take_n(pool, 13))
+    river = (RiverEntry(0, t4),)
+    cs = CallResolution(
+        discard_seat=0,
+        claimed_tile=t4,
+        river_index=0,
+        stage="chi",
+        ron_remaining=frozenset(),
+        ron_claimants=frozenset(),
+        pon_kan_order=(1, 2, 3),
+        pon_kan_idx=3,
+        finished=False,
+    )
+    return (
+        BoardState(
+            hands=tuple(hands),
+            live_wall=b0.live_wall,
+            live_draw_index=b0.live_draw_index,
+            dead_wall=b0.dead_wall,
+            revealed_indicators=b0.revealed_indicators,
+            current_seat=1,
+            turn_phase=TurnPhase.CALL_RESPONSE,
+            river=river,
+            melds=((), (), (), ()),
+            last_draw_tile=None,
+            last_draw_was_rinshan=False,
+            rinshan_draw_index=b0.rinshan_draw_index,
+            call_state=cs,
+            all_discards_per_seat=((t4,), (), (), ()),
+        ),
+        t4,
+    )
+
+
+def test_engine_rejects_chi_from_non_shimocha() -> None:
+    b, t4 = _board_chi_window_only_south_can_claim()
+    gs = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
+    illegal_chi = Meld(
+        kind=MeldKind.CHI,
+        tiles=(Tile(Suit.MAN, 3), t4, Tile(Suit.MAN, 5)),
+        called_tile=t4,
+    )
+    with pytest.raises(IllegalActionError, match="CHI only by shimocha"):
+        apply(gs, Action(ActionKind.OPEN_MELD, seat=3, meld=illegal_chi))

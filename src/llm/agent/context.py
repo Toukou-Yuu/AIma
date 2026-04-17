@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from llm.agent import Decision
     from llm.agent.context_store import CompressionLevel
     from llm.agent.conversation_logger import ConversationLogger
+    from llm.agent.event_journal import MatchJournal
 
 
 @dataclass
@@ -34,6 +35,8 @@ class EpisodeContext:
     hand_number: int = 1
     episode_stats: EpisodeStats = field(default_factory=lambda: EpisodeStats("", 0))
     match_stats: MatchStats = field(default_factory=MatchStats)
+    match_history_archive: tuple[str, ...] = ()
+    match_journal: MatchJournal | None = field(default=None, repr=False)
     decision_history: list[Decision] = field(default_factory=list)
     context_store: ContextStore = field(default_factory=ContextStore, repr=False)
 
@@ -169,6 +172,69 @@ class EpisodeContext:
             compression_level=compression_level,
         )
         return projection.text
+
+    def project_public_history(
+        self,
+        *,
+        detailed: bool,
+        history_budget: int,
+        compression_level: CompressionLevel,
+    ) -> str:
+        """返回本局公共事件历史。"""
+        if self.match_journal is None:
+            return ""
+        return self.match_journal.project_current_hand(
+            viewer_seat=self.seat,
+            detailed=detailed,
+            history_budget=history_budget,
+            compression_level=compression_level,
+        )
+
+    def project_match_history(
+        self,
+        *,
+        archive_budget: int,
+        compression_level: CompressionLevel,
+    ) -> str:
+        """返回跨局摘要文本（公共前情 + 自家归档）。"""
+        if archive_budget <= 0:
+            return ""
+        lines: list[str] = []
+        if self.match_journal is not None:
+            public_archive = self.match_journal.project_archived_hands(
+                archive_budget=archive_budget,
+                compression_level=compression_level,
+            )
+            if public_archive:
+                lines.append("公共前情:")
+                lines.append(public_archive)
+        if self.match_history_archive:
+            archived = self.match_history_archive[-archive_budget:]
+            lines.append(f"自家归档（最近 {len(archived)} 局）:")
+            lines.extend(archived)
+        return "\n".join(lines)
+
+    def build_hand_summary(self) -> str:
+        """生成本局归档摘要，供后续对局注入。"""
+        summary_parts = [f"第{self.hand_number}局（自家）"]
+        if self.episode_stats.total_points:
+            sign = "+" if self.episode_stats.total_points > 0 else ""
+            summary_parts.append(f"得点{sign}{self.episode_stats.total_points}")
+        if self.episode_stats.wins:
+            summary_parts.append(f"和了{self.episode_stats.wins}次")
+        if self.episode_stats.deal_ins:
+            summary_parts.append(f"放铳{self.episode_stats.deal_ins}次")
+        if self.episode_stats.riichi_count:
+            summary_parts.append(f"立直{self.episode_stats.riichi_count}次")
+
+        history_text = self.context_store.project_history(
+            detailed=False,
+            history_budget=4,
+            compression_level="collapse",
+        ).text
+        if history_text:
+            return " | ".join(summary_parts) + "\n关键决策:\n" + history_text
+        return " | ".join(summary_parts)
 
     def format_history_summary(self) -> str:
         """生成关键事件摘要（替代逐条记录）.

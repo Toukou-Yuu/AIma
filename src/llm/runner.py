@@ -37,6 +37,7 @@ from kernel.tiles.model import Tile
 from llm.action_build import legal_action_to_action
 from llm.agent import PlayerAgent
 from llm.agent.context import EpisodeContext
+from llm.agent.event_journal import MatchJournal
 from llm.agent.match_context import MatchContext
 from llm.observation_format import build_user_prompt
 from llm.protocol import CompletionClient
@@ -57,6 +58,43 @@ def _live_wall_remaining_tiles(board: Any) -> int | None:
 def _stderr_progress(verbose: bool, msg: str) -> None:
     if verbose:
         print(msg, file=sys.stderr)
+
+
+def _format_callback_action_label(action: Action) -> str:
+    """为实时 UI 构建简洁中文动作标签。"""
+    seat_prefix = f"家{action.seat} " if action.seat is not None else ""
+
+    if action.kind == ActionKind.DRAW:
+        return f"{seat_prefix}摸牌".strip()
+    if action.kind == ActionKind.DISCARD:
+        tile = action.tile.to_code() if action.tile is not None else "?"
+        verb = "立直打牌" if action.declare_riichi else "打牌"
+        return f"{seat_prefix}{verb} {tile}".strip()
+    if action.kind == ActionKind.PASS_CALL:
+        return f"{seat_prefix}过牌".strip()
+    if action.kind == ActionKind.CALL_PASS_DRAIN:
+        return "连续过牌"
+    if action.kind == ActionKind.RON:
+        return f"{seat_prefix}荣和".strip()
+    if action.kind == ActionKind.TSUMO:
+        return f"{seat_prefix}自摸和了".strip()
+    if action.kind == ActionKind.OPEN_MELD and action.meld is not None:
+        meld_kind = {
+            "chi": "吃",
+            "pon": "碰",
+            "daiminkan": "大明杠",
+        }.get(action.meld.kind.value, "鸣牌")
+        tiles = "".join(tile.to_code() for tile in action.meld.tiles)
+        return f"{seat_prefix}{meld_kind} [{tiles}]".strip()
+    if action.kind == ActionKind.ANKAN and action.meld is not None:
+        tiles = "".join(tile.to_code() for tile in action.meld.tiles)
+        return f"{seat_prefix}暗杠 [{tiles}]".strip()
+    if action.kind == ActionKind.SHANKUMINKAN and action.meld is not None:
+        tiles = "".join(tile.to_code() for tile in action.meld.tiles)
+        return f"{seat_prefix}加杠 [{tiles}]".strip()
+    if action.kind == ActionKind.BEGIN_ROUND:
+        return "开局配牌"
+    return f"{seat_prefix}{action.kind.value}".strip()
 
 
 def _accumulate_simple_stats(
@@ -267,23 +305,24 @@ class RunResult:
 def run_llm_match(
     *,
     seed: int,
-    match_end: MatchEndCondition | None = None,
+    match_end: MatchEndCondition,
+    request_delay_seconds: float,
+    history_budget: int,
+    context_scope: str,
+    compression_level: str,
+    context_budget_tokens: int,
+    reserved_output_tokens: int,
+    safety_margin_tokens: int,
+    prompt_format: str,  # natural 或 json
+    enable_conversation_logging: bool,
     client: CompletionClient | None = None,
     dry_run: bool = False,
     verbose: bool = False,
     session_audit: bool = False,
     simple_log_file: TextIO | None = None,
-    request_delay_seconds: float = 0.0,
     on_step_callback: Callable[[GameState, tuple[GameEvent, ...], str, str | None], None] | None = None,
-    max_history_rounds: int = 10,
-    clear_history_on_new_hand: bool = False,
-    history_budget: int | None = None,
-    session_scope: str = "per_hand",
-    compression_level: str = "collapse",
     players: list[dict[str, Any]] | None = None,
     system_prompt: str | None = None,
-    prompt_format: str = "natural",  # natural 或 json
-    enable_conversation_logging: bool = False,
 ) -> RunResult:
     """
     从 ``PRE_DEAL`` 开局到 ``MATCH_END`` 或满足结束条件。
@@ -294,15 +333,16 @@ def run_llm_match(
     - ``session_audit``：向 logging 写每步内核动作摘要；
       非 dry-run 时另写模型解析结果（CLI ``--log-session``）；
       遇 ``ron`` / ``tsumo`` / ``hand_over`` / ``match_end`` 等时另写 ``settlement …`` 行。
-    - ``max_history_rounds``：每席 LLM 保留的最大对话轮数（默认 10，设为 0 则禁用历史）。
-    - ``clear_history_on_new_hand``：旧版兼容开关；为 True 时强制使用 ``per_hand`` 会话。
-    - ``history_budget``：历史预算（默认回退到 ``max_history_rounds``）。
-    - ``session_scope``：模型会话边界（``stateless``/``per_hand``/``per_match``）。
-    - ``compression_level``：历史压缩级别（``none``/``snip``/``micro``/``collapse``）。
+    - ``history_budget``：历史预算。
+    - ``context_scope``：AIma 本地上下文边界（``stateless``/``per_hand``/``per_match``）。
+    - ``compression_level``：历史压缩级别（``none``/``snip``/``micro``/``collapse``/``autocompact``）。
+    - ``context_budget_tokens``：Prompt 输入预算。
+    - ``reserved_output_tokens``：预留输出预算。
+    - ``safety_margin_tokens``：安全冗余预算。
     - ``simple_log_file``：若给定，按内核事件写简体中文可读对局（与 JSON 牌谱并行）。
     - ``request_delay_seconds``：每次调用 LLM 前休眠秒数（减压控/防连接被掐）；``dry_run`` 时不请求，不休眠。
     - ``on_step_callback``：可选回调，每步玩家决策后调用（用于实时 UI 观战）。
-    - ``match_end``：对局结束条件（局数制/负分结束），默认半庄8局。
+    - ``match_end``：对局结束条件（局数制/负分结束）。
     - ``players``：可选，指定对战玩家列表，格式 [{"id": "player_id", "seat": 0}, ...]。
     - ``enable_conversation_logging``：是否启用对话日志记录（需要 player_id）。
     """
@@ -312,8 +352,8 @@ def run_llm_match(
     hand_number = 0
     win_counts: list[int] = [0, 0, 0, 0]
     hands_finished: list[int] = [0]
-    effective_history_budget = max_history_rounds if history_budget is None else history_budget
-    effective_session_scope = "per_hand" if clear_history_on_new_hand else session_scope
+    effective_history_budget = history_budget
+    effective_context_scope = context_scope
 
     # 每席 Agent 实例（支持 players 配置）
     if players:
@@ -324,36 +364,42 @@ def run_llm_match(
             player_id = p.get("id")
             seat_agents[seat] = PlayerAgent(
                 player_id=player_id,
-                max_history_rounds=max_history_rounds,
                 history_budget=effective_history_budget,
                 system_prompt=system_prompt,
                 prompt_mode=prompt_format,
                 compression_level=compression_level,
-                session_scope=effective_session_scope,
+                context_scope=effective_context_scope,
+                context_budget_tokens=context_budget_tokens,
+                reserved_output_tokens=reserved_output_tokens,
+                safety_margin_tokens=safety_margin_tokens,
                 use_delta=(prompt_format == "json"),
             )
         # 未指定的座位使用默认
         for s in range(4):
             if s not in seat_agents:
                 seat_agents[s] = PlayerAgent(
-                    max_history_rounds=max_history_rounds,
                     history_budget=effective_history_budget,
                     system_prompt=system_prompt,
                     prompt_mode=prompt_format,
                     compression_level=compression_level,
-                    session_scope=effective_session_scope,
+                    context_scope=effective_context_scope,
+                    context_budget_tokens=context_budget_tokens,
+                    reserved_output_tokens=reserved_output_tokens,
+                    safety_margin_tokens=safety_margin_tokens,
                     use_delta=(prompt_format == "json"),
                 )
     else:
         # 全部使用默认
         seat_agents: dict[int, PlayerAgent] = {
             s: PlayerAgent(
-                max_history_rounds=max_history_rounds,
                 history_budget=effective_history_budget,
                 system_prompt=system_prompt,
                 prompt_mode=prompt_format,
                 compression_level=compression_level,
-                session_scope=effective_session_scope,
+                context_scope=effective_context_scope,
+                context_budget_tokens=context_budget_tokens,
+                reserved_output_tokens=reserved_output_tokens,
+                safety_margin_tokens=safety_margin_tokens,
                 use_delta=(prompt_format == "json"),
             ) for s in range(4)
         }
@@ -363,8 +409,9 @@ def run_llm_match(
     if players:
         for p in players:
             player_id_map[p["seat"]] = p.get("id")
+    shared_journal = MatchJournal()
     match_contexts: dict[int, MatchContext] = {
-        s: MatchContext(s, player_id=player_id_map.get(s)) for s in range(4)
+        s: MatchContext(s, player_id=player_id_map.get(s), match_journal=shared_journal) for s in range(4)
     }
     # EpisodeContext：运行时状态管理（由 MatchContext 创建）
     # dry_run 时禁用 conversation_logging（避免创建空文件）
@@ -392,6 +439,7 @@ def run_llm_match(
             session_audit=session_audit,
             verbose=verbose,
         )
+        shared_journal.start_hand(1, begin_out.events)
         _accumulate_simple_stats(begin_out.events, win_counts, hands_finished)
         hand_number = 1
         # EpisodeContext 已在初始化时创建，无需额外操作
@@ -437,10 +485,6 @@ def run_llm_match(
     hands_completed = 0  # 已完成的局数
     reason = "match_end"
 
-    # 默认结束条件：半庄8局，负分结束
-    if match_end is None:
-        match_end = MatchEndCondition(type="hands", value=8, allow_negative=False)
-
     while True:
         # 检查结束条件（每局结束后）
         if hands_completed > 0 and state.phase in (GamePhase.HAND_OVER, GamePhase.FLOWN, GamePhase.MATCH_END):
@@ -458,6 +502,7 @@ def run_llm_match(
                 for seat, agent in seat_agents.items():
                     if agent.player_id is not None and seat in seat_contexts:
                         agent.update_stats(seat_contexts[seat], placements[seat])
+                shared_journal.archive_current_hand()
                 # 触发 MATCH_END
                 break
 
@@ -473,6 +518,7 @@ def run_llm_match(
             for seat, agent in seat_agents.items():
                 if agent.player_id is not None and seat in seat_contexts:
                     agent.update_stats(seat_contexts[seat], placements[seat])
+            shared_journal.archive_current_hand()
             break
 
         if state.phase in (GamePhase.HAND_OVER, GamePhase.FLOWN):
@@ -489,6 +535,7 @@ def run_llm_match(
                     session_audit=session_audit,
                     verbose=verbose,
                 )
+                shared_journal.archive_current_hand()
                 _accumulate_simple_stats(noop_out.events, win_counts, hands_finished)
                 state = noop_out.new_state
                 if state.phase == GamePhase.IN_ROUND and old_phase in (
@@ -497,6 +544,7 @@ def run_llm_match(
                 ):
                     hands_completed += 1  # 已完成一局
                     hand_number += 1
+                    shared_journal.start_hand(hand_number, noop_out.events)
                     # 新一局开始时，由 MatchContext 创建新的 EpisodeContext（Factory 模式）
                     for s in range(4):
                         seat_contexts[s] = match_contexts[s].create_episode(
@@ -551,6 +599,7 @@ def run_llm_match(
                         session_audit=session_audit,
                         verbose=verbose,
                     )
+                    shared_journal.append_events(step_out.events)
                     _accumulate_simple_stats(step_out.events, win_counts, hands_finished)
                     state = step_out.new_state
                     _write_simple_snapshot(
@@ -621,6 +670,7 @@ def run_llm_match(
                 session_audit=session_audit,
                 verbose=verbose,
             )
+            shared_journal.append_events(step_out.events)
             _accumulate_simple_stats(step_out.events, win_counts, hands_finished)
             # 更新 EpisodeContext 统计
             _update_episode_stats(step_out.events, seat_contexts)
@@ -651,9 +701,7 @@ def run_llm_match(
             # 实时观战回调
             if on_step_callback is not None:
                 try:
-                    action_str = f"{act.kind.value}"
-                    if act.seat is not None:
-                        action_str = f"家{act.seat} {action_str}"
+                    action_str = _format_callback_action_label(act)
                     on_step_callback(state, step_out.events, action_str, llm_why)
                 except Exception:
                     # 回调异常不应中断对局

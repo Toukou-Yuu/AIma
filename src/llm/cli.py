@@ -13,7 +13,7 @@ from typing import Any
 
 from kernel.replay import ReplayError, replay_from_actions
 from kernel.replay_json import actions_from_match_log
-from llm.config import load_llm_config
+from llm.config import load_kernel_config, load_llm_config
 from llm.protocol import build_client
 from llm.runner import run_llm_match
 
@@ -135,22 +135,11 @@ def _load_dotenv_if_available() -> None:
 
 
 def _load_yaml_config(path: str | None) -> dict[str, Any]:
-    """加载 YAML 配置文件，若路径为空或文件不存在返回空 dict。"""
+    """加载已合并模板/内核/目标文件后的配置。"""
     if path is None:
         return {}
-    p = Path(path)
-    if not p.exists():
-        print(f"配置文件不存在: {p}", file=sys.stderr)
-        return {}
     try:
-        import yaml
-    except ImportError:
-        print("需要 PyYAML: pip install pyyaml", file=sys.stderr)
-        return {}
-    try:
-        content = p.read_text(encoding="utf-8")
-        cfg = yaml.safe_load(content)
-        return cfg if isinstance(cfg, dict) else {}
+        return load_kernel_config(path)
     except Exception as e:
         print(f"配置文件解析失败: {e}", file=sys.stderr)
         return {}
@@ -165,31 +154,37 @@ def _merge_config(
     CLI 参数使用 None 作为 sentinel：None 表示"未设置"，使用 YAML 默认值；
     非 None 表示"用户显式设置"，使用 CLI 值。
     """
-    # 从 YAML 提取默认值
-    match_end_cfg = yaml_cfg.get("match", {}).get("match_end", {})
+    match_cfg = yaml_cfg["match"]
+    match_end_cfg = match_cfg["match_end"]
+    debug_cfg = yaml_cfg["debug"]
+    logging_cfg = yaml_cfg["logging"]
+    watch_cfg = yaml_cfg["watch"]
+    llm_cfg = yaml_cfg["llm"]
     yaml_defaults = {
-        "seed": yaml_cfg.get("match", {}).get("seed", 0),
+        "seed": match_cfg["seed"],
         "match_end": {
-            "type": match_end_cfg.get("type", "hands"),
-            "value": match_end_cfg.get("value", 8),
-            "allow_negative": match_end_cfg.get("allow_negative", False),
+            "type": match_end_cfg["type"],
+            "value": match_end_cfg["value"],
+            "allow_negative": match_end_cfg["allow_negative"],
         },
-        "dry_run": yaml_cfg.get("debug", {}).get("dry_run", False),
-        "log_json": yaml_cfg.get("logging", {}).get("json"),
-        "log_session": yaml_cfg.get("logging", {}).get("session"),
-        "verbose": yaml_cfg.get("debug", {}).get("verbose", False),
-        "request_delay": yaml_cfg.get("llm", {}).get("request_delay", 0.5),
-        "watch": yaml_cfg.get("watch", {}).get("enabled", False),
-        "watch_delay": yaml_cfg.get("watch", {}).get("delay", 0.3),
-        "max_history_rounds": yaml_cfg.get("llm", {}).get("max_history_rounds", 10),
-        "clear_history_per_hand": yaml_cfg.get("llm", {}).get("clear_history_per_hand", False),
-        "history_budget": yaml_cfg.get("llm", {}).get("history_budget", yaml_cfg.get("llm", {}).get("max_history_rounds", 10)),
-        "session_scope": yaml_cfg.get("llm", {}).get("session_scope", "per_hand"),
-        "compression_level": yaml_cfg.get("llm", {}).get("compression_level", "collapse"),
-        "session_audit": yaml_cfg.get("logging", {}).get("session_audit", False),
-        "show_reason": yaml_cfg.get("watch", {}).get("show_reason", True),
-        "players": yaml_cfg.get("match", {}).get("players") or yaml_cfg.get("players"),
-        "enable_conversation_logging": yaml_cfg.get("llm", {}).get("conversation_logging", {}).get("enabled", False),
+        "dry_run": debug_cfg["dry_run"],
+        "log_json": logging_cfg["json"],
+        "log_session": logging_cfg["session"],
+        "verbose": debug_cfg["verbose"],
+        "request_delay": llm_cfg["request_delay"],
+        "watch": watch_cfg["enabled"],
+        "watch_delay": watch_cfg["delay"],
+        "history_budget": llm_cfg["history_budget"],
+        "context_scope": llm_cfg["context_scope"],
+        "compression_level": llm_cfg["compression_level"],
+        "context_budget_tokens": llm_cfg["context_budget_tokens"],
+        "reserved_output_tokens": llm_cfg["reserved_output_tokens"],
+        "safety_margin_tokens": llm_cfg["safety_margin_tokens"],
+        "prompt_format": llm_cfg["prompt_format"],
+        "session_audit": logging_cfg["session_audit"],
+        "show_reason": watch_cfg["show_reason"],
+        "players": match_cfg.get("players") or yaml_cfg.get("players"),
+        "enable_conversation_logging": llm_cfg["conversation_logging"]["enabled"],
     }
 
     # 合并：CLI 非 None → 用 CLI；否则用 YAML
@@ -209,14 +204,6 @@ def _merge_config(
     # 特殊处理：若 log_session 非 null，自动启用 session_audit
     if result.log_session is not None:
         result.session_audit = True
-
-    # 旧参数兼容：未显式设置 history_budget 时，沿用 max_history_rounds
-    if getattr(cli_args, "history_budget", None) is None and getattr(cli_args, "max_history_rounds", None) is not None:
-        result.history_budget = result.max_history_rounds
-
-    # 旧参数兼容：仅在未显式设置 session_scope 时生效
-    if getattr(cli_args, "session_scope", None) is None and result.clear_history_per_hand:
-        result.session_scope = "per_hand"
 
     # 特殊处理 replay：无 YAML 默认值，仅 CLI 显式设置时才有
     result.replay = getattr(cli_args, "replay", None)
@@ -286,15 +273,18 @@ def _cmd_watch_replay(
 def _cmd_watch_dry_run(
     seed: int,
     delay: float,
+    *,
+    request_delay: float,
+    history_budget: int,
+    context_scope: str,
+    compression_level: str,
+    context_budget_tokens: int,
+    reserved_output_tokens: int,
+    safety_margin_tokens: int,
+    prompt_format: str,
+    show_reason: bool,
     match_end: dict[str, Any] | None = None,
     dry_run: bool = True,
-    max_history_rounds: int = 10,
-    clear_history_per_hand: bool = False,
-    history_budget: int | None = None,
-    session_scope: str = "per_hand",
-    compression_level: str = "collapse",
-    show_reason: bool = True,
-    llm_override: dict[str, Any] | None = None,
     players: list[dict[str, Any]] | None = None,
     kernel_config_path: str = "configs/aima_kernel.yaml",
     log_session: str | None = None,
@@ -350,10 +340,7 @@ def _cmd_watch_dry_run(
     client = None
     llm_cfg = None
     if not dry_run:
-        llm_cfg = load_llm_config(
-            config_path=kernel_config_path,
-            override_cfg=llm_override,
-        )
+        llm_cfg = load_llm_config(config_path=kernel_config_path)
         if llm_cfg is None:
             print(
                 "未设置 API Key（请在 configs/aima_kernel.yaml 中设置 api_key）。"
@@ -391,16 +378,17 @@ def _cmd_watch_dry_run(
             verbose=False,
             session_audit=session_audit,
             simple_log_file=simple_log_file,
-            request_delay_seconds=0.0 if dry_run else delay,
+            request_delay_seconds=0.0 if dry_run else request_delay,
             on_step_callback=callback.on_step,
-            max_history_rounds=max_history_rounds,
-            clear_history_on_new_hand=clear_history_per_hand,
-            history_budget=llm_cfg.history_budget if llm_cfg else history_budget,
-            session_scope=llm_cfg.session_scope if llm_cfg else session_scope,
-            compression_level=llm_cfg.compression_level if llm_cfg else compression_level,
+            history_budget=history_budget,
+            context_scope=context_scope,
+            compression_level=compression_level,
+            context_budget_tokens=context_budget_tokens,
+            reserved_output_tokens=reserved_output_tokens,
+            safety_margin_tokens=safety_margin_tokens,
             players=players,
             system_prompt=llm_cfg.system_prompt if llm_cfg else None,
-            prompt_format=llm_cfg.prompt_format if llm_cfg else "natural",
+            prompt_format=prompt_format,
             enable_conversation_logging=enable_conversation_logging,
         )
 
@@ -493,7 +481,7 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         default=None,
         metavar="SEC",
-        help="每次调用 LLM API 前的间隔秒数（默认 0.5）",
+        help="每次调用 LLM API 前的间隔秒数（默认取配置文件）",
     )
     p.add_argument(
         "--watch",
@@ -506,39 +494,47 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         default=None,
         metavar="SEC",
-        help="--watch 模式每步间隔秒数（默认 0.3）",
-    )
-    p.add_argument(
-        "--max-history-rounds",
-        type=int,
-        default=None,
-        metavar="N",
-        help="LLM 每席保留的最大对话轮数（默认 10，设为 0 则禁用历史）",
-    )
-    p.add_argument(
-        "--clear-history-per-hand",
-        action="store_true",
-        default=None,
-        help="每局开始时清空该席的历史消息（默认跨局保留）",
+        help="--watch 模式每步间隔秒数（默认取配置文件）",
     )
     p.add_argument(
         "--history-budget",
         type=int,
         default=None,
         metavar="N",
-        help="发送给模型的历史预算（默认使用 llm.history_budget 或 max_history_rounds）",
+        help="发送给模型的历史预算",
     )
     p.add_argument(
-        "--session-scope",
+        "--context-scope",
         choices=("stateless", "per_hand", "per_match"),
         default=None,
-        help="模型会话边界：不保留/按局保留/按整场保留（默认 per_hand）",
+        help="AIma 本地上下文边界：不保留/按局保留/按整场保留（默认取配置文件）",
     )
     p.add_argument(
         "--compression-level",
-        choices=("none", "snip", "micro", "collapse"),
+        choices=("none", "snip", "micro", "collapse", "autocompact"),
         default=None,
-        help="历史压缩级别（默认 collapse）",
+        help="历史压缩级别（默认取配置文件）",
+    )
+    p.add_argument(
+        "--context-budget-tokens",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Prompt 输入预算上限（默认取配置文件）",
+    )
+    p.add_argument(
+        "--reserved-output-tokens",
+        type=int,
+        default=None,
+        metavar="N",
+        help="为模型输出预留的 token 预算（默认取配置文件）",
+    )
+    p.add_argument(
+        "--safety-margin-tokens",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Prompt 预算安全冗余（默认取配置文件）",
     )
     p.add_argument(
         "--players",
@@ -581,20 +577,20 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_watch_replay(cfg.replay, cfg.watch_delay)
         else:
             # 实时观战（dry-run 或真实 LLM）
-            # 构建对局配置的 llm 覆盖
-            match_llm_override = yaml_cfg.get("llm", {})
             return _cmd_watch_dry_run(
                 cfg.seed,
                 cfg.watch_delay,
                 match_end=cfg.match_end,
                 dry_run=cfg.dry_run,
-                max_history_rounds=cfg.max_history_rounds,
-                clear_history_per_hand=cfg.clear_history_per_hand,
+                request_delay=cfg.request_delay,
                 history_budget=cfg.history_budget,
-                session_scope=cfg.session_scope,
+                context_scope=cfg.context_scope,
                 compression_level=cfg.compression_level,
+                context_budget_tokens=cfg.context_budget_tokens,
+                reserved_output_tokens=cfg.reserved_output_tokens,
+                safety_margin_tokens=cfg.safety_margin_tokens,
+                prompt_format=cfg.prompt_format,
                 show_reason=cfg.show_reason,
-                llm_override=match_llm_override,
                 players=cfg.players,
                 kernel_config_path=kernel_config_path,
                 log_session=cfg.log_session,
@@ -634,10 +630,7 @@ def main(argv: list[str] | None = None) -> int:
     client = None
     llm_cfg = None
     if not cfg.dry_run:
-        llm_cfg = load_llm_config(
-            config_path=kernel_config_path,
-            override_cfg=yaml_cfg.get("llm"),
-        )
+        llm_cfg = load_llm_config(config_path=kernel_config_path)
         if llm_cfg is None:
             print(
                 "未设置 API Key（请在 configs/aima_kernel.yaml 中设置 api_key）。"
@@ -670,14 +663,15 @@ def main(argv: list[str] | None = None) -> int:
                 session_audit=cfg.session_audit or log_stem is not None,
                 simple_log_file=simple_fp,
                 request_delay_seconds=0.0 if cfg.dry_run else cfg.request_delay,
-                max_history_rounds=cfg.max_history_rounds,
-                clear_history_on_new_hand=cfg.clear_history_per_hand,
                 history_budget=cfg.history_budget,
-                session_scope=llm_cfg.session_scope if llm_cfg else cfg.session_scope,
-                compression_level=llm_cfg.compression_level if llm_cfg else cfg.compression_level,
+                context_scope=cfg.context_scope,
+                compression_level=cfg.compression_level,
+                context_budget_tokens=cfg.context_budget_tokens,
+                reserved_output_tokens=cfg.reserved_output_tokens,
+                safety_margin_tokens=cfg.safety_margin_tokens,
                 players=cfg.players,
                 system_prompt=llm_cfg.system_prompt if llm_cfg else None,
-                prompt_format=llm_cfg.prompt_format if llm_cfg else "natural",
+                prompt_format=cfg.prompt_format,
                 enable_conversation_logging=cfg.enable_conversation_logging,
             )
     else:
@@ -690,14 +684,15 @@ def main(argv: list[str] | None = None) -> int:
             session_audit=cfg.session_audit or log_stem is not None,
             simple_log_file=None,
             request_delay_seconds=0.0 if cfg.dry_run else cfg.request_delay,
-            max_history_rounds=cfg.max_history_rounds,
-            clear_history_on_new_hand=cfg.clear_history_per_hand,
             history_budget=cfg.history_budget,
-            session_scope=llm_cfg.session_scope if llm_cfg else cfg.session_scope,
-            compression_level=llm_cfg.compression_level if llm_cfg else cfg.compression_level,
+            context_scope=cfg.context_scope,
+            compression_level=cfg.compression_level,
+            context_budget_tokens=cfg.context_budget_tokens,
+            reserved_output_tokens=cfg.reserved_output_tokens,
+            safety_margin_tokens=cfg.safety_margin_tokens,
             players=cfg.players,
             system_prompt=llm_cfg.system_prompt if llm_cfg else None,
-            prompt_format=llm_cfg.prompt_format if llm_cfg else "natural",
+            prompt_format=cfg.prompt_format,
             enable_conversation_logging=cfg.enable_conversation_logging,
         )
     print(

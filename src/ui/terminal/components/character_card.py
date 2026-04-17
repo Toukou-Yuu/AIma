@@ -92,10 +92,19 @@ def render_character_card(player_id: str, players_dir: str | Path = "configs/pla
 
     # 默认值处理
     if profile is None:
+        fallback_profile = load_profile("default", players_path)
+        if fallback_profile is None:
+            raise FileNotFoundError(
+                f"缺少角色 profile: {player_id}，且默认 profile 不存在于 {players_path}"
+            )
         profile = PlayerProfile(
             id=player_id,
             name=player_id,
-            model="default",
+            model=fallback_profile.model,
+            provider=fallback_profile.provider,
+            temperature=fallback_profile.temperature,
+            max_tokens=fallback_profile.max_tokens,
+            timeout_sec=fallback_profile.timeout_sec,
             persona_prompt="",
             strategy_prompt="",
         )
@@ -261,7 +270,11 @@ def render_all_cards(players_dir: str | Path = "configs/players") -> Group:
 
     # 查找所有有 profile 的玩家
     for player_dir in sorted(players_path.iterdir()):
-        if player_dir.is_dir() and (player_dir / "profile.json").exists():
+        if (
+            player_dir.is_dir()
+            and player_dir.name != "default"
+            and (player_dir / "profile.json").exists()
+        ):
             card = render_character_card(player_dir.name, players_path)
             cards.append(card)
 

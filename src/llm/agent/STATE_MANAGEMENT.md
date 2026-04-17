@@ -10,15 +10,17 @@
 
 ## 职责分离架构（2026-04 重构）
 
-重构后采用组合模式，将 `PlayerAgent` 拆分为 7 个独立组件：
+重构后采用组合模式，将 `PlayerAgent` 拆分为多个高内聚组件：
 
 ```
 src/llm/agent/
 ├── __init__.py        # PlayerAgent（协调类，无状态纯函数）
 ├── core.py            # AgentCore（核心决策逻辑）
-├── session.py         # ModelSessionPolicy + ConversationLogNamer
-├── prompt.py          # PromptProjector（上下文投影）
-├── context_store.py   # ContextStore（结构化历史 + 压缩）
+├── session.py         # LocalContextPolicy + ConversationIdNamer
+├── prompt.py          # PromptProjector（块式上下文投影）
+├── context_store.py   # ContextStore（自家决策历史 + 压缩）
+├── event_journal.py   # MatchJournal（公共事件流）
+├── token_budget.py    # TokenEstimateService + PromptBudgetPlanner
 ├── decision_parser.py # DecisionParser（决策解析）
 ├── persistence.py     # PersistenceManager（持久化管理）
 ├── match_context.py   # MatchContext（跨局状态管理）← Context Object 模式
@@ -44,9 +46,11 @@ src/llm/agent/
 |------|------|------|
 | `PlayerAgent` | `__init__.py` | 协调类，组合所有组件，提供公共接口（无状态） |
 | `AgentCore` | `core.py` | 核心决策逻辑，判断唯一动作、dry-run、LLM调用、解析响应 |
-| `ModelSessionPolicy` | `session.py` | 模型会话边界（stateless/per_hand/per_match） |
-| `PromptProjector` | `prompt.py` | Prompt 投影，整合 profile/memory/stats/历史视图 |
-| `ContextStore` | `context_store.py` | 结构化历史存储与预算驱动压缩 |
+| `LocalContextPolicy` | `session.py` | AIma 本地上下文边界（stateless/per_hand/per_match） |
+| `PromptProjector` | `prompt.py` | Prompt 投影，整合 profile/memory/stats/公共事件/自家历史 |
+| `ContextStore` | `context_store.py` | 自家决策历史存储与渐进式压缩 |
+| `MatchJournal` | `event_journal.py` | 整桌公共事件流与跨局公共归档 |
+| `PromptBudgetPlanner` | `token_budget.py` | 经验公式 token 预算与压缩边界规划 |
 | `DecisionParser` | `decision_parser.py` | 决策解析，JSON解析、action匹配、fallback处理 |
 | `PersistenceManager` | `persistence.py` | 持久化管理，load/save profile/memory/stats |
 | `MatchContext` | `match_context.py` | 跨局状态管理（Context Object），创建 EpisodeContext（Factory） |
@@ -59,7 +63,6 @@ src/llm/agent/
 class PlayerAgent:
     def __init__(...):
         self._persistence = PersistenceManager(player_id)  # 持久化
-        self._session_policy = ModelSessionPolicy(...)     # 会话策略
         self._prompt_projector = PromptProjector(...)      # Prompt 投影
         self._core = AgentCore(...)                        # 决策核心
         
@@ -72,29 +75,34 @@ class PlayerAgent:
 def decide(...):
     return self._core.decide(
         state, seat, episode_ctx,
-        prompt_builder=self._prompt_builder,
-        session_manager=self._session,
+        prompt_projector=self._prompt_projector,
         client=client, ...
     )
 ```
 
-## 会话隔离机制
+## 本地上下文边界
 
-`ModelSessionPolicy` 为每个 `PlayerAgent` 实例生成唯一的 `_session_token`（UUID前8位）：
+AIma 不再依赖任何服务端 `session_id` 能力。`LocalContextPolicy` 只决定本地要向模型注入哪些上下文层：
 
 ```python
-class ModelSessionPolicy:
-    def __init__(self, player_id: str | None = None):
-        self._session_token = str(uuid4())[:8]
-    
-    def build_session_id(self, seat: int) -> str:
-        session_key = self.player_id or f"seat_{seat}"
-        return f"majiang_player_{session_key}_{self._session_token}"
+class LocalContextPolicy:
+    def __init__(self, *, scope: ContextScope):
+        self.scope = scope
+
+    def build_window(self):
+        if self.scope == "stateless":
+            return PromptContextWindow()
+        return PromptContextWindow(
+            include_match_archive=self.scope == "per_match",
+            include_public_history=True,
+            include_self_history=True,
+        )
 ```
 
 **效果**：
-- 不同实例：不同 session_id，会话隔离
-- 同一实例：相同 session_id，对话历史连续
+- `stateless`：只发当前观测
+- `per_hand`：发本局历史 + 当前观测
+- `per_match`：发本场前情摘要 + 本局历史 + 当前观测
 
 ## 状态分类
 
@@ -112,6 +120,7 @@ class ModelSessionPolicy:
 |------|------|
 | `_match_stats` | 本场累积统计（私有，外部只读） |
 | `_episodes` | 已完成局列表 |
+| `_hand_archives` | 已归档的局摘要（供 `per_match` 注入） |
 
 ### 3. 运行时状态（存储在 `EpisodeContext`）
 
@@ -119,7 +128,9 @@ class ModelSessionPolicy:
 |------|------|
 | `episode_stats` | 本局统计（和了、放铳、立直） |
 | `match_stats` | 本局累积统计（从 MatchContext 副本继承） |
-| `decision_history` | 决策历史 |
+| `match_history_archive` | 创建本局时拍下的跨局摘要快照 |
+| `decision_history` | 自家决策历史 |
+| `match_journal` | 共享公共事件流视图 |
 | `last_observation` | 上一帧观测（用于变化帧） |
 
 ### 4. Agent 内部状态（无临时状态）
@@ -157,12 +168,11 @@ acts = legal_actions(state, seat)
 if len(acts) == 1 and acts[0].kind in (PASS_CALL, DRAW):
     return Decision(acts[0], None, history)  # 跳过 LLM
 
-# 3. 构建消息（PromptProjector）
+# 3. 构建消息（PromptProjector + PromptBudgetPlanner）
 messages = prompt_projector.build_messages(...)
 
-# 4. 调用 LLM（ModelSessionPolicy）
-session_id = session_policy.build_session_id(seat, hand_number=ctx.hand_number)
-raw = client.complete(messages, session_id=session_id)
+# 4. 调用 LLM（AIma 本地上下文已全部体现在 messages 中）
+raw = client.complete(messages)
 
 # 5. 解析响应（DecisionParser）
 la, why = DecisionParser.parse_llm_response(raw, acts)
@@ -211,7 +221,9 @@ seat_contexts[s] = match_contexts[s].create_episode()  # 继承累积的 match_s
 | `__init__.py` | ~100 | 协调（无状态） |
 | `core.py` | ~150 | 决策 |
 | `session.py` | ~50 | 会话 |
-| `prompt.py` | ~100 | Prompt |
+| `prompt.py` | ~200 | Prompt |
+| `event_journal.py` | ~200 | 公共事件流 |
+| `token_budget.py` | ~180 | 预算规划 |
 | `decision_parser.py` | ~60 | 解析 |
 | `persistence.py` | ~120 | 持久化 |
 | `match_context.py` | ~80 | 跨局状态（Context Object） |
@@ -225,11 +237,12 @@ seat_contexts[s] = match_contexts[s].create_episode()  # 继承累积的 match_s
 ## 组件级测试示例
 
 ```python
-# 测试 ModelSessionPolicy
-def test_session_manager_isolation():
-    s1 = ModelSessionPolicy("player_001")
-    s2 = ModelSessionPolicy("player_001")
-    assert s1.build_session_id(0) != s2.build_session_id(0)
+# 测试 LocalContextPolicy
+def test_per_match_scope_injects_match_archive():
+    policy = LocalContextPolicy(scope="per_match")
+    window = policy.build_window()
+    assert window.include_match_archive is True
+    assert window.include_public_history is True
 
 # 测试 DecisionParser
 def test_decision_parser_fallback():

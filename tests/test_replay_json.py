@@ -21,6 +21,7 @@ from kernel.replay_json import (
 )
 from llm.config import MatchEndCondition
 from llm.runner import run_llm_match
+from tests.llm_test_utils import load_test_runtime_config
 
 
 def _wall(*, seed: int) -> tuple:
@@ -107,8 +108,22 @@ def test_match_end_event_round_trip() -> None:
 
 
 def test_run_llm_match_log_replays_same_phase() -> None:
-    match_end = MatchEndCondition(value=8)
-    rr = run_llm_match(seed=5, match_end=match_end, dry_run=True)
+    match_end = MatchEndCondition(type="hands", value=8, allow_negative=False)
+    runtime = load_test_runtime_config()
+    rr = run_llm_match(
+        seed=5,
+        match_end=match_end,
+        dry_run=True,
+        request_delay_seconds=0.0,
+        history_budget=runtime.history_budget,
+        context_scope=runtime.context_scope,
+        compression_level=runtime.compression_level,
+        context_budget_tokens=runtime.context_budget_tokens,
+        reserved_output_tokens=runtime.reserved_output_tokens,
+        safety_margin_tokens=runtime.safety_margin_tokens,
+        prompt_format=runtime.prompt_format,
+        enable_conversation_logging=runtime.conversation_logging_enabled,
+    )
     assert rr.actions_wire
     doc = rr.as_match_log()
     actions = actions_from_match_log(doc)

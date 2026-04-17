@@ -38,7 +38,7 @@ class CallResolution:
     """
     舍牌应答状态机快照。
 
-    阶段顺序：荣和收集（三家任意顺序表态）→ 碰/大明杠（下家起逆时针依次）→ 上家是否吃。
+    阶段顺序：荣和收集（三家任意顺序表态）→ 碰/大明杠（下家起依次）→ 下家是否吃。
     """
 
     discard_seat: int
@@ -98,6 +98,6 @@ class CallResolution:
         )
 
 
-def kamicha_seat(discard_seat: int) -> int:
-    """切牌者的上家（可吃的一家）：``(discard_seat + 3) % 4``。"""
-    return (discard_seat + 3) % 4
+def shimocha_seat(discard_seat: int) -> int:
+    """切牌者的下家（唯一可吃者）：``(discard_seat + 1) % 4``。"""
+    return (discard_seat + 1) % 4

@@ -1,8 +1,7 @@
-"""从 YAML 配置文件读取 LLM 配置（取代环境变量）。"""
+"""从 YAML 配置文件读取 LLM / 对局配置。"""
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -10,42 +9,59 @@ from typing import Any, Literal
 import yaml
 
 
+_REPO_TEMPLATE_PATH = Path("configs/template.yaml")
+_KERNEL_TEMPLATE_PATH = Path("configs/aima_kernel_template.yaml")
+_BASE_KERNEL_PATH = Path("configs/aima_kernel.yaml")
+
+
+@dataclass(frozen=True, slots=True)
+class LLMRuntimeConfig:
+    """LLM 运行时配置。"""
+
+    prompt_format: Literal["natural", "json"]
+    context_scope: Literal["stateless", "per_hand", "per_match"]
+    compression_level: Literal["none", "snip", "micro", "collapse", "autocompact"]
+    history_budget: int
+    context_budget_tokens: int
+    reserved_output_tokens: int
+    safety_margin_tokens: int
+    request_delay: float
+    conversation_logging_enabled: bool
+
+
 @dataclass(frozen=True, slots=True)
 class LLMClientConfig:
-    """单连接配置。"""
+    """LLM 单连接配置。"""
 
     provider: Literal["openai", "anthropic"]
     base_url: str
     api_key: str
     model: str
-    timeout_sec: float = 120.0
-    max_tokens: int = 1024
-    system_prompt: str = ""  # 系统提示词
-    prompt_format: Literal["natural", "json"] = "natural"  # Prompt 格式
-    session_scope: Literal["stateless", "per_hand", "per_match"] = "per_hand"
-    compression_level: Literal["none", "snip", "micro", "collapse"] = "collapse"
-    history_budget: int = 10
+    timeout_sec: float
+    max_tokens: int
+    system_prompt: str
+    prompt_format: Literal["natural", "json"]
+    context_scope: Literal["stateless", "per_hand", "per_match"]
+    compression_level: Literal["none", "snip", "micro", "collapse", "autocompact"]
+    history_budget: int
+    context_budget_tokens: int
+    reserved_output_tokens: int
+    safety_margin_tokens: int
 
 
 @dataclass(frozen=True, slots=True)
 class MatchEndCondition:
     """对局结束条件。"""
 
-    type: Literal["hands"] = "hands"  # 目前只支持局数制
-    value: int = 8  # 默认半庄（8局）
-    allow_negative: bool = True  # 是否允许负分继续（False则有人负分时提前结束）
+    type: Literal["hands"]
+    value: int
+    allow_negative: bool
 
     def is_match_end(self, hands_played: int, scores: tuple[int, ...]) -> tuple[bool, str]:
-        """判断是否满足结束条件。
-
-        Returns:
-            (是否结束, 结束原因)
-        """
-        # 检查局数
+        """判断是否满足结束条件。"""
         if hands_played >= self.value:
             return True, f"hands_completed:{hands_played}"
 
-        # 检查负分（如果启用）
         if not self.allow_negative:
             for seat, score in enumerate(scores):
                 if score < 0:
@@ -58,254 +74,241 @@ class MatchEndCondition:
 class MatchConfig:
     """对局配置。"""
 
-    seed: int = 42
-    match_end: MatchEndCondition | None = None  # 对局结束条件
-    max_player_steps: int = 500  # 兼容旧配置，优先级低于 match_end
-    players: list[dict[str, Any]] | None = None
+    seed: int
+    match_end: MatchEndCondition
+    max_player_steps: int | None
+    players: list[dict[str, Any]] | None
 
 
-def load_kernel_config(config_path: Path | str = "configs/aima_kernel.yaml") -> dict[str, Any]:
-    """从 YAML 加载内核配置。
+def _read_yaml_file(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    with open(path, encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        msg = f"配置文件顶层必须是对象: {path}"
+        raise ValueError(msg)
+    return data
 
-    Args:
-        config_path: 配置文件路径，默认 configs/aima_kernel.yaml
 
-    Returns:
-        配置字典
-    """
-    path = Path(config_path)
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
 
-    # 如果默认路径不存在，尝试使用模板
-    if not path.exists() and config_path == "configs/aima_kernel.yaml":
-        template_path = Path("configs/aima_kernel_template.yaml")
-        if template_path.exists():
+
+def _get_required(config: dict[str, Any], path: str) -> Any:
+    current: Any = config
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            msg = f"缺少必需配置项: {path}"
+            raise ValueError(msg)
+        current = current[part]
+    return current
+
+
+def _validate_choice(name: str, value: str, choices: tuple[str, ...]) -> str:
+    if value not in choices:
+        msg = f"{name} must be one of {choices}, got {value!r}"
+        raise ValueError(msg)
+    return value
+
+
+def _should_merge_base_kernel(requested_path: Path) -> bool:
+    return requested_path.parent == _BASE_KERNEL_PATH.parent and requested_path.name != _BASE_KERNEL_PATH.name
+
+
+def load_kernel_config(config_path: Path | str = _BASE_KERNEL_PATH) -> dict[str, Any]:
+    """加载配置，并按文件级优先级合并默认模板。"""
+    requested_path = Path(config_path)
+    merged: dict[str, Any] = {}
+
+    for template_path in (_REPO_TEMPLATE_PATH, _KERNEL_TEMPLATE_PATH):
+        merged = _deep_merge(merged, _read_yaml_file(template_path))
+
+    if _should_merge_base_kernel(requested_path) and _BASE_KERNEL_PATH.exists():
+        merged = _deep_merge(merged, _read_yaml_file(_BASE_KERNEL_PATH))
+
+    if requested_path.exists():
+        merged = _deep_merge(merged, _read_yaml_file(requested_path))
+        return merged
+
+    if requested_path == _BASE_KERNEL_PATH:
+        if _KERNEL_TEMPLATE_PATH.exists():
             print(
                 "警告: aima_kernel.yaml 不存在，使用模板文件。\n"
                 "请复制 configs/aima_kernel_template.yaml 为 configs/aima_kernel.yaml 并填入你的 API Key。",
-                file=__import__('sys').stderr
+                file=__import__("sys").stderr,
             )
-            path = template_path
-        else:
-            raise FileNotFoundError(
-                f"配置文件不存在: {config_path}\n"
-                "请创建 configs/aima_kernel.yaml（可参考 configs/aima_kernel_template.yaml）"
-            )
+            return merged
+        msg = (
+            f"配置文件不存在: {config_path}\n"
+            "请创建 configs/aima_kernel.yaml（可参考 configs/aima_kernel_template.yaml）"
+        )
+        raise FileNotFoundError(msg)
 
-    with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    msg = f"配置文件不存在: {requested_path}"
+    raise FileNotFoundError(msg)
+
+
+def _effective_llm_config(
+    *,
+    config_path: Path | str,
+    seat: int | None = None,
+    override_cfg: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    cfg = load_kernel_config(config_path)
+    llm_cfg = cfg.get("llm")
+    if not isinstance(llm_cfg, dict):
+        raise ValueError("缺少 llm 配置段")
+
+    effective = dict(llm_cfg)
+    effective.pop("seats", None)
+
+    if seat is not None:
+        seat_cfg = llm_cfg.get("seats", {}).get(f"seat{seat}", {})
+        if seat_cfg and not isinstance(seat_cfg, dict):
+            raise ValueError(f"llm.seats.seat{seat} 必须是对象")
+        effective = _deep_merge(effective, seat_cfg)
+
+    if override_cfg:
+        if not isinstance(override_cfg, dict):
+            raise ValueError("override_cfg 必须是对象")
+        effective = _deep_merge(effective, override_cfg)
+
+    return effective
+
+
+def load_llm_runtime_config(
+    *,
+    config_path: Path | str = _BASE_KERNEL_PATH,
+    seat: int | None = None,
+    override_cfg: dict[str, Any] | None = None,
+) -> LLMRuntimeConfig:
+    """读取 LLM 运行时配置。"""
+    llm_cfg = _effective_llm_config(config_path=config_path, seat=seat, override_cfg=override_cfg)
+
+    prompt_format = _validate_choice(
+        "prompt_format",
+        str(_get_required(llm_cfg, "prompt_format")),
+        ("natural", "json"),
+    )
+    context_scope = _validate_choice(
+        "context_scope",
+        str(_get_required(llm_cfg, "context_scope")),
+        ("stateless", "per_hand", "per_match"),
+    )
+    compression_level = _validate_choice(
+        "compression_level",
+        str(_get_required(llm_cfg, "compression_level")),
+        ("none", "snip", "micro", "collapse", "autocompact"),
+    )
+
+    return LLMRuntimeConfig(
+        prompt_format=prompt_format,
+        context_scope=context_scope,
+        compression_level=compression_level,
+        history_budget=int(_get_required(llm_cfg, "history_budget")),
+        context_budget_tokens=int(_get_required(llm_cfg, "context_budget_tokens")),
+        reserved_output_tokens=int(_get_required(llm_cfg, "reserved_output_tokens")),
+        safety_margin_tokens=int(_get_required(llm_cfg, "safety_margin_tokens")),
+        request_delay=float(_get_required(llm_cfg, "request_delay")),
+        conversation_logging_enabled=bool(_get_required(llm_cfg, "conversation_logging.enabled")),
+    )
 
 
 def load_llm_config(
     *,
-    config_path: Path | str = "configs/aima_kernel.yaml",
+    config_path: Path | str = _BASE_KERNEL_PATH,
     seat: int | None = None,
     override_cfg: dict[str, Any] | None = None,
 ) -> LLMClientConfig | None:
-    """读取 LLM 配置。
+    """读取 LLM 客户端配置。"""
+    llm_cfg = _effective_llm_config(config_path=config_path, seat=seat, override_cfg=override_cfg)
+    runtime_cfg = load_llm_runtime_config(config_path=config_path, seat=seat, override_cfg=override_cfg)
 
-    配置优先级（高到低）：
-    1. 函数参数直接覆盖（如 seat 特定配置）
-    2. 对局配置 override_cfg
-    3. 座位特定配置（seats.seatN）
-    4. 内核全局配置（aima_kernel.yaml）
-
-    **重要**：system_prompt 是必需配置项，必须在 YAML 配置中提供。
-    参考 configs/aima_kernel_template.yaml 中的示例。
-
-    Args:
-        config_path: 内核配置文件路径
-        seat: 座位号（用于读取座位特定配置）
-        override_cfg: 对局配置中的 llm 部分，用于覆盖内核配置
-
-    Returns:
-        LLMClientConfig 或 None（如果未配置 API Key）
-
-    Raises:
-        ValueError: 未配置 system_prompt 时抛出，提供配置指引
-    """
-    cfg = load_kernel_config(config_path)
-    llm_cfg = cfg.get("llm", {})
-
-    provider = llm_cfg.get("provider", "openai")
-    if provider not in ("openai", "anthropic"):
-        raise ValueError(f"provider must be 'openai' or 'anthropic', got {provider!r}")
-
-    # 基础配置（内核全局）
-    base_url = llm_cfg.get("base_url", "")
-    api_key = llm_cfg.get("api_key", "")
-    model = llm_cfg.get("model", "")
-    timeout_sec = float(llm_cfg.get("timeout_sec", 120))
-    max_tokens = int(llm_cfg.get("max_tokens", 1024))
-    system_prompt = llm_cfg.get("system_prompt", "")
-    prompt_format = llm_cfg.get("prompt_format", "natural")
-    if prompt_format not in ("natural", "json"):
-        raise ValueError(f"prompt_format must be 'natural' or 'json', got {prompt_format!r}")
-    session_scope = llm_cfg.get("session_scope", "per_hand")
-    if session_scope not in ("stateless", "per_hand", "per_match"):
-        raise ValueError(
-            f"session_scope must be 'stateless', 'per_hand' or 'per_match', got {session_scope!r}"
-        )
-    compression_level = llm_cfg.get("compression_level", "collapse")
-    if compression_level not in ("none", "snip", "micro", "collapse"):
-        raise ValueError(
-            "compression_level must be 'none', 'snip', 'micro' or 'collapse', "
-            f"got {compression_level!r}"
-        )
-    history_budget = int(llm_cfg.get("history_budget", llm_cfg.get("max_history_rounds", 10)))
-
-    # 座位特定配置覆盖（优先级：座位 > 全局）
-    if seat is not None:
-        seat_key = f"seat{seat}"
-        seat_cfg = llm_cfg.get("seats", {}).get(seat_key, {})
-        if seat_cfg.get("api_key"):
-            api_key = seat_cfg["api_key"]
-        if seat_cfg.get("model"):
-            model = seat_cfg["model"]
-        if seat_cfg.get("base_url"):
-            base_url = seat_cfg["base_url"]
-        if "timeout_sec" in seat_cfg:
-            timeout_sec = float(seat_cfg["timeout_sec"])
-        if "max_tokens" in seat_cfg:
-            max_tokens = int(seat_cfg["max_tokens"])
-        if seat_cfg.get("prompt_format"):
-            prompt_format = seat_cfg["prompt_format"]
-        if seat_cfg.get("session_scope"):
-            session_scope = seat_cfg["session_scope"]
-        if seat_cfg.get("compression_level"):
-            compression_level = seat_cfg["compression_level"]
-        if "history_budget" in seat_cfg:
-            history_budget = int(seat_cfg["history_budget"])
-
-    # 对局配置覆盖（优先级：对局 > 座位 > 全局）
-    if override_cfg:
-        if override_cfg.get("provider"):
-            provider = override_cfg["provider"]
-        if override_cfg.get("api_key"):
-            api_key = override_cfg["api_key"]
-        if override_cfg.get("base_url"):
-            base_url = override_cfg["base_url"]
-        if override_cfg.get("model"):
-            model = override_cfg["model"]
-        if "timeout_sec" in override_cfg:
-            timeout_sec = float(override_cfg["timeout_sec"])
-        if "max_tokens" in override_cfg:
-            max_tokens = int(override_cfg["max_tokens"])
-        if override_cfg.get("system_prompt"):
-            system_prompt = override_cfg["system_prompt"]
-        if override_cfg.get("prompt_format"):
-            prompt_format = override_cfg["prompt_format"]
-        if override_cfg.get("session_scope"):
-            session_scope = override_cfg["session_scope"]
-        if override_cfg.get("compression_level"):
-            compression_level = override_cfg["compression_level"]
-        if "history_budget" in override_cfg:
-            history_budget = int(override_cfg["history_budget"])
-
-    if prompt_format not in ("natural", "json"):
-        raise ValueError(f"prompt_format must be 'natural' or 'json', got {prompt_format!r}")
-    if session_scope not in ("stateless", "per_hand", "per_match"):
-        raise ValueError(
-            f"session_scope must be 'stateless', 'per_hand' or 'per_match', got {session_scope!r}"
-        )
-    if compression_level not in ("none", "snip", "micro", "collapse"):
-        raise ValueError(
-            "compression_level must be 'none', 'snip', 'micro' or 'collapse', "
-            f"got {compression_level!r}"
-        )
-
-    # 检查 API Key
+    provider = _validate_choice(
+        "provider",
+        str(_get_required(llm_cfg, "provider")),
+        ("openai", "anthropic"),
+    )
+    api_key = str(_get_required(llm_cfg, "api_key"))
     if not api_key or api_key in ("your-api-key-here", "your-api-key"):
         return None
 
-    # 检查 system_prompt（必需配置项）
-    if not system_prompt:
+    system_prompt = str(_get_required(llm_cfg, "system_prompt"))
+    if not system_prompt.strip():
         raise ValueError(
-            "未配置 system_prompt。system_prompt 是必需的配置项。\n\n"
-            "请在 configs/aima_kernel.yaml 的 llm 部分添加 system_prompt 配置。\n"
-            "参考模板文件：configs/aima_kernel_template.yaml\n\n"
-            "示例配置：\n"
-            "llm:\n"
-            "  system_prompt: |\n"
-            "    你是日式麻将（立直麻将）的牌手代理...\n\n"
-            "提示词应包含：牌面编码说明、输出格式要求、决策约束等。"
+            "未配置 system_prompt。请在 llm.system_prompt 中提供完整提示词。"
         )
-
-    # 设置默认值
-    if not base_url:
-        base_url = "https://api.openai.com/v1" if provider == "openai" else "https://api.anthropic.com"
-    if not model:
-        model = "gpt-4o-mini" if provider == "openai" else "claude-3-5-haiku-20241022"
 
     return LLMClientConfig(
         provider=provider,
-        base_url=base_url,
+        base_url=str(_get_required(llm_cfg, "base_url")),
         api_key=api_key,
-        model=model,
-        timeout_sec=timeout_sec,
-        max_tokens=max_tokens,
+        model=str(_get_required(llm_cfg, "model")),
+        timeout_sec=float(_get_required(llm_cfg, "timeout_sec")),
+        max_tokens=int(_get_required(llm_cfg, "max_tokens")),
         system_prompt=system_prompt,
-        prompt_format=prompt_format,
-        session_scope=session_scope,
-        compression_level=compression_level,
-        history_budget=history_budget,
+        prompt_format=runtime_cfg.prompt_format,
+        context_scope=runtime_cfg.context_scope,
+        compression_level=runtime_cfg.compression_level,
+        history_budget=runtime_cfg.history_budget,
+        context_budget_tokens=runtime_cfg.context_budget_tokens,
+        reserved_output_tokens=runtime_cfg.reserved_output_tokens,
+        safety_margin_tokens=runtime_cfg.safety_margin_tokens,
+    )
+
+
+def _parse_match_end(match_data: dict[str, Any]) -> MatchEndCondition:
+    end_cfg = _get_required(match_data, "match_end")
+    if not isinstance(end_cfg, dict):
+        raise ValueError("match.match_end 必须是对象")
+    return MatchEndCondition(
+        type=str(_get_required(end_cfg, "type")),
+        value=int(_get_required(end_cfg, "value")),
+        allow_negative=bool(_get_required(end_cfg, "allow_negative")),
     )
 
 
 def load_match_config(
-    config_path: Path | str = "configs/aima_kernel.yaml",
+    config_path: Path | str = _BASE_KERNEL_PATH,
     match_config_path: Path | str | None = None,
 ) -> MatchConfig:
-    """加载对局配置。
-
-    Args:
-        config_path: 内核配置文件路径
-        match_config_path: 对局特定配置文件路径（如 player_battle.yaml）
-
-    Returns:
-        MatchConfig
-    """
-    # 从内核配置读取默认值
+    """加载对局配置。"""
     cfg = load_kernel_config(config_path)
-    default_players = cfg.get("players")
 
-    def _parse_match_end(match_data: dict) -> MatchEndCondition | None:
-        """解析对局结束条件配置。"""
-        end_cfg = match_data.get("match_end")
-        if end_cfg:
-            return MatchEndCondition(
-                type=end_cfg.get("type", "hands"),
-                value=end_cfg.get("value", 8),
-                allow_negative=end_cfg.get("allow_negative", True),
-            )
-        # 兼容旧配置
-        return None
+    if match_config_path is not None:
+        cfg = load_kernel_config(match_config_path)
 
-    # 如果指定了对局配置，优先读取
-    if match_config_path:
-        try:
-            with open(match_config_path, encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-            match_data = data.get("match", {})
-            return MatchConfig(
-                seed=match_data.get("seed", 42),
-                match_end=_parse_match_end(match_data),
-                max_player_steps=match_data.get("max_player_steps", 500),
-                players=match_data.get("players") or default_players,
-            )
-        except FileNotFoundError:
-            pass
+    match_data = _get_required(cfg, "match")
+    if not isinstance(match_data, dict):
+        raise ValueError("match 配置段必须是对象")
 
-    # 使用内核配置
-    match_data = cfg.get("match", {})
+    players = match_data.get("players")
+    if players is not None and not isinstance(players, list):
+        raise ValueError("match.players 必须是列表")
+
+    max_player_steps = match_data.get("max_player_steps")
+    if max_player_steps is not None:
+        max_player_steps = int(max_player_steps)
+
     return MatchConfig(
-        seed=match_data.get("seed", 42),
+        seed=int(_get_required(match_data, "seed")),
         match_end=_parse_match_end(match_data),
-        max_player_steps=match_data.get("max_player_steps", 500),
-        players=default_players,
+        max_player_steps=max_player_steps,
+        players=players,
     )
 
 
-def get_logging_config(config_path: Path | str = "configs/aima_kernel.yaml") -> dict[str, Any]:
+def get_logging_config(config_path: Path | str = _BASE_KERNEL_PATH) -> dict[str, Any]:
     """获取日志配置。"""
     cfg = load_kernel_config(config_path)
-    return cfg.get("logging", {})
+    logging_cfg = cfg.get("logging")
+    if not isinstance(logging_cfg, dict):
+        raise ValueError("缺少 logging 配置段")
+    return logging_cfg

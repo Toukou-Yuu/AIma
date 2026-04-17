@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from kernel.hand.melds import Meld, MeldKind, triplet_key, validate_meld_shape
 from kernel.hand.multiset import remove_tiles
 from kernel.kan.rinshan import apply_after_kan_rinshan_draw
-from kernel.play.model import CallResolution, TurnPhase, kamicha_seat
+from kernel.play.model import CallResolution, TurnPhase, shimocha_seat
 from kernel.scoring.furiten import is_furiten_for_tile
 from kernel.tiles.model import Tile
 
@@ -163,8 +163,8 @@ def apply_pass_call(board: BoardState, seat: int) -> BoardState:
         )
         return _replace_board(board, call_state=new_cs)
     if cs.stage == "chi":
-        if seat != kamicha_seat(cs.discard_seat):
-            msg = "PASS_CALL chi: only kamicha"
+        if seat != shimocha_seat(cs.discard_seat):
+            msg = "PASS_CALL chi: only shimocha"
             raise ValueError(msg)
         return _finish_call_all_passed(board)
     msg = f"unknown call stage: {cs.stage!r}"
@@ -296,8 +296,8 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
         if cs.stage != "chi":
             msg = "CHI only in chi stage"
             raise ValueError(msg)
-        if seat != kamicha_seat(ds):
-            msg = "CHI only by kamicha"
+        if seat != shimocha_seat(ds):
+            msg = "CHI only by shimocha"
             raise ValueError(msg)
         from_hand = _hand_subset_for_open_meld(meld, tile, 2)
         new_concealed = remove_tiles(board.hands[seat], from_hand)

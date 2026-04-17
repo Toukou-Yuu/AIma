@@ -14,6 +14,7 @@ from kernel import (
 from llm.config import MatchEndCondition
 from llm.runner import run_llm_match
 from llm.turns import pending_actor_seats
+from tests.llm_test_utils import load_test_runtime_config
 
 
 def test_pending_after_begin_round() -> None:
@@ -28,8 +29,22 @@ def test_pending_after_begin_round() -> None:
 
 def test_run_llm_match_dry_run_advances() -> None:
     # 使用 match_end 来限制局数（8局半庄）
-    match_end = MatchEndCondition(value=8)
-    rr = run_llm_match(seed=7, match_end=match_end, dry_run=True)
+    match_end = MatchEndCondition(type="hands", value=8, allow_negative=False)
+    runtime = load_test_runtime_config()
+    rr = run_llm_match(
+        seed=7,
+        match_end=match_end,
+        dry_run=True,
+        request_delay_seconds=0.0,
+        history_budget=runtime.history_budget,
+        context_scope=runtime.context_scope,
+        compression_level=runtime.compression_level,
+        context_budget_tokens=runtime.context_budget_tokens,
+        reserved_output_tokens=runtime.reserved_output_tokens,
+        safety_margin_tokens=runtime.safety_margin_tokens,
+        prompt_format=runtime.prompt_format,
+        enable_conversation_logging=runtime.conversation_logging_enabled,
+    )
     assert rr.player_steps > 0
     assert rr.final_state.phase in (
         GamePhase.IN_ROUND,

@@ -84,6 +84,12 @@ class NameResolver:
         player_name = self._seat_names.get(seat)
         return wind_with_seat(rel_wind, seat, is_active, player_name)
 
+    def format_hand_label(self, seat: int, dealer_seat: int) -> str:
+        """生成手牌树专用标签，如 ``一姬[东]：``。"""
+        rel_wind = (seat - dealer_seat) % 4
+        player_name = self.get_name_or_seat(seat)
+        return f"{player_name}[{_WIND_NAMES[rel_wind]}]："
+
     def format_winners(self, winners: tuple[int, ...]) -> str:
         """格式化和了者列表。
 

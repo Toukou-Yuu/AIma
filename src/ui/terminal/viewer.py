@@ -17,7 +17,10 @@
 
 from __future__ import annotations
 
+import re
+import shutil
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from rich.console import Console
@@ -42,6 +45,27 @@ if TYPE_CHECKING:
 
 
 _WIND_NAMES = ["东", "南", "西", "北"]
+_ACTION_KIND_LABELS = {
+    "begin_round": "开局配牌",
+    "draw": "摸牌",
+    "discard": "打牌",
+    "pass_call": "过牌",
+    "call_pass_drain": "连续过牌",
+    "ron": "荣和",
+    "tsumo": "自摸和了",
+    "open_meld": "鸣牌",
+    "ankan": "暗杠",
+    "shankuminkan": "加杠",
+    "noop": "无操作",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class TableSummary:
+    """当前牌桌的紧凑摘要。"""
+
+    summary_line: str
+    score_line: str
 
 
 class LiveMatchViewer:
@@ -98,6 +122,7 @@ class LiveMatchViewer:
         self._seat_reasons: dict[int, str] = {}
         self._seat_decision_times: dict[int, float] = {}
         self._seat_names: dict[int, str] = {}
+        self._table_summary = TableSummary("", "")
 
     def set_player_names(self, names: dict[int, str]) -> None:
         """设置各席玩家名字（同步到所有组件）。
@@ -108,6 +133,41 @@ class LiveMatchViewer:
         self._seat_names = names
         self._name_resolver.set_seat_names(names)
         self._stats_tracker.set_seat_names(names)
+
+    def format_action_label(self, action_str: str) -> str:
+        """将内部动作标签格式化为面向 UI 的中文文案。"""
+        if not action_str:
+            return ""
+
+        step_match = re.match(r"^(Step\s+\d+:\s*)(.+)$", action_str)
+        if step_match:
+            prefix, tail = step_match.groups()
+            return prefix + self.format_action_label(tail)
+
+        seat_match = re.match(r"^家([0-3])\s+(.+)$", action_str)
+        if seat_match:
+            seat = int(seat_match.group(1))
+            tail = self._normalize_action_body(seat_match.group(2).strip())
+            actor = self._name_resolver.get_name(seat, f"家{seat}")
+            return f"{actor} {tail}".strip()
+
+        return self._normalize_action_body(action_str.strip())
+
+    def _normalize_action_body(self, body: str) -> str:
+        """规范化动作正文。"""
+        if not body:
+            return ""
+        if body in _ACTION_KIND_LABELS:
+            return _ACTION_KIND_LABELS[body]
+        if body.startswith("打 "):
+            return f"打牌 {body[2:].strip()}".strip()
+        if body.startswith("摸 "):
+            return f"摸牌 {body[2:].strip()}".strip()
+        if body.startswith("discard "):
+            return f"打牌 {body[len('discard '):].strip()}".strip()
+        if body.startswith("draw "):
+            return f"摸牌 {body[len('draw '):].strip()}".strip()
+        return body
 
     # === 公共接口（向后兼容） ===
 
@@ -132,16 +192,14 @@ class LiveMatchViewer:
             Panel 对象（可用于 Live 更新）
         """
         self._step += 1
-        self._last_action_str = action_str
+        self._last_action_str = self.format_action_label(action_str)
         self._last_reason = reason
 
         # 解析 action_str 获取行动者座位
         self._last_actor_seat = None
-        if action_str.startswith("家"):
-            try:
-                self._last_actor_seat = int(action_str[1])
-            except (ValueError, IndexError):
-                pass
+        seat_match = re.match(r"^家([0-3])\s+", action_str)
+        if seat_match:
+            self._last_actor_seat = int(seat_match.group(1))
 
         # 更新决策理由和时间
         if self._last_actor_seat is not None and reason:
@@ -154,16 +212,23 @@ class LiveMatchViewer:
         # 同步统计状态（用于外部访问）
         self._wins = list(self._stats_tracker._wins)
         self._rounds = self._stats_tracker._rounds
+        self._table_summary = self.describe_table(state)
+
+        terminal_size = shutil.get_terminal_size(fallback=(160, 44))
+        viewport_width = max(96, terminal_size.columns - 8)
+        viewport_height = max(24, terminal_size.lines - 10)
 
         # 使用 LayoutBuilder 构建面板
         return self._layout_builder.build_panel(
             state,
             events,
-            action_str,
+            self._last_action_str,
             self._last_actor_seat,
             self._seat_reasons,
             self._seat_decision_times,
             self.show_reason,
+            viewport_width=viewport_width,
+            viewport_height=viewport_height,
         )
 
     def run_from_replay(
@@ -291,6 +356,11 @@ class LiveMatchViewer:
         self._wins = list(self._stats_tracker._wins)
         self._rounds = self._stats_tracker._rounds
 
+    def describe_table(self, state: GameState) -> TableSummary:
+        """返回牌桌摘要，供 Textual live 状态条复用。"""
+        line1, line2 = self._layout_builder.describe_table_lines(state, self._last_actor_seat)
+        return TableSummary(summary_line=line1.plain, score_line=line2.plain)
+
 
 class LiveMatchCallback:
     """用于集成到 runner 的实时回调类。"""
@@ -402,7 +472,7 @@ def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3) -> None:
                     break
                 tile = random.choice(list(hand.elements()))
                 action = Action(ActionKind.DISCARD, seat=seat, tile=tile)
-                action_str = f"家{seat} 打 {tile.to_code()}"
+                action_str = f"家{seat} 打牌 {tile.to_code()}"
 
             elif turn_phase == TurnPhase.CALL_RESPONSE:
                 from kernel.api.legal_actions import legal_actions

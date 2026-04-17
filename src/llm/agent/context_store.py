@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from llm.agent.memory import PlayerMemory
     from llm.agent.stats import PlayerStats
 
-CompressionLevel = Literal["none", "snip", "micro", "collapse"]
+CompressionLevel = Literal["none", "snip", "micro", "collapse", "autocompact"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,7 +136,10 @@ class CompressionPipeline:
         if self._compression_level == "micro":
             return self._microcompact(events)
 
-        return self._collapse(events, detailed=detailed)
+        if self._compression_level == "collapse":
+            return self._collapse(events, detailed=detailed)
+
+        return self._autocompact(events)
 
     def _snip(
         self,
@@ -194,6 +197,25 @@ class CompressionPipeline:
         summary_lines = self._collapse_events(older)
         recent_lines = [self._render_event(ev, detailed=detailed, compact=not detailed) for ev in recent]
         lines = summary_lines + recent_lines
+        return HistoryProjection(
+            "\n".join(lines),
+            len(events),
+            len(recent),
+            collapsed_event_count=len(older),
+        )
+
+    def _autocompact(self, events: list[ContextEvent]) -> HistoryProjection:
+        tail_budget = 1 if self._budget.history_budget <= 2 else 2
+        recent = events[-tail_budget:]
+        older = events[:-tail_budget]
+        lines = [f"[本局已记录 {len(events)} 次自家决策，较早记录已高密度折叠]"]
+        key_events = [ev.action_text for ev in older if ev.is_key_event]
+        if key_events:
+            lines.append("高密度摘要: " + "; ".join(self._clip(text, 24) for text in key_events[-4:]))
+        reasons = [ev.why for ev in older if ev.why]
+        if reasons:
+            lines.append("长期倾向: " + "; ".join(self._clip(reason or "", 20) for reason in reasons[-3:]))
+        lines.extend(self._clip(self._render_event(ev, detailed=False, compact=True), 96) for ev in recent)
         return HistoryProjection(
             "\n".join(lines),
             len(events),

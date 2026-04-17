@@ -15,12 +15,12 @@ class PlayerProfile:
     id: str
     name: str
     model: str
-    provider: Literal["openai", "anthropic"] = "openai"
-    temperature: float = 0.7
-    max_tokens: int = 1024
-    timeout_sec: float = 120.0
-    persona_prompt: str = ""
-    strategy_prompt: str = ""
+    provider: Literal["openai", "anthropic"]
+    temperature: float
+    max_tokens: int
+    timeout_sec: float
+    persona_prompt: str
+    strategy_prompt: str
 
     @classmethod
     def from_json(cls, path: Path | str) -> PlayerProfile:
@@ -74,5 +74,5 @@ def list_players(players_dir: Path | str = "configs/players") -> list[str]:
         return []
     return [
         d.name for d in players_path.iterdir()
-        if d.is_dir() and (d / "profile.json").exists()
+        if d.is_dir() and d.name != "default" and (d / "profile.json").exists()
     ]

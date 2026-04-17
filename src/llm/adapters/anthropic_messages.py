@@ -26,7 +26,6 @@ class AnthropicMessagesClient:
         messages: list[ChatMessage],
         *,
         model: str | None = None,
-        session_id: str | None = None,  # Anthropic 不支持，仅保持接口兼容
     ) -> str:
         system_parts: list[str] = []
         api_messages: list[dict[str, str]] = []

@@ -16,21 +16,30 @@ llm:
   # json：使用结构化观测，可配合 delta 帧减少上下文体积
   prompt_format: natural
 
-  # 模型会话边界：
-  # - stateless：每次请求都不带 session_id
-  # - per_hand：每局独立 session_id（默认，推荐）
-  # - per_match：整场对局复用同一个 session_id
-  session_scope: per_hand
+  # AIma 本地上下文边界：
+  # - stateless：只发送当前观测，不注入历史
+  # - per_hand：注入本局历史（默认，推荐）
+  # - per_match：注入本场前情摘要 + 本局历史
+  context_scope: per_hand
 
   # 历史压缩策略：
   # - none：不压缩
   # - snip：仅裁掉较早记录
   # - micro：裁掉较早记录并压缩单条历史
   # - collapse：折叠较早记录为摘要（默认）
+  # - autocompact：高密度折叠较早历史
   compression_level: collapse
 
   # 历史预算：控制发送给模型的历史窗口大小
   history_budget: 10
+
+  # Prompt 预算：使用经验公式估算 token 并驱动压缩边界
+  context_budget_tokens: 8192
+  reserved_output_tokens: 1024
+  safety_margin_tokens: 512
+
+  # 请求间隔（秒）
+  request_delay: 0.5
 
   # API 配置
   api_key: "your-api-key-here"  # 必填：填入你的 API Key
@@ -72,7 +81,7 @@ llm:
   conversation_logging:
     enabled: false  # 是否启用对话日志记录
     # 启用后会在 configs/players/{player_id}/conversations/ 下生成 Markdown 文件
-    # 文件命名格式：{YYYYMMDD}-{session_id}.md
+    # 文件命名格式：{YYYYMMDD}-{conversation_id}.md
     # 内容格式：类似网页聊天的一问一答（System/User/Assistant）
     # 支持实时查看：tail -f configs/players/{player_id}/conversations/*.md
     # 注意：仅记录真实 AI 对局（dry-run/fallback 不记录）
@@ -108,3 +117,27 @@ logging:
 
   # 日志目录
   log_dir: "logs"
+
+  # 对局日志输出
+  json: null
+  session: null
+  session_audit: false
+
+# ==================== 对局默认设置 ====================
+match:
+  seed: 42
+  match_end:
+    type: hands
+    value: 8
+    allow_negative: false
+
+# ==================== 观战设置 ====================
+watch:
+  enabled: false
+  delay: 0.3
+  show_reason: true
+
+# ==================== 调试选项 ====================
+debug:
+  verbose: false
+  dry_run: false

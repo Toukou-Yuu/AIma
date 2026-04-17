@@ -45,15 +45,25 @@ class PersistenceManager:
         """加载玩家 profile.
 
         Returns:
-            PlayerProfile（如果 player_id 为 None 或文件不存在，返回默认）
+            PlayerProfile（优先加载指定玩家，缺失时回退到文件中的 default profile）
         """
-        from llm.agent.profile import PlayerProfile, load_profile
+        from llm.agent.profile import load_profile
 
-        if self.player_id is None:
-            return self._default_profile()
+        candidate_ids: list[str] = []
+        if self.player_id is not None:
+            candidate_ids.append(self.player_id)
+        candidate_ids.append("default")
 
-        loaded = load_profile(self.player_id, self.players_dir)
-        return loaded if loaded is not None else self._default_profile()
+        for candidate_id in candidate_ids:
+            loaded = load_profile(candidate_id, self.players_dir)
+            if loaded is not None:
+                return loaded
+
+        msg = (
+            "未找到可用 profile。"
+            f"已尝试: {', '.join(candidate_ids)}，players_dir={self.players_dir!r}"
+        )
+        raise FileNotFoundError(msg)
 
     def load_memory(self) -> "PlayerMemory":
         """加载玩家 memory.
@@ -171,19 +181,3 @@ class PersistenceManager:
 
         self.save_stats(new_stats)
         return new_stats
-
-    def _default_profile(self) -> "PlayerProfile":
-        """返回默认 profile."""
-        from llm.agent.profile import PlayerProfile
-
-        return PlayerProfile(
-            id="default",
-            name="DefaultBot",
-            model="gpt-4o-mini",
-            provider="openai",
-            temperature=0.7,
-            max_tokens=1024,
-            timeout_sec=120.0,
-            persona_prompt="",
-            strategy_prompt="",
-        )

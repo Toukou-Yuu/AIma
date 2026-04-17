@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 
 from llm.agent.decision_parser import DecisionParser
 from llm.agent.context_store import PersistentState, TurnContext
-from llm.agent.session import ModelSessionPolicy
 
 if TYPE_CHECKING:
     from kernel.api.legal_actions import LegalAction
@@ -49,8 +48,8 @@ class AgentCore:
     def __init__(
         self,
         profile: "PlayerProfile",
-        prompt_mode: str = "natural",
-        use_delta: bool = True,
+        prompt_mode: str,
+        use_delta: bool,
     ) -> None:
         """初始化核心决策组件.
 
@@ -70,7 +69,6 @@ class AgentCore:
         *,
         episode_ctx: "EpisodeContext",
         prompt_projector: "PromptProjector",
-        session_policy: ModelSessionPolicy,
         persistent_state: PersistentState,
         client: "CompletionClient | None",
         conversation_logger: "ConversationLogger | None" = None,
@@ -85,7 +83,6 @@ class AgentCore:
             seat: 玩家座位
             episode_ctx: 本局运行时上下文
             prompt_projector: Prompt 投影器
-            session_policy: 会话策略
             persistent_state: 当前长期状态快照
             client: LLM 客户端（dry_run 时可为 None）
             conversation_logger: 对话记录器（可选，用于调试）
@@ -146,12 +143,7 @@ class AgentCore:
         if request_delay_seconds > 0:
             time.sleep(request_delay_seconds)
 
-        session_id = session_policy.build_session_id(
-            seat,
-            hand_number=episode_ctx.hand_number,
-            match_id=episode_ctx.match_id,
-        )
-        raw = client.complete(messages, session_id=session_id)
+        raw = client.complete(messages)
 
         # 9. 记录对话（仅真实对局，用于调试）
         if conversation_logger is not None and not dry_run:

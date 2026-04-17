@@ -24,6 +24,76 @@ from tests.test_kan import (
 )
 
 
+def _chi_call_response_board() -> tuple[BoardState, Tile]:
+    """构造 seat1 只能从 seat0 吃 4m 的 CALL_RESPONSE 场景。"""
+    t3 = Tile(Suit.MAN, 3, False)
+    t4 = Tile(Suit.MAN, 4, False)
+    t5 = Tile(Suit.MAN, 5, False)
+    b0 = None
+    for seed in range(300):
+        b_try = _board(seed=seed, dealer=0)
+        merged = Counter()
+        for h in b_try.hands:
+            merged.update(h)
+        if merged[t3] >= 1 and merged[t4] >= 1 and merged[t5] >= 1:
+            b0 = b_try
+            break
+    assert b0 is not None
+    merged = Counter()
+    for h in b0.hands:
+        merged.update(h)
+    merged[t3] -= 1
+    merged[t4] -= 1
+    merged[t5] -= 1
+    h1 = Counter({t3: 1, t5: 1})
+    rest = merged.copy()
+    for _ in range(11):
+        x = next(iter(rest.elements()))
+        h1[x] += 1
+        rest[x] -= 1
+    h0 = Counter()
+    h2 = Counter()
+    h3 = Counter()
+    for target in (h0, h2, h3):
+        for _ in range(13):
+            x = next(iter(rest.elements()))
+            target[x] += 1
+            rest[x] -= 1
+    assert sum(rest.values()) == 0
+    hands = (h0, h1, h2, h3)
+    river = (RiverEntry(seat=0, tile=t4, tsumogiri=False),)
+    cs = CallResolution(
+        discard_seat=0,
+        claimed_tile=t4,
+        river_index=0,
+        stage="chi",
+        ron_remaining=frozenset(),
+        ron_claimants=frozenset(),
+        pon_kan_order=(1, 2, 3),
+        pon_kan_idx=3,
+        finished=False,
+    )
+    return (
+        BoardState(
+            hands=hands,
+            live_wall=b0.live_wall,
+            live_draw_index=b0.live_draw_index,
+            dead_wall=b0.dead_wall,
+            revealed_indicators=b0.revealed_indicators,
+        current_seat=1,
+            turn_phase=TurnPhase.CALL_RESPONSE,
+            river=river,
+            melds=((), (), (), ()),
+            last_draw_tile=None,
+            last_draw_was_rinshan=False,
+            rinshan_draw_index=0,
+            call_state=cs,
+            all_discards_per_seat=((t4,), (), (), ()),
+        ),
+        t4,
+    )
+
+
 def test_call_response_lists_daiminkan_open_meld() -> None:
     b, t = _board_call_response_daiminkan_ready()
     g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
@@ -85,77 +155,38 @@ def test_natural_text_roundtrip_open_meld() -> None:
 
 
 def test_chi_stage_lists_chi_open_meld() -> None:
-    """上家吃：舍 4m，上家手中有 3m、5m 与鸣入组成顺子。"""
-    t3 = Tile(Suit.MAN, 3, False)
-    t4 = Tile(Suit.MAN, 4, False)
-    t5 = Tile(Suit.MAN, 5, False)
-    b0 = None
-    for seed in range(300):
-        b_try = _board(seed=seed, dealer=0)
-        merged = Counter()
-        for h in b_try.hands:
-            merged.update(h)
-        if merged[t3] >= 1 and merged[t4] >= 1 and merged[t5] >= 1:
-            b0 = b_try
-            break
-    assert b0 is not None
-    merged = Counter()
-    for h in b0.hands:
-        merged.update(h)
-    merged[t3] -= 1
-    merged[t4] -= 1
-    merged[t5] -= 1
-    h3 = Counter({t3: 1, t5: 1})
-    rest = merged.copy()
-    for _ in range(11):
-        x = next(iter(rest.elements()))
-        h3[x] += 1
-        rest[x] -= 1
-    h0 = Counter()
-    h1 = Counter()
-    h2 = Counter()
-    for target in (h0, h1, h2):
-        for _ in range(13):
-            x = next(iter(rest.elements()))
-            target[x] += 1
-            rest[x] -= 1
-    assert sum(rest.values()) == 0
-    hands = (h0, h1, h2, h3)
-    river = (RiverEntry(seat=0, tile=t4, tsumogiri=False),)
-    cs = CallResolution(
-        discard_seat=0,
-        claimed_tile=t4,
-        river_index=0,
-        stage="chi",
-        ron_remaining=frozenset(),
-        ron_claimants=frozenset(),
-        pon_kan_order=(1, 2, 3),
-        pon_kan_idx=3,
-        finished=False,
-    )
-    b = BoardState(
-        hands=hands,
-        live_wall=b0.live_wall,
-        live_draw_index=b0.live_draw_index,
-        dead_wall=b0.dead_wall,
-        revealed_indicators=b0.revealed_indicators,
-        current_seat=3,
-        turn_phase=TurnPhase.CALL_RESPONSE,
-        river=river,
-        melds=((), (), (), ()),
-        last_draw_tile=None,
-        last_draw_was_rinshan=False,
-        rinshan_draw_index=0,
-        call_state=cs,
-        all_discards_per_seat=((t4,), (), (), ()),
-    )
+    """下家吃：舍 4m，下家手中有 3m、5m 与鸣入组成顺子。"""
+    b, _t4 = _chi_call_response_board()
     g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
-    acts = legal_actions(g, 3)
+    acts = legal_actions(g, 1)
     chi_acts = [
         a for a in acts if a.kind == ActionKind.OPEN_MELD and a.meld and a.meld.kind == MeldKind.CHI
     ]
     assert chi_acts, "应有一条吃 345m 的 OPEN_MELD"
     assert action_to_natural_text(chi_acts[0], chi_acts[0].seat).startswith("吃")
+
+
+def test_chi_stage_only_shimocha_gets_chi_actions() -> None:
+    """只有切牌者下家能吃；其余两家即使在 CALL_RESPONSE 也不能吃。"""
+    b, _t4 = _chi_call_response_board()
+    g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
+
+    acts_south = legal_actions(g, 1)
+    acts_west = legal_actions(g, 2)
+    acts_north = legal_actions(g, 3)
+
+    assert any(
+        a.kind == ActionKind.OPEN_MELD and a.meld and a.meld.kind == MeldKind.CHI
+        for a in acts_south
+    )
+    assert not any(
+        a.kind == ActionKind.OPEN_MELD and a.meld and a.meld.kind == MeldKind.CHI
+        for a in acts_west
+    )
+    assert not any(
+        a.kind == ActionKind.OPEN_MELD and a.meld and a.meld.kind == MeldKind.CHI
+        for a in acts_north
+    )
 
 
 def test_natural_text_roundtrip_shankuminkan() -> None:

@@ -154,7 +154,7 @@ def _legal_actions_call_response(
     # 检查是否可以 PASS_CALL
     # 在 Ron 阶段：只有 Ron 剩余者可以 PASS
     # 在 Pon/Kan 阶段：只有 Pon/Kan 顺序中的当前索引可以 PASS
-    # 在 Chi 阶段：只有上家可以 PASS
+    # 在 Chi 阶段：只有下家可以 PASS
     if cs.stage == "ron":
         if seat in cs.ron_remaining:
             actions.append(LegalAction(kind=ActionKind.PASS_CALL, seat=seat))
@@ -162,9 +162,9 @@ def _legal_actions_call_response(
         if seat == cs.pon_kan_order[cs.pon_kan_idx]:
             actions.append(LegalAction(kind=ActionKind.PASS_CALL, seat=seat))
     elif cs.stage == "chi":
-        from kernel.play.model import kamicha_seat
+        from kernel.play.model import shimocha_seat
 
-        if seat == kamicha_seat(cs.discard_seat):
+        if seat == shimocha_seat(cs.discard_seat):
             actions.append(LegalAction(kind=ActionKind.PASS_CALL, seat=seat))
 
     # 检查是否可以 RON

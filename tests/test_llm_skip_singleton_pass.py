@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 from kernel.api.legal_actions import LegalAction
 from kernel.engine.actions import ActionKind
-from llm.agent import PlayerAgent
 from llm.agent.context import EpisodeContext
+from tests.llm_test_utils import build_test_agent
 
 
 def test_singleton_pass_call_does_not_invoke_client() -> None:
@@ -16,7 +16,7 @@ def test_singleton_pass_call_does_not_invoke_client() -> None:
     client = MagicMock()
     client.complete.side_effect = AssertionError("complete should not be called")
 
-    agent = PlayerAgent(system_prompt="你是麻将牌手")
+    agent = build_test_agent(system_prompt="你是麻将牌手")
     episode_ctx = EpisodeContext(2)
 
     lone = (LegalAction(kind=ActionKind.PASS_CALL, seat=2),)
@@ -46,7 +46,7 @@ def test_singleton_draw_does_not_invoke_client() -> None:
     client = MagicMock()
     client.complete.side_effect = AssertionError("complete should not be called")
 
-    agent = PlayerAgent(system_prompt="你是麻将牌手")
+    agent = build_test_agent(system_prompt="你是麻将牌手")
     episode_ctx = EpisodeContext(0)
 
     lone = (LegalAction(kind=ActionKind.DRAW, seat=0),)
@@ -80,7 +80,7 @@ def test_pass_and_ron_still_invokes_client() -> None:
     # 返回 JSON 让 Agent 选择 PASS_CALL
     client = MagicMock(return_value='{"kind":"pass_call","seat":1}')
 
-    agent = PlayerAgent(system_prompt="你是麻将牌手")
+    agent = build_test_agent(system_prompt="你是麻将牌手")
     episode_ctx = EpisodeContext(1)
 
     # 创建一个可以被 JSON 序列化的 observation mock
