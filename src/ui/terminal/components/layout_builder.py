@@ -15,6 +15,7 @@ from ui.terminal.components.hand_display import HandDisplay
 from ui.terminal.components.name_resolver import NameResolver
 from ui.terminal.components.render import TileRenderer
 from ui.terminal.components.stats_tracker import StatsTracker
+from ui.terminal.components.tiles import localize_tile_codes
 
 if TYPE_CHECKING:
     from kernel.engine.state import GameState
@@ -133,11 +134,13 @@ class LayoutBuilder:
                 ]
             )
             if board.revealed_indicators:
-                dora_codes = " ".join(tile.to_code() for tile in board.revealed_indicators)
+                dora_codes = localize_tile_codes(
+                    " ".join(tile.to_code() for tile in board.revealed_indicators)
+                )
                 line1_parts.extend(
                     [
                         (" | ", "dim"),
-                        ("宝牌", "dim"),
+                        ("宝牌指示器 ", "dim"),
                         (f"{dora_codes}", "bright_white"),
                     ]
                 )
@@ -174,9 +177,9 @@ class LayoutBuilder:
         if viewport_height < 28 or viewport_width < 118:
             return LiveLayoutProfile(
                 mode="compact",
-                sidebar_event_count=2,
+                sidebar_event_count=3,
                 sidebar_min_width=28,
-                show_score_line=False,
+                show_score_line=True,
             )
         if viewport_height < 36 or viewport_width < 152:
             return LiveLayoutProfile(
@@ -198,10 +201,7 @@ class LayoutBuilder:
         active_seat: int | None,
         profile: LiveLayoutProfile,
     ) -> Panel:
-        line1, line2 = self.describe_table_lines(state, active_seat)
-        rows = [line1]
-        if profile.show_score_line:
-            rows.append(line2)
+        rows = self._build_sidebar_status_lines(state, active_seat, profile)
         return Panel(
             Group(*rows),
             title="[bold bright_cyan]场况[/]",
@@ -231,3 +231,65 @@ class LayoutBuilder:
             border_style="yellow",
             padding=(0, 1),
         )
+
+    def _build_sidebar_status_lines(
+        self,
+        state: GameState,
+        active_seat: int | None,
+        profile: LiveLayoutProfile,
+    ) -> list[Text]:
+        from kernel.table.model import PrevailingWind
+
+        if not hasattr(state, "table") or state.table is None:
+            phase = getattr(getattr(state, "phase", None), "value", "unknown")
+            return [Text(f"阶段 {phase}", style="white")]
+
+        table = state.table
+        board = state.board
+        wind = "東" if table.prevailing_wind == PrevailingWind.EAST else "南"
+        round_num = table.round_number.value
+
+        lines = [
+            Text.assemble(
+                (f"{wind}風{round_num}局", "bright_white"),
+                ("  ·  ", "dim"),
+                (f"第{table.honba}本場", "white"),
+            ),
+            Text.assemble(
+                ("供托 ", "dim"),
+                (f"{table.kyoutaku}", "yellow"),
+            ),
+        ]
+
+        if board:
+            remaining = len(board.live_wall) - board.live_draw_index
+            lines.append(
+                Text.assemble(
+                    ("余牌 ", "dim"),
+                    (f"{remaining}", "cyan"),
+                )
+            )
+            if board.revealed_indicators:
+                dora_codes = localize_tile_codes(
+                    " ".join(tile.to_code() for tile in board.revealed_indicators)
+                )
+                lines.append(
+                    Text.assemble(
+                        ("宝牌指示器 ", "dim"),
+                        (dora_codes, "bright_white"),
+                    )
+                )
+
+        if profile.show_score_line:
+            for seat, score in enumerate(table.scores):
+                name = self._name_resolver.get_name(seat, f"S{seat}")
+                style = "bright_cyan" if seat == active_seat else "white"
+                lines.append(
+                    Text.assemble(
+                        (name, style),
+                        (" ", "dim"),
+                        (f"{score:,}", "bold bright_yellow" if seat == active_seat else "yellow"),
+                    )
+                )
+
+        return lines

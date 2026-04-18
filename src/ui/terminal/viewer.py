@@ -27,20 +27,18 @@ from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
 
-# 导入组件
 from ui.terminal.components import (
-    TileRenderer,
-    HandDisplay,
-    StatsTracker,
     EventFormatter,
+    HandDisplay,
     LayoutBuilder,
     NameResolver,
+    StatsTracker,
+    TileRenderer,
 )
-from ui.terminal.components.tiles import tile_to_rich
+from ui.terminal.components.tiles import localize_tile_codes
 
 if TYPE_CHECKING:
     from kernel.engine.state import GameState
-    from kernel.event_log import GameEvent
     from llm.runner import RunResult
 
 
@@ -160,14 +158,14 @@ class LiveMatchViewer:
         if body in _ACTION_KIND_LABELS:
             return _ACTION_KIND_LABELS[body]
         if body.startswith("打 "):
-            return f"打牌 {body[2:].strip()}".strip()
+            return f"打牌 {localize_tile_codes(body[2:].strip())}".strip()
         if body.startswith("摸 "):
-            return f"摸牌 {body[2:].strip()}".strip()
+            return f"摸牌 {localize_tile_codes(body[2:].strip())}".strip()
         if body.startswith("discard "):
-            return f"打牌 {body[len('discard '):].strip()}".strip()
+            return f"打牌 {localize_tile_codes(body[len('discard '):].strip())}".strip()
         if body.startswith("draw "):
-            return f"摸牌 {body[len('draw '):].strip()}".strip()
-        return body
+            return f"摸牌 {localize_tile_codes(body[len('draw '):].strip())}".strip()
+        return localize_tile_codes(body)
 
     # === 公共接口（向后兼容） ===
 
@@ -262,7 +260,9 @@ class LiveMatchViewer:
         注意：RunResult 只包含最终状态和 action wire，不包含中间状态。
         要完整观战，需要在 runner 中集成实时回调。
         """
-        self.console.print("[dim]提示: RunResult 不包含中间状态，请使用 run_with_callback 或从 replay 运行[/]")
+        self.console.print(
+            "[dim]提示: RunResult 不包含中间状态，请使用 run_with_callback 或从 replay 运行[/]"
+        )
         self.console.print(f"终局: {result.final_state.phase.value}")
 
     def run_from_replay_file(
@@ -281,7 +281,7 @@ class LiveMatchViewer:
 
         from kernel import apply
         from kernel.engine.state import initial_game_state
-        from kernel.replay import ReplayError, replay_from_actions
+        from kernel.replay import ReplayError
         from kernel.replay_json import actions_from_match_log
 
         path = Path(replay_path)
@@ -371,7 +371,11 @@ class LiveMatchCallback:
         show_reason: bool = True,
         target_hands: int = 8,
     ) -> None:
-        self.viewer = LiveMatchViewer(delay=delay, show_reason=show_reason, target_hands=target_hands)
+        self.viewer = LiveMatchViewer(
+            delay=delay,
+            show_reason=show_reason,
+            target_hands=target_hands,
+        )
         self.live: Live | None = None
         self._start_sequence: int = 0
         self._decision_start_time: float | None = None
@@ -384,7 +388,13 @@ class LiveMatchCallback:
             transient=True,
         )
         self.live.__enter__()
-        self.live.update(Panel("[dim]正在初始化对局，等待 LLM 响应...", title="AIma", border_style="bright_blue"))
+        self.live.update(
+            Panel(
+                "[dim]正在初始化对局，等待 LLM 响应...",
+                title="AIma",
+                border_style="bright_blue",
+            )
+        )
         self._decision_start_time = time.time()
         return self
 
@@ -499,7 +509,9 @@ def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3) -> None:
                 viewer.console.print(f"[red]错误: {e}[/]")
                 break
 
-    viewer.console.print(f"\n[bold green]演示结束[/] 步数: {viewer._step}, 终局状态: {state.phase.value}")
+    viewer.console.print(
+        f"\n[bold green]演示结束[/] 步数: {viewer._step}, 终局状态: {state.phase.value}"
+    )
 
 
 if __name__ == "__main__":

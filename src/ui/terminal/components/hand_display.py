@@ -74,7 +74,6 @@ class HandDisplay:
         mode: RenderMode = "full",
     ) -> Group:
         """按档位渲染四家手牌。"""
-        del last_action_str
         del seat_decision_times
 
         board = state.board
@@ -90,44 +89,35 @@ class HandDisplay:
         label_width = self._compute_label_width(hand_labels.values())
 
         lines: list[Text] = []
+        if last_action_str:
+            lines.append(Text(f"当前动作: {last_action_str}", style="bold bright_yellow"))
+            lines.append(Text(""))
+
         for seat in range(4):
             is_active = seat == last_actor_seat
             hand_text = self._render_hand_text(board, seat, dora_tiles)
             label_text = self._render_hand_label(hand_labels[seat], label_width, is_active)
             riichi_mark = self._build_riichi_mark(board, seat)
 
-            if mode == "compact":
-                lines.append(
-                    self._render_compact_line(
-                        board,
-                        seat,
-                        dealer,
-                        label_text,
-                        hand_text,
-                        riichi_mark,
-                        dora_tiles,
-                    )
+            lines.extend(
+                self._render_multiline_block(
+                    board,
+                    seat,
+                    dealer,
+                    label_text,
+                    hand_text,
+                    riichi_mark,
+                    dora_tiles,
+                    mode,
                 )
-            else:
-                lines.extend(
-                    self._render_multiline_block(
-                        board,
-                        seat,
-                        dealer,
-                        label_text,
-                        hand_text,
-                        riichi_mark,
-                        dora_tiles,
-                        mode,
-                    )
-                )
-                if show_reason and mode == "full":
-                    seat_reason = seat_reasons.get(seat) if seat_reasons else None
-                    if seat_reason and seat == last_actor_seat:
-                        lines.append(self._render_reason_line(seat_reason))
+            )
+            if show_reason and mode == "full":
+                seat_reason = seat_reasons.get(seat) if seat_reasons else None
+                if seat_reason and seat == last_actor_seat:
+                    lines.append(self._render_reason_line(seat_reason, is_last=seat == 3))
 
             if seat != 3:
-                lines.append(Text(""))
+                lines.append(Text("│", style="bright_black"))
 
         while lines and not lines[-1].plain:
             lines.pop()
@@ -144,8 +134,22 @@ class HandDisplay:
         dora_tiles: set,
         mode: RenderMode,
     ) -> list[Text]:
+        is_last = seat == 3
+        branch_prefix = "└── " if is_last else "├── "
+        child_prefix = "    " if is_last else "│   "
+
+        melds = board.melds[seat]
+        melds_text = (
+            self.format_melds(melds, seat, dealer)
+            if mode == "full"
+            else self.format_melds_compact(melds)
+        )
+        river_limit = 10 if mode == "full" else 6 if mode == "normal" else 4
+        river_text = self._render_river_tail(board.river, seat, dora_tiles, limit=river_limit)
+
         lines = [
             Text.assemble(
+                (branch_prefix, "bright_black"),
                 label_text,
                 (" ", ""),
                 hand_text,
@@ -153,58 +157,23 @@ class HandDisplay:
             )
         ]
 
-        melds = board.melds[seat]
-        if mode == "full":
-            melds_text = self.format_melds(melds, seat, dealer)
-            river_text = self._renderer.render_river(board.river, seat, dora_tiles)
-        else:
-            melds_text = self.format_melds_compact(melds)
-            river_text = self._render_river_tail(board.river, seat, dora_tiles, limit=6)
-
-        detail_line = Text.assemble(
-            ("  ", "dim"),
+        meld_line = Text.assemble(
+            (f"{child_prefix}├── ", "bright_black"),
             ("副露: ", "dim"),
             (melds_text if melds_text else "无", "bright_magenta" if melds else "dim"),
-            (" | ", "dim"),
+        )
+        river_line = Text.assemble(
+            (f"{child_prefix}└── ", "bright_black"),
             ("牌河: ", "dim"),
         )
         if river_text.plain:
-            detail_line.append(river_text)
+            river_line.append(river_text)
         else:
-            detail_line.append(Text("（无）", style="dim"))
-        lines.append(detail_line)
+            river_line.append(Text("（无）", style="dim"))
+
+        lines.append(meld_line)
+        lines.append(river_line)
         return lines
-
-    def _render_compact_line(
-        self,
-        board,
-        seat: int,
-        dealer: int,
-        label_text: Text,
-        hand_text: Text,
-        riichi_mark: str,
-        dora_tiles: set,
-    ) -> Text:
-        melds = board.melds[seat]
-        melds_text = self.format_melds_compact(melds)
-        river_text = self._render_river_tail(board.river, seat, dora_tiles, limit=4)
-
-        line = Text.assemble(
-            label_text,
-            (" ", ""),
-            hand_text,
-            (riichi_mark, "bold bright_red" if riichi_mark else ""),
-            ("  |  ", "dim"),
-            ("副露 ", "dim"),
-            (melds_text if melds_text else "无", "bright_magenta" if melds else "dim"),
-            ("  |  ", "dim"),
-            ("河尾 ", "dim"),
-        )
-        if river_text.plain:
-            line.append(river_text)
-        else:
-            line.append(Text("（无）", style="dim"))
-        return line
 
     def _render_hand_text(self, board, seat: int, dora_tiles: set) -> Text:
         hand = board.hands[seat]
@@ -248,9 +217,11 @@ class HandDisplay:
         style = "bold bright_cyan" if is_active else "bright_white"
         return Text(padded, style=style)
 
-    def _render_reason_line(self, reason: str) -> Text:
+    def _render_reason_line(self, reason: str, *, is_last: bool) -> Text:
         clipped = reason if len(reason) <= 72 else f"{reason[:69]}..."
+        prefix = "    └── " if is_last else "│   └── "
         return Text.assemble(
-            ("  理由: ", "dim cyan"),
+            (prefix, "bright_black"),
+            ("理由: ", "dim cyan"),
             (clipped, "italic bright_cyan"),
         )

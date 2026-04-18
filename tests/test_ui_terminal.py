@@ -158,6 +158,21 @@ class TestTileToRich:
                 assert text.plain == code
 
 
+class TestTileCodeLocalization:
+    """测试牌码文本本地化。"""
+
+    def test_tile_code_to_display_translates_honor_tiles(self) -> None:
+        from ui.terminal.components.tiles import tile_code_to_display
+
+        assert tile_code_to_display("1z") == "東"
+        assert tile_code_to_display("2z") == "南"
+
+    def test_localize_tile_codes_keeps_suited_tiles_and_translates_honors(self) -> None:
+        from ui.terminal.components.tiles import localize_tile_codes
+
+        assert localize_tile_codes("打牌 1z 2m") == "打牌 東 2m"
+
+
 class TestWindWithSeat:
     """测试 wind_with_seat 函数。"""
 
@@ -250,7 +265,7 @@ class TestHandDisplayLabels:
         assert cell_len(short_label.plain) == width
         assert cell_len(long_label.plain) == width
 
-    def test_compact_mode_merges_meld_and_river_into_single_line(self) -> None:
+    def test_compact_mode_preserves_tree_and_separate_detail_lines(self) -> None:
         from kernel import Action, ActionKind, apply, build_deck, initial_game_state, shuffle_deck
         from ui.terminal.components.hand_display import HandDisplay
         from ui.terminal.components.name_resolver import NameResolver
@@ -265,8 +280,10 @@ class TestHandDisplayLabels:
 
         rendered = "\n".join(segment.plain for segment in group.renderables)
         assert "一姬[东]：" in rendered
-        assert "副露 " in rendered
-        assert "河尾 " in rendered
+        assert "├── 一姬[东]：" in rendered
+        assert "│   ├── 副露:" in rendered
+        assert "│   └── 牌河:" in rendered
+        assert "河尾" not in rendered
 
 
 class TestLayoutBuilderResponsive:
@@ -307,6 +324,58 @@ class TestLayoutBuilderResponsive:
 
         assert panel.title is None
         assert panel.renderable is not None
+
+    def test_sidebar_status_panel_uses_multiline_scores(self) -> None:
+        from kernel import Action, ActionKind, apply, build_deck, initial_game_state, shuffle_deck
+        from ui.terminal.components.event_formatter import EventFormatter
+        from ui.terminal.components.hand_display import HandDisplay
+        from ui.terminal.components.layout_builder import LayoutBuilder
+        from ui.terminal.components.name_resolver import NameResolver
+        from ui.terminal.components.render import TileRenderer
+        from ui.terminal.components.stats_tracker import StatsTracker
+
+        state = initial_game_state()
+        deck = tuple(shuffle_deck(build_deck(), seed=42))
+        outcome = apply(state, Action(ActionKind.BEGIN_ROUND, wall=deck))
+        state = outcome.new_state
+
+        renderer = TileRenderer()
+        resolver = NameResolver({0: "一姬", 1: "二阶堂"})
+        stats = StatsTracker({0: "一姬", 1: "二阶堂"})
+        layout = LayoutBuilder(
+            renderer,
+            stats,
+            EventFormatter(resolver),
+            HandDisplay(renderer, resolver),
+            resolver,
+        )
+
+        profile = layout._select_profile(120, 30)
+        lines = layout._build_sidebar_status_lines(
+            state,
+            active_seat=0,
+            profile=profile,
+        )
+        rendered = "\n".join(line.plain for line in lines)
+
+        assert "一姬 25,000" in rendered
+        assert "二阶堂 25,000" in rendered
+        assert "宝牌" in rendered
+
+
+class TestStatsTrackerSidebar:
+    """测试右栏和了统计。"""
+
+    def test_render_sidebar_uses_player_names(self) -> None:
+        from ui.terminal.components.stats_tracker import StatsTracker
+
+        tracker = StatsTracker({0: "一姬", 1: "二阶堂", 2: "三上", 3: "四宫"})
+        sidebar = tracker.render_sidebar(dealer_seat=0)
+        rendered = "\n".join(line.plain for line in sidebar.renderables)
+
+        assert "一姬" in rendered
+        assert "二阶堂" in rendered
+        assert "东家" not in rendered
 
 
 class TestParseHandTiles:
@@ -782,6 +851,8 @@ class TestRenderHeader:
 
     def test_header_contains_dora_indicators(self) -> None:
         """场况包含宝牌指示器。"""
+        from rich.console import Console
+
         from kernel import Action, ActionKind, apply, build_deck, initial_game_state, shuffle_deck
         from ui.terminal.viewer import LiveMatchViewer
 
@@ -792,8 +863,11 @@ class TestRenderHeader:
         state = outcome.new_state
 
         table = viewer._render_header(state)
-        # 验证 Table 对象创建成功
-        assert table is not None
+        console = Console()
+        with console.capture() as capture:
+            console.print(table)
+        text = capture.get()
+        assert "宝牌指示器" in text
 
 
 class TestMeldsToStr:
@@ -913,6 +987,14 @@ class TestLiveMatchViewerActionLabels:
         viewer.set_player_names({2: "卡维"})
 
         assert viewer.format_action_label("家2 打 3m") == "卡维 打牌 3m"
+
+    def test_format_action_label_translates_honor_tiles(self) -> None:
+        from ui.terminal.viewer import LiveMatchViewer
+
+        viewer = LiveMatchViewer()
+        viewer.set_player_names({0: "一姬"})
+
+        assert viewer.format_action_label("家0 打 1z") == "一姬 打牌 東"
 
 
 class TestLiveMatchCallback:

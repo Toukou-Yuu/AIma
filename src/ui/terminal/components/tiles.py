@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from rich.text import Text
 
 # 炫彩虹宝牌颜色循环
@@ -32,6 +34,7 @@ _HONOR_MAP = {
 }
 
 _WIND_NAMES = ["东", "南", "西", "北"]
+_TILE_CODE_PATTERN = re.compile(r"\b([1-9][mpsz]r?)\b")
 
 
 def tile_to_rich(tile_code: str, is_dora: bool = False) -> Text:
@@ -64,6 +67,25 @@ def tile_to_rich(tile_code: str, is_dora: bool = False) -> Text:
         return Text(display, style=style)
 
     return Text(tile_code.replace("r", ""), style=style)
+
+
+def tile_code_to_display(tile_code: str) -> str:
+    """将牌码转换为终端文案。
+
+    数牌保持 ``1m`` 这类紧凑格式，字牌改为中文，赤宝牌去掉 ``r``。
+    """
+    if not tile_code:
+        return ""
+
+    suit = tile_code[0] if tile_code[0] in "mpsz" else tile_code[-1]
+    if suit == "z":
+        return _HONOR_MAP.get(tile_code[0], tile_code[0])
+    return tile_code.replace("r", "")
+
+
+def localize_tile_codes(text: str) -> str:
+    """将文本中的牌码局部替换为终端文案。"""
+    return _TILE_CODE_PATTERN.sub(lambda match: tile_code_to_display(match.group(1)), text)
 
 
 def wind_with_seat(

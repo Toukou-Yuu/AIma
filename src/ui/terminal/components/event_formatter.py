@@ -24,7 +24,7 @@ from kernel.event_log import (
     TsumoEvent,
 )
 from kernel.flow.model import FlowKind
-from ui.terminal.components.tiles import tile_to_rich
+from ui.terminal.components.tiles import tile_code_to_display, tile_to_rich
 
 if TYPE_CHECKING:
     from ui.terminal.components.name_resolver import NameResolver
@@ -107,8 +107,8 @@ class EventFormatter:
         dealer_name = self._name_resolver.get_name_or_seat(ev.dealer_seat)
         return Text.assemble(
             (f"{dealer_name} 配牌 ", "dim"),
-            ("宝牌: ", "dim"),
-            tile_to_rich(ev.dora_indicator.to_code(), is_dora=True),
+            ("宝牌指示器: ", "dim"),
+            (tile_code_to_display(ev.dora_indicator.to_code()), "bright_white"),
         )
 
     def _format_draw_tile(self, ev: DrawTileEvent) -> Text:
@@ -128,7 +128,7 @@ class EventFormatter:
         player_name = self._name_resolver.get_name(ev.seat)
         return Text.assemble(
             (player_name, "cyan"),
-            (f" 打 ", "dim"),
+            (" 打 ", "dim"),
             tile_to_rich(ev.tile.to_code()),
             (f" ({tg}{riichi})", "dim"),
         )

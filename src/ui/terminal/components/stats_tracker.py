@@ -55,13 +55,13 @@ class StatsTracker:
         """渲染右栏用的紧凑和了统计。"""
         lines = []
         for seat in range(4):
-            rel_wind = _WIND_NAMES[(seat - dealer_seat) % 4]
             wins = self._wins[seat]
             pct_str = f"{wins / self._rounds * 100:.0f}%" if self._rounds > 0 else "—"
-            label = rel_wind if compact else f"{rel_wind}家"
+            label = self._seat_names.get(seat) or f"{_WIND_NAMES[(seat - dealer_seat) % 4]}家"
+            separator = "  " if compact else "  "
             line = Text.assemble(
                 (label, "bright_white"),
-                ("  ", "dim"),
+                (separator, "dim"),
                 (str(wins), "bold bright_cyan" if wins > 0 else "cyan"),
                 (" 次", "dim"),
                 ("  ", "dim"),
