@@ -113,6 +113,7 @@ def _render_recent_replays_panel(replays: tuple[ReplaySummary, ...]) -> Panel:
 
 
 def _render_home_model_panel(snapshot: HomeSnapshot) -> Panel:
+    binding_summary = _format_model_binding_summary(snapshot.model)
     rows = [
         ("接入", snapshot.model.headline),
         (
@@ -122,11 +123,27 @@ def _render_home_model_panel(snapshot: HomeSnapshot) -> Panel:
                 style=snapshot.model.connection_style,
             ),
         ),
+        ("座位绑定", binding_summary),
         ("Prompt", snapshot.model.prompt_format),
         ("对话日志", _bool_text(snapshot.model.conversation_logging, "已开启", "已关闭")),
-        ("配置状态", _bool_text(snapshot.model.configured, snapshot.model.note, snapshot.model.note)),
+        (
+            "配置状态",
+            _bool_text(snapshot.model.configured, snapshot.model.note, snapshot.model.note),
+        ),
     ]
     return render_summary_panel("当前模型", rows, border_style="bright_cyan")
+
+
+def _format_model_binding_summary(model) -> str:
+    groups: dict[str, list[str]] = {}
+    for binding in model.seat_bindings:
+        groups.setdefault(binding.profile_name, []).append(f"S{binding.seat}")
+    if not groups:
+        return "未绑定"
+    return " · ".join(
+        f"{'/'.join(seats)} {profile}"
+        for profile, seats in groups.items()
+    )
 
 
 def _render_home_roster_panel(snapshot: HomeSnapshot) -> Panel:
@@ -367,7 +384,11 @@ def _render_replay_live_status_bar(session: ReplaySession) -> Panel:
     return _render_live_status_bar(line1, line2, border_style="bright_green")
 
 
-def _render_form_summary(title: str, rows: list[tuple[str, str | Text]], border_style: str = "bright_blue") -> Panel:
+def _render_form_summary(
+    title: str,
+    rows: list[tuple[str, str | Text]],
+    border_style: str = "bright_blue",
+) -> Panel:
     return render_summary_panel(title, rows, border_style=border_style)
 
 
@@ -708,21 +729,53 @@ class MatchSetupScreen(BaseScreen):
     def _refresh_summary(self) -> None:
         self._refresh_player_buttons()
         players = self._selected_players()
+        model_summary = load_model_summary(KERNEL_CONFIG_PATH)
         seed = self.query_one("#match-seed", Input).value or "0"
         max_hands = self.query_one("#match-hands", Input).value or "8"
         watch = self.query_one("#match-watch", Checkbox).value
         delay = self.query_one("#match-delay", Input).value or "0.5"
         rows = [
-            ("玩家", " / ".join(f"{SEAT_LABELS[p['seat']]} {self._player_display_name(str(p['id']))}" for p in players)),
             ("随机种子", "随机" if seed == "0" else seed),
             ("目标局数", max_hands),
             ("观战模式", "实时观战" if watch else "后台运行"),
         ]
         if watch:
             rows.append(("观战延迟", f"{delay} 秒"))
+        rows.extend(self._seat_model_rows(players, model_summary))
         self.query_one("#match-summary", Static).update(
             _render_form_summary("当前对局计划", rows, border_style="bright_yellow")
         )
+
+    def _seat_model_rows(
+        self,
+        players: list[dict[str, Any]],
+        model_summary,
+    ) -> list[tuple[str, Text]]:
+        bindings = {binding.seat: binding for binding in model_summary.seat_bindings}
+        rows: list[tuple[str, Text]] = []
+        for player in players:
+            seat = int(player["seat"])
+            player_name = self._player_display_name(str(player["id"]))
+            if player["id"] == "default":
+                rows.append((SEAT_LABELS[seat], Text(f"{player_name} -> dry-run", style="dim")))
+                continue
+            binding = bindings.get(seat)
+            if binding is None:
+                rows.append((SEAT_LABELS[seat], Text(f"{player_name} -> 未绑定 LLM", style="red")))
+                continue
+            rows.append(
+                (
+                    SEAT_LABELS[seat],
+                    Text(
+                        (
+                            f"{player_name} -> {binding.profile_name} · "
+                            f"{binding.model} · {binding.connection_label}"
+                        ),
+                        style=binding.connection_style,
+                    ),
+                )
+            )
+        return rows
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id in {"match-seed", "match-hands", "match-delay"}:
@@ -764,7 +817,7 @@ class MatchSetupScreen(BaseScreen):
         uses_llm = any(player["id"] != "default" for player in players)
         model_summary = load_model_summary(KERNEL_CONFIG_PATH)
         if uses_llm and not model_summary.configured:
-            self.set_status("当前未配置可用 LLM，正式对局只能选择默认 AI 或先补齐模型配置", "red")
+            self.set_status(f"LLM 配置不可用：{model_summary.note}", "red")
             return
 
         runtime_options = _runtime_options()

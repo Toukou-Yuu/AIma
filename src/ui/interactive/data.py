@@ -18,6 +18,31 @@ _PLACEHOLDER_KEYS = {"", "your-api-key", "your-api-key-here"}
 
 
 @dataclass(frozen=True, slots=True)
+class LLMProfileStatus:
+    """单个 LLM profile 的 UI 状态。"""
+
+    name: str
+    provider_label: str
+    model: str
+    configured: bool
+    connection_label: str
+    connection_style: str
+    connection_note: str
+
+
+@dataclass(frozen=True, slots=True)
+class SeatModelBinding:
+    """座位到 LLM profile 的 UI 绑定。"""
+
+    seat: int
+    seat_label: str
+    profile_name: str
+    model: str
+    connection_label: str
+    connection_style: str
+
+
+@dataclass(frozen=True, slots=True)
 class ModelSummary:
     """首页和配置页使用的模型摘要。"""
 
@@ -30,12 +55,16 @@ class ModelSummary:
     connection_label: str
     connection_style: str
     connection_note: str
+    profiles: tuple[LLMProfileStatus, ...] = ()
+    seat_bindings: tuple[SeatModelBinding, ...] = ()
 
     @property
     def headline(self) -> str:
         """面向 UI 的主标题。"""
         if not self.configured:
             return "未完成模型配置"
+        if self.profiles:
+            return f"4席 / {len(self.profiles)} profiles"
         return f"{self.provider_label} / {self.model}"
 
 
@@ -301,30 +330,7 @@ def _schedule_probe_refresh(
     thread.start()
 
 
-def load_model_summary(config_path: Path = KERNEL_CONFIG_PATH) -> ModelSummary:
-    """读取模型配置摘要。"""
-    cfg = _safe_load_yaml(config_path)
-    if not cfg:
-        return ModelSummary(
-            provider_label="未配置",
-            model="--",
-            configured=False,
-            prompt_format="--",
-            conversation_logging=False,
-            note="缺少 configs/aima_kernel.yaml",
-            connection_label="未连接",
-            connection_style="yellow",
-            connection_note="缺少配置文件",
-        )
-
-    llm_cfg = cfg.get("llm", {}) if isinstance(cfg.get("llm"), dict) else {}
-    profiles = llm_cfg.get("profiles", {}) if isinstance(llm_cfg.get("profiles"), dict) else {}
-    seats = llm_cfg.get("seats", {}) if isinstance(llm_cfg.get("seats"), dict) else {}
-    seat0 = seats.get("seat0", {}) if isinstance(seats.get("seat0"), dict) else {}
-    profile_name = str(seat0.get("profile", ""))
-    profile = profiles.get(profile_name)
-    profile_cfg = profile if isinstance(profile, dict) else {}
-
+def _profile_status_from_config(name: str, profile_cfg: dict[str, Any]) -> LLMProfileStatus:
     api_key = str(profile_cfg.get("api_key", "")).strip()
     configured = api_key not in _PLACEHOLDER_KEYS
     provider = str(profile_cfg.get("provider", ""))
@@ -344,21 +350,143 @@ def load_model_summary(config_path: Path = KERNEL_CONFIG_PATH) -> ModelSummary:
     else:
         connection_label, connection_style, connection_note = cached_probe
 
-    return ModelSummary(
-        provider_label=_provider_label(
-            provider,
-            base_url,
-        ),
+    return LLMProfileStatus(
+        name=name,
+        provider_label=_provider_label(provider, base_url),
         model=str(profile_cfg.get("model", "--")),
+        configured=configured,
+        connection_label=connection_label,
+        connection_style=connection_style,
+        connection_note=connection_note,
+    )
+
+
+def _missing_profile_status(name: str) -> LLMProfileStatus:
+    return LLMProfileStatus(
+        name=name,
+        provider_label="未配置",
+        model="--",
+        configured=False,
+        connection_label="未连接",
+        connection_style="red",
+        connection_note="profile 不存在",
+    )
+
+
+def _build_profile_statuses(
+    profiles_cfg: dict[str, Any],
+    seats_cfg: dict[str, Any],
+) -> dict[str, LLMProfileStatus]:
+    referenced = []
+    for seat in range(4):
+        seat_cfg = seats_cfg.get(f"seat{seat}")
+        if isinstance(seat_cfg, dict):
+            profile_name = str(seat_cfg.get("profile", "")).strip()
+            if profile_name:
+                referenced.append(profile_name)
+
+    statuses: dict[str, LLMProfileStatus] = {}
+    for profile_name in dict.fromkeys(referenced):
+        profile_cfg = profiles_cfg.get(profile_name)
+        if isinstance(profile_cfg, dict):
+            statuses[profile_name] = _profile_status_from_config(profile_name, profile_cfg)
+        else:
+            statuses[profile_name] = _missing_profile_status(profile_name or "未绑定")
+    return statuses
+
+
+def _build_seat_bindings(
+    seats_cfg: dict[str, Any],
+    profile_statuses: dict[str, LLMProfileStatus],
+) -> tuple[SeatModelBinding, ...]:
+    bindings = []
+    for seat, seat_label in enumerate(SEAT_LABELS):
+        seat_cfg = seats_cfg.get(f"seat{seat}")
+        profile_name = (
+            str(seat_cfg.get("profile", "")).strip()
+            if isinstance(seat_cfg, dict)
+            else ""
+        )
+        status = profile_statuses.get(profile_name) or _missing_profile_status(
+            profile_name or "未绑定"
+        )
+        bindings.append(
+            SeatModelBinding(
+                seat=seat,
+                seat_label=seat_label,
+                profile_name=status.name,
+                model=status.model,
+                connection_label=status.connection_label,
+                connection_style=status.connection_style,
+            )
+        )
+    return tuple(bindings)
+
+
+def _summarize_profile_connections(profiles: tuple[LLMProfileStatus, ...]) -> tuple[str, str, str]:
+    if not profiles:
+        return ("未连接", "yellow", "未配置 LLM profile")
+    labels = [f"{profile.name} {profile.connection_label}" for profile in profiles]
+    if all(profile.connection_style == "green" for profile in profiles):
+        style = "green"
+    elif any(profile.connection_style == "red" for profile in profiles):
+        style = "red"
+    else:
+        style = "yellow"
+    return (" / ".join(labels), style, f"{len(profiles)} 个 profile")
+
+
+def _summarize_config_note(profiles: tuple[LLMProfileStatus, ...]) -> tuple[bool, str]:
+    missing = [profile.name for profile in profiles if not profile.configured]
+    if missing:
+        return False, "缺少 API Key: " + ", ".join(missing)
+    if not profiles:
+        return False, "缺少 LLM profile"
+    return True, "所有 LLM profile 已配置"
+
+
+def load_model_summary(config_path: Path = KERNEL_CONFIG_PATH) -> ModelSummary:
+    """读取模型配置摘要。"""
+    cfg = _safe_load_yaml(config_path)
+    if not cfg:
+        return ModelSummary(
+            provider_label="未配置",
+            model="--",
+            configured=False,
+            prompt_format="--",
+            conversation_logging=False,
+            note="缺少 configs/aima_kernel.yaml",
+            connection_label="未连接",
+            connection_style="yellow",
+            connection_note="缺少配置文件",
+        )
+
+    llm_cfg = cfg.get("llm", {}) if isinstance(cfg.get("llm"), dict) else {}
+    profiles = llm_cfg.get("profiles", {}) if isinstance(llm_cfg.get("profiles"), dict) else {}
+    seats = llm_cfg.get("seats", {}) if isinstance(llm_cfg.get("seats"), dict) else {}
+    profile_statuses = _build_profile_statuses(profiles, seats)
+    profile_list = tuple(profile_statuses.values())
+    seat_bindings = _build_seat_bindings(seats, profile_statuses)
+    configured, note = _summarize_config_note(profile_list)
+    connection_label, connection_style, connection_note = _summarize_profile_connections(
+        profile_list
+    )
+    primary_profile = profile_list[0] if profile_list else None
+
+    return ModelSummary(
+        provider_label=primary_profile.provider_label if primary_profile else "未配置",
+        model=primary_profile.model if primary_profile else "--",
         configured=configured,
         prompt_format=str(llm_cfg.get("prompt_format", "--")),
         conversation_logging=bool(
             (llm_cfg.get("conversation_logging") or {}).get("enabled", False),
         ),
-        note="API Key 已配置" if configured else "缺少 API Key",
+        note=note,
         connection_label=connection_label,
         connection_style=connection_style,
         connection_note=connection_note,
+        profiles=profile_list,
+        seat_bindings=seat_bindings,
     )
 
 

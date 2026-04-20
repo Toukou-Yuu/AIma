@@ -81,6 +81,7 @@ class MainMenuPage(MenuPage):
 
     def _render_dashboard(self, snapshot: HomeSnapshot) -> None:
         """渲染首页信息总览。"""
+        binding_summary = self._format_model_binding_summary(snapshot)
         model_rows = [
             ("接入", snapshot.model.headline),
             (
@@ -90,9 +91,13 @@ class MainMenuPage(MenuPage):
                     style=snapshot.model.connection_style,
                 ),
             ),
+            ("座位绑定", binding_summary),
             ("Prompt", snapshot.model.prompt_format),
             ("对话日志", _bool_text(snapshot.model.conversation_logging, "已开启", "已关闭")),
-            ("配置状态", _bool_text(snapshot.model.configured, snapshot.model.note, snapshot.model.note)),
+            (
+                "配置状态",
+                _bool_text(snapshot.model.configured, snapshot.model.note, snapshot.model.note),
+            ),
         ]
         model_panel = render_summary_panel("当前模型", model_rows, border_style="bright_cyan")
 
@@ -117,6 +122,17 @@ class MainMenuPage(MenuPage):
                     hint="先运行一场 demo 演示或正式对局，首页就会显示最近牌谱。",
                 ),
             )
+
+    def _format_model_binding_summary(self, snapshot: HomeSnapshot) -> str:
+        groups: dict[str, list[str]] = {}
+        for binding in snapshot.model.seat_bindings:
+            groups.setdefault(binding.profile_name, []).append(f"S{binding.seat}")
+        if not groups:
+            return "未绑定"
+        return " · ".join(
+            f"{'/'.join(seats)} {profile}"
+            for profile, seats in groups.items()
+        )
 
     def _get_instruction(self) -> str:
         return "[↑↓选择主页操作，回车确认]"

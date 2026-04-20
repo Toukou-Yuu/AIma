@@ -34,6 +34,12 @@ def test_load_model_summary_reports_probe_status(tmp_path: Path, monkeypatch) ->
         "      model: gpt-test\n"
         "  seats:\n"
         "    seat0:\n"
+        "      profile: main\n"
+        "    seat1:\n"
+        "      profile: main\n"
+        "    seat2:\n"
+        "      profile: main\n"
+        "    seat3:\n"
         "      profile: main\n",
         encoding="utf-8",
     )
@@ -51,9 +57,13 @@ def test_load_model_summary_reports_probe_status(tmp_path: Path, monkeypatch) ->
 
     summary = load_model_summary(config_path)
 
-    assert summary.connection_label == "已连接"
+    assert summary.connection_label == "main 已连接"
     assert summary.connection_style == "green"
-    assert summary.connection_note == "接口可达"
+    assert summary.connection_note == "1 个 profile"
+    assert summary.profiles[0].connection_note == "接口可达"
+    assert summary.headline == "4席 / 1 profiles"
+    assert summary.profiles[0].name == "main"
+    assert summary.seat_bindings[0].profile_name == "main"
     assert len(calls) == 1
 
 
@@ -72,6 +82,12 @@ def test_load_model_summary_without_cache_returns_pending(tmp_path: Path, monkey
         "      model: gpt-test\n"
         "  seats:\n"
         "    seat0:\n"
+        "      profile: main\n"
+        "    seat1:\n"
+        "      profile: main\n"
+        "    seat2:\n"
+        "      profile: main\n"
+        "    seat3:\n"
         "      profile: main\n",
         encoding="utf-8",
     )
@@ -81,8 +97,59 @@ def test_load_model_summary_without_cache_returns_pending(tmp_path: Path, monkey
 
     summary = load_model_summary(config_path)
 
-    assert summary.connection_label == "探测中"
-    assert summary.connection_note == "正在后台刷新"
+    assert summary.connection_label == "main 探测中"
+    assert summary.connection_note == "1 个 profile"
+    assert summary.profiles[0].connection_note == "正在后台刷新"
+
+
+def test_load_model_summary_probes_profiles_not_seats(tmp_path: Path, monkeypatch) -> None:
+    """多个座位复用 profile 时只按 profile 探测。"""
+    from ui.interactive.data import load_model_summary
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "llm:\n"
+        "  profiles:\n"
+        "    local:\n"
+        "      provider: openai\n"
+        "      api_key: sk-local\n"
+        "      base_url: http://localhost:8080/v1\n"
+        "      model: qwen\n"
+        "    deepseek:\n"
+        "      provider: openai\n"
+        "      api_key: sk-deepseek\n"
+        "      base_url: https://api.deepseek.com\n"
+        "      model: deepseek-chat\n"
+        "  seats:\n"
+        "    seat0:\n"
+        "      profile: local\n"
+        "    seat1:\n"
+        "      profile: deepseek\n"
+        "    seat2:\n"
+        "      profile: local\n"
+        "    seat3:\n"
+        "      profile: deepseek\n",
+        encoding="utf-8",
+    )
+
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr("ui.interactive.data._get_cached_probe_status", lambda cache_key: None)
+    monkeypatch.setattr(
+        "ui.interactive.data._schedule_probe_refresh",
+        lambda **kwargs: calls.append(kwargs),
+    )
+
+    summary = load_model_summary(config_path)
+
+    assert summary.headline == "4席 / 2 profiles"
+    assert {profile.name for profile in summary.profiles} == {"local", "deepseek"}
+    assert [binding.profile_name for binding in summary.seat_bindings] == [
+        "local",
+        "deepseek",
+        "local",
+        "deepseek",
+    ]
+    assert len(calls) == 2
 
 
 def test_load_roster_entries_reads_profile_names(tmp_path: Path, monkeypatch) -> None:
@@ -266,6 +333,65 @@ def test_match_session_snapshot_action_label_is_localized(monkeypatch, tmp_path:
     session._on_step(state, (), "家0 discard", None)
 
     assert session.snapshot.action_label == "一姬 打牌"
+
+
+def test_match_setup_summary_shows_seat_model_bindings(monkeypatch) -> None:
+    """正式对局配置页展示每席角色到 LLM profile 的绑定。"""
+    from ui.interactive.data import ModelSummary, SeatModelBinding
+    from ui.interactive.tui_screens import MatchSetupScreen
+
+    model_summary = ModelSummary(
+        provider_label="OpenAI 兼容",
+        model="qwen",
+        configured=True,
+        prompt_format="json",
+        conversation_logging=False,
+        note="ok",
+        connection_label="已连接",
+        connection_style="green",
+        connection_note="ok",
+        seat_bindings=(
+            SeatModelBinding(0, "东家", "local", "qwen", "已连接", "green"),
+            SeatModelBinding(1, "南家", "deepseek", "deepseek-chat", "探测中", "yellow"),
+            SeatModelBinding(2, "西家", "local", "qwen", "已连接", "green"),
+            SeatModelBinding(3, "北家", "deepseek", "deepseek-chat", "探测中", "yellow"),
+        ),
+    )
+    screen = MatchSetupScreen()
+    screen._profile_options = [("一姬", "ichihime")]
+    players = [{"id": "ichihime", "seat": 0}, {"id": "default", "seat": 1}]
+
+    rows = screen._seat_model_rows(players, model_summary)
+    rendered = "\n".join(value.plain for _, value in rows)
+
+    assert "一姬 -> local · qwen · 已连接" in rendered
+    assert "默认 AI (dry-run) -> dry-run" in rendered
+
+
+def test_home_model_binding_summary_uses_absolute_seat_codes() -> None:
+    """主菜单 LLM 绑定摘要使用 S0-S3，避免误解为风位绑定。"""
+    from ui.interactive.data import ModelSummary, SeatModelBinding
+    from ui.interactive.tui_screens import _format_model_binding_summary
+
+    model_summary = ModelSummary(
+        provider_label="OpenAI 兼容",
+        model="qwen",
+        configured=True,
+        prompt_format="json",
+        conversation_logging=False,
+        note="ok",
+        connection_label="已连接",
+        connection_style="green",
+        connection_note="ok",
+        seat_bindings=(
+            SeatModelBinding(0, "东家", "local", "qwen", "已连接", "green"),
+            SeatModelBinding(1, "南家", "deepseek", "deepseek-chat", "已连接", "green"),
+            SeatModelBinding(2, "西家", "local", "qwen", "已连接", "green"),
+            SeatModelBinding(3, "北家", "deepseek", "deepseek-chat", "已连接", "green"),
+        ),
+    )
+
+    assert _format_model_binding_summary(model_summary) == "S0/S2 local · S1/S3 deepseek"
 
 
 def test_textual_app_starts_in_home_screen() -> None:
