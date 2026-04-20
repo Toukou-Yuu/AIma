@@ -318,10 +318,17 @@ def load_model_summary(config_path: Path = KERNEL_CONFIG_PATH) -> ModelSummary:
         )
 
     llm_cfg = cfg.get("llm", {}) if isinstance(cfg.get("llm"), dict) else {}
-    api_key = str(llm_cfg.get("api_key", "")).strip()
+    profiles = llm_cfg.get("profiles", {}) if isinstance(llm_cfg.get("profiles"), dict) else {}
+    seats = llm_cfg.get("seats", {}) if isinstance(llm_cfg.get("seats"), dict) else {}
+    seat0 = seats.get("seat0", {}) if isinstance(seats.get("seat0"), dict) else {}
+    profile_name = str(seat0.get("profile", ""))
+    profile = profiles.get(profile_name)
+    profile_cfg = profile if isinstance(profile, dict) else {}
+
+    api_key = str(profile_cfg.get("api_key", "")).strip()
     configured = api_key not in _PLACEHOLDER_KEYS
-    provider = str(llm_cfg.get("provider", ""))
-    base_url = str(llm_cfg.get("base_url", ""))
+    provider = str(profile_cfg.get("provider", ""))
+    base_url = str(profile_cfg.get("base_url", ""))
     cache_key = (provider, base_url, api_key, str(configured))
     cached_probe = _get_cached_probe_status(cache_key)
     _schedule_probe_refresh(
@@ -342,7 +349,7 @@ def load_model_summary(config_path: Path = KERNEL_CONFIG_PATH) -> ModelSummary:
             provider,
             base_url,
         ),
-        model=str(llm_cfg.get("model", "--")),
+        model=str(profile_cfg.get("model", "--")),
         configured=configured,
         prompt_format=str(llm_cfg.get("prompt_format", "--")),
         conversation_logging=bool(

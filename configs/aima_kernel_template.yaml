@@ -8,9 +8,6 @@
 
 # ==================== LLM 服务配置 ====================
 llm:
-  # 服务提供商：openai 或 anthropic
-  provider: openai
-
   # Prompt 格式选择：natural（中文自然语言）或 json（结构化）
   # natural：始终使用自然语言观测，不再在局中切换为 delta JSON
   # json：使用结构化观测，可配合 delta 帧减少上下文体积
@@ -41,20 +38,35 @@ llm:
   # 请求间隔（秒）
   request_delay: 0.5
 
-  # API 配置
-  api_key: "your-api-key-here"  # 必填：填入你的 API Key
-  base_url: "https://api.openai.com/v1"  # OpenAI 官方地址
-  # base_url: "http://localhost:11434/v1"  # Ollama 本地地址
-  # base_url: "https://api.deepseek.com/v1"  # DeepSeek
+  # LLM 连接 profiles：所有 API / 模型连接必须在这里声明
+  profiles:
+    default:
+      provider: openai
+      api_key: "your-api-key-here"  # 必填：填入你的 API Key，或使用 ${OPENAI_API_KEY}
+      base_url: "https://api.openai.com/v1"  # OpenAI 官方地址
+      # base_url: "http://localhost:11434/v1"  # Ollama 本地地址
+      # base_url: "https://api.deepseek.com/v1"  # DeepSeek
+      model: "gpt-4o-mini"
+      # model: "deepseek-chat"
+      # model: "claude-3-5-sonnet-20241022"
+      timeout_sec: 120.0
+      max_tokens: 1024
 
-  # 模型名称
-  model: "gpt-4o-mini"
-  # model: "deepseek-chat"
-  # model: "claude-3-5-sonnet-20241022"
+    # local_qwen:
+    #   provider: openai
+    #   base_url: "http://localhost:8080/v1"
+    #   api_key: "EMPTY"
+    #   model: "Qwen3.5-9B.Q4_K_M"
+    #   timeout_sec: 120.0
+    #   max_tokens: 1024
 
-  # 请求参数
-  timeout_sec: 120.0
-  max_tokens: 1024
+    # deepseek:
+    #   provider: openai
+    #   base_url: "https://api.deepseek.com/v1"
+    #   api_key: "${DEEPSEEK_API_KEY}"
+    #   model: "deepseek-chat"
+    #   timeout_sec: 120.0
+    #   max_tokens: 1024
 
   # 系统提示词（通用规则，具体格式示例由 user prompt 提供）
   # 注意：prompt_format 决定 user prompt 的格式：
@@ -86,14 +98,16 @@ llm:
     # 支持实时查看：tail -f configs/players/{player_id}/conversations/*.md
     # 注意：仅记录真实 AI 对局（dry-run/fallback 不记录）
 
-  # 多席独立配置（可选）
-  # 如果不配置，所有座位使用上方默认配置
+  # 座位到 LLM profile 的绑定。四个座位必须显式绑定。
   seats:
-    # seat0:  # 东
-    #   api_key: "seat0-specific-key"
-    #   model: "gpt-4o"
-    # seat1:  # 南
-    #   model: "gpt-4o-mini"
+    seat0:
+      profile: default
+    seat1:
+      profile: default
+    seat2:
+      profile: default
+    seat3:
+      profile: default
 
 # ==================== 默认玩家配置 ====================
 # 当不指定 --players 时使用的默认玩家

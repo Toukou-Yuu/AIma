@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import sys
-import time
 from dataclasses import dataclass
 from typing import Any, Callable, TextIO
 
@@ -20,10 +19,8 @@ from kernel import (
     build_deck,
     initial_game_state,
     legal_actions,
-    observation,
     shuffle_deck,
 )
-from kernel.api.legal_actions import LegalAction
 from kernel.event_log import (
     FlowEvent,
     GameEvent,
@@ -39,11 +36,10 @@ from llm.agent import PlayerAgent
 from llm.agent.context import EpisodeContext
 from llm.agent.event_journal import MatchJournal
 from llm.agent.match_context import MatchContext
-from llm.observation_format import build_user_prompt
+from llm.config import MatchEndCondition
 from llm.protocol import CompletionClient
 from llm.table_snapshot_text import action_wire_to_cn, write_snapshot_block
 from llm.turns import pending_actor_seats
-from llm.config import MatchEndCondition
 
 log = logging.getLogger(__name__)
 
@@ -135,7 +131,7 @@ def _finalize_agents_episode(
     seat_agents: dict[int, PlayerAgent],
     seat_contexts: dict[int, EpisodeContext],
     match_contexts: dict[int, MatchContext],
-    client: CompletionClient | None = None,
+    seat_clients: dict[int, CompletionClient] | None = None,
 ) -> None:
     """局结束时更新所有 Agent 的 memory 并关闭 EpisodeContext."""
     for ev in events:
@@ -146,6 +142,7 @@ def _finalize_agents_episode(
                     seat_contexts[seat].end_episode(points)
                     # 关闭本局（更新 MatchContext 的跨局统计）
                     match_contexts[seat].close_episode(seat_contexts[seat])
+                    client = seat_clients.get(seat) if seat_clients else None
                     seat_agents[seat].update_memory(seat_contexts[seat], client)
 
 
@@ -315,12 +312,14 @@ def run_llm_match(
     safety_margin_tokens: int,
     prompt_format: str,  # natural 或 json
     enable_conversation_logging: bool,
-    client: CompletionClient | None = None,
+    seat_clients: dict[int, CompletionClient] | None = None,
     dry_run: bool = False,
     verbose: bool = False,
     session_audit: bool = False,
     simple_log_file: TextIO | None = None,
-    on_step_callback: Callable[[GameState, tuple[GameEvent, ...], str, str | None], None] | None = None,
+    on_step_callback: (
+        Callable[[GameState, tuple[GameEvent, ...], str, str | None], None] | None
+    ) = None,
     players: list[dict[str, Any]] | None = None,
     system_prompt: str | None = None,
 ) -> RunResult:
@@ -335,12 +334,13 @@ def run_llm_match(
       遇 ``ron`` / ``tsumo`` / ``hand_over`` / ``match_end`` 等时另写 ``settlement …`` 行。
     - ``history_budget``：历史预算。
     - ``context_scope``：AIma 本地上下文边界（``stateless``/``per_hand``/``per_match``）。
-    - ``compression_level``：历史压缩级别（``none``/``snip``/``micro``/``collapse``/``autocompact``）。
+    - ``compression_level``：历史压缩级别。
     - ``context_budget_tokens``：Prompt 输入预算。
     - ``reserved_output_tokens``：预留输出预算。
     - ``safety_margin_tokens``：安全冗余预算。
     - ``simple_log_file``：若给定，按内核事件写简体中文可读对局（与 JSON 牌谱并行）。
-    - ``request_delay_seconds``：每次调用 LLM 前休眠秒数（减压控/防连接被掐）；``dry_run`` 时不请求，不休眠。
+    - ``request_delay_seconds``：每次调用 LLM 前休眠秒数；``dry_run`` 时不请求。
+    - ``seat_clients``：真实对局时每个座位对应的 LLM 客户端。
     - ``on_step_callback``：可选回调，每步玩家决策后调用（用于实时 UI 观战）。
     - ``match_end``：对局结束条件（局数制/负分结束）。
     - ``players``：可选，指定对战玩家列表，格式 [{"id": "player_id", "seat": 0}, ...]。
@@ -411,13 +411,20 @@ def run_llm_match(
             player_id_map[p["seat"]] = p.get("id")
     shared_journal = MatchJournal()
     match_contexts: dict[int, MatchContext] = {
-        s: MatchContext(s, player_id=player_id_map.get(s), match_journal=shared_journal) for s in range(4)
+        s: MatchContext(
+            s,
+            player_id=player_id_map.get(s),
+            match_journal=shared_journal,
+        )
+        for s in range(4)
     }
     # EpisodeContext：运行时状态管理（由 MatchContext 创建）
     # dry_run 时禁用 conversation_logging（避免创建空文件）
     effective_conversation_logging = enable_conversation_logging and not dry_run
     seat_contexts: dict[int, EpisodeContext] = {
-        s: match_contexts[s].create_episode(enable_conversation_logging=effective_conversation_logging)
+        s: match_contexts[s].create_episode(
+            enable_conversation_logging=effective_conversation_logging,
+        )
         for s in range(4)
     }
     state = initial_game_state()
@@ -487,7 +494,11 @@ def run_llm_match(
 
     while True:
         # 检查结束条件（每局结束后）
-        if hands_completed > 0 and state.phase in (GamePhase.HAND_OVER, GamePhase.FLOWN, GamePhase.MATCH_END):
+        if hands_completed > 0 and state.phase in (
+            GamePhase.HAND_OVER,
+            GamePhase.FLOWN,
+            GamePhase.MATCH_END,
+        ):
             should_end, end_reason = match_end.is_match_end(hands_completed, state.table.scores)
             if should_end:
                 reason = end_reason
@@ -637,6 +648,9 @@ def run_llm_match(
             seat = pending[0]
             agent = seat_agents[seat]
             episode_ctx = seat_contexts[seat]
+            client = None if dry_run else (seat_clients or {}).get(seat)
+            if not dry_run and client is None:
+                raise RuntimeError(f"seat{seat} 缺少 LLM client")
             decision = agent.decide(
                 state,
                 seat,
@@ -675,7 +689,13 @@ def run_llm_match(
             # 更新 EpisodeContext 统计
             _update_episode_stats(step_out.events, seat_contexts)
             # 局结束时更新 Agent memory 并关闭 EpisodeContext
-            _finalize_agents_episode(step_out.events, seat_agents, seat_contexts, match_contexts, client)
+            _finalize_agents_episode(
+                step_out.events,
+                seat_agents,
+                seat_contexts,
+                match_contexts,
+                seat_clients,
+            )
             state = step_out.new_state
             _write_simple_snapshot(
                 simple_log_file,

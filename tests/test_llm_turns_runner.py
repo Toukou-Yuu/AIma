@@ -17,6 +17,15 @@ from llm.turns import pending_actor_seats
 from tests.llm_test_utils import load_test_runtime_config
 
 
+class _RecordingClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, messages: list[object], *, model: str | None = None) -> str:
+        self.calls += 1
+        return "not json"
+
+
 def test_pending_after_begin_round() -> None:
     g0 = initial_game_state()
     w = tuple(shuffle_deck(build_deck(), seed=99))
@@ -52,3 +61,51 @@ def test_run_llm_match_dry_run_advances() -> None:
         GamePhase.FLOWN,
         GamePhase.MATCH_END,
     )
+
+
+def test_run_llm_match_uses_seat_scoped_clients() -> None:
+    match_end = MatchEndCondition(type="hands", value=1, allow_negative=False)
+    runtime = load_test_runtime_config()
+    clients = {seat: _RecordingClient() for seat in range(4)}
+
+    run_llm_match(
+        seed=7,
+        match_end=match_end,
+        dry_run=False,
+        seat_clients=clients,
+        request_delay_seconds=0.0,
+        history_budget=runtime.history_budget,
+        context_scope=runtime.context_scope,
+        compression_level=runtime.compression_level,
+        context_budget_tokens=runtime.context_budget_tokens,
+        reserved_output_tokens=runtime.reserved_output_tokens,
+        safety_margin_tokens=runtime.safety_margin_tokens,
+        prompt_format=runtime.prompt_format,
+        enable_conversation_logging=False,
+        system_prompt="你是麻将牌手",
+    )
+
+    assert any(client.calls > 0 for client in clients.values())
+
+
+def test_run_llm_match_requires_current_seat_client() -> None:
+    match_end = MatchEndCondition(type="hands", value=1, allow_negative=False)
+    runtime = load_test_runtime_config()
+
+    result = run_llm_match(
+        seed=7,
+        match_end=match_end,
+        dry_run=False,
+        seat_clients={},
+        request_delay_seconds=0.0,
+        history_budget=runtime.history_budget,
+        context_scope=runtime.context_scope,
+        compression_level=runtime.compression_level,
+        context_budget_tokens=runtime.context_budget_tokens,
+        reserved_output_tokens=runtime.reserved_output_tokens,
+        safety_margin_tokens=runtime.safety_margin_tokens,
+        prompt_format=runtime.prompt_format,
+        enable_conversation_logging=False,
+        system_prompt="你是麻将牌手",
+    )
+    assert "缺少 LLM client" in result.stopped_reason

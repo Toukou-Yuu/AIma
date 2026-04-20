@@ -32,14 +32,6 @@ match:
 
 # ==================== LLM 运行时设置 ====================
 llm:
-  # 服务提供商
-  provider: openai
-
-  # API 配置
-  api_key: "your-api-key-here"
-  base_url: "https://api.openai.com/v1"
-  model: "gpt-4o-mini"
-
   # Prompt 格式
   prompt_format: natural
 
@@ -57,12 +49,6 @@ llm:
   reserved_output_tokens: 1024
   safety_margin_tokens: 512
 
-  # 请求超时（秒）
-  timeout_sec: 120
-
-  # 最大生成 token 数
-  max_tokens: 1024
-
   # 每次请求间隔（秒）
   request_delay: 0.5
 
@@ -73,6 +59,27 @@ llm:
   # 系统提示词
   system_prompt: |
     你是日式麻将（立直麻将）的牌手代理。你只能从给出的 legal_actions 中精确选择一条执行。
+
+  # LLM 连接 profiles
+  profiles:
+    default:
+      provider: openai
+      api_key: "your-api-key-here"
+      base_url: "https://api.openai.com/v1"
+      model: "gpt-4o-mini"
+      timeout_sec: 120
+      max_tokens: 1024
+
+  # 四席到 profile 的绑定
+  seats:
+    seat0:
+      profile: default
+    seat1:
+      profile: default
+    seat2:
+      profile: default
+    seat3:
+      profile: default
 
 # ==================== 日志设置 ====================
 logging:

@@ -26,10 +26,15 @@ def test_load_model_summary_reports_probe_status(tmp_path: Path, monkeypatch) ->
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         "llm:\n"
-        "  provider: openai\n"
-        "  api_key: sk-test\n"
-        "  base_url: https://example.com/v1\n"
-        "  model: gpt-test\n",
+        "  profiles:\n"
+        "    main:\n"
+        "      provider: openai\n"
+        "      api_key: sk-test\n"
+        "      base_url: https://example.com/v1\n"
+        "      model: gpt-test\n"
+        "  seats:\n"
+        "    seat0:\n"
+        "      profile: main\n",
         encoding="utf-8",
     )
 
@@ -59,10 +64,15 @@ def test_load_model_summary_without_cache_returns_pending(tmp_path: Path, monkey
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         "llm:\n"
-        "  provider: openai\n"
-        "  api_key: sk-test\n"
-        "  base_url: https://example.com/v1\n"
-        "  model: gpt-test\n",
+        "  profiles:\n"
+        "    main:\n"
+        "      provider: openai\n"
+        "      api_key: sk-test\n"
+        "      base_url: https://example.com/v1\n"
+        "      model: gpt-test\n"
+        "  seats:\n"
+        "    seat0:\n"
+        "      profile: main\n",
         encoding="utf-8",
     )
 

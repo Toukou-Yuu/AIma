@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
 
-
 _REPO_TEMPLATE_PATH = Path("configs/template.yaml")
 _KERNEL_TEMPLATE_PATH = Path("configs/aima_kernel_template.yaml")
 _BASE_KERNEL_PATH = Path("configs/aima_kernel.yaml")
+_ENV_PATTERN = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
+_PLACEHOLDER_KEYS = {"", "your-api-key-here", "your-api-key"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +50,28 @@ class LLMClientConfig:
     context_budget_tokens: int
     reserved_output_tokens: int
     safety_margin_tokens: int
+
+
+@dataclass(frozen=True, slots=True)
+class LLMProfileConfig:
+    """LLM 连接 profile。"""
+
+    name: str
+    provider: Literal["openai", "anthropic"]
+    base_url: str
+    api_key: str
+    model: str
+    timeout_sec: float
+    max_tokens: int
+
+
+@dataclass(frozen=True, slots=True)
+class SeatLLMBinding:
+    """座位到 LLM profile 的绑定。"""
+
+    seat: int
+    profile_name: str
+    profile: LLMProfileConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,7 +144,10 @@ def _validate_choice(name: str, value: str, choices: tuple[str, ...]) -> str:
 
 
 def _should_merge_base_kernel(requested_path: Path) -> bool:
-    return requested_path.parent == _BASE_KERNEL_PATH.parent and requested_path.name != _BASE_KERNEL_PATH.name
+    return (
+        requested_path.parent == _BASE_KERNEL_PATH.parent
+        and requested_path.name != _BASE_KERNEL_PATH.name
+    )
 
 
 def load_kernel_config(config_path: Path | str = _BASE_KERNEL_PATH) -> dict[str, Any]:
@@ -141,7 +169,8 @@ def load_kernel_config(config_path: Path | str = _BASE_KERNEL_PATH) -> dict[str,
         if _KERNEL_TEMPLATE_PATH.exists():
             print(
                 "警告: aima_kernel.yaml 不存在，使用模板文件。\n"
-                "请复制 configs/aima_kernel_template.yaml 为 configs/aima_kernel.yaml 并填入你的 API Key。",
+                "请复制 configs/aima_kernel_template.yaml 为 configs/aima_kernel.yaml "
+                "并填入你的 API Key。",
                 file=__import__("sys").stderr,
             )
             return merged
@@ -158,7 +187,6 @@ def load_kernel_config(config_path: Path | str = _BASE_KERNEL_PATH) -> dict[str,
 def _effective_llm_config(
     *,
     config_path: Path | str,
-    seat: int | None = None,
     override_cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cfg = load_kernel_config(config_path)
@@ -167,13 +195,6 @@ def _effective_llm_config(
         raise ValueError("缺少 llm 配置段")
 
     effective = dict(llm_cfg)
-    effective.pop("seats", None)
-
-    if seat is not None:
-        seat_cfg = llm_cfg.get("seats", {}).get(f"seat{seat}", {})
-        if seat_cfg and not isinstance(seat_cfg, dict):
-            raise ValueError(f"llm.seats.seat{seat} 必须是对象")
-        effective = _deep_merge(effective, seat_cfg)
 
     if override_cfg:
         if not isinstance(override_cfg, dict):
@@ -190,7 +211,8 @@ def load_llm_runtime_config(
     override_cfg: dict[str, Any] | None = None,
 ) -> LLMRuntimeConfig:
     """读取 LLM 运行时配置。"""
-    llm_cfg = _effective_llm_config(config_path=config_path, seat=seat, override_cfg=override_cfg)
+    del seat
+    llm_cfg = _effective_llm_config(config_path=config_path, override_cfg=override_cfg)
 
     prompt_format = _validate_choice(
         "prompt_format",
@@ -221,38 +243,93 @@ def load_llm_runtime_config(
     )
 
 
-def load_llm_config(
-    *,
-    config_path: Path | str = _BASE_KERNEL_PATH,
-    seat: int | None = None,
-    override_cfg: dict[str, Any] | None = None,
-) -> LLMClientConfig | None:
-    """读取 LLM 客户端配置。"""
-    llm_cfg = _effective_llm_config(config_path=config_path, seat=seat, override_cfg=override_cfg)
-    runtime_cfg = load_llm_runtime_config(config_path=config_path, seat=seat, override_cfg=override_cfg)
+def _resolve_env_value(value: str) -> str:
+    match = _ENV_PATTERN.match(value.strip())
+    if not match:
+        return value
+    return os.environ.get(match.group(1), "")
+
+
+def _is_missing_api_key(api_key: str) -> bool:
+    return api_key.strip() in _PLACEHOLDER_KEYS
+
+
+def _parse_profile(name: str, data: Any) -> LLMProfileConfig:
+    if not isinstance(data, dict):
+        raise ValueError(f"llm.profiles.{name} 必须是对象")
 
     provider = _validate_choice(
-        "provider",
-        str(_get_required(llm_cfg, "provider")),
+        f"llm.profiles.{name}.provider",
+        str(_get_required(data, "provider")),
         ("openai", "anthropic"),
     )
-    api_key = str(_get_required(llm_cfg, "api_key"))
-    if not api_key or api_key in ("your-api-key-here", "your-api-key"):
-        return None
-
-    system_prompt = str(_get_required(llm_cfg, "system_prompt"))
-    if not system_prompt.strip():
-        raise ValueError(
-            "未配置 system_prompt。请在 llm.system_prompt 中提供完整提示词。"
-        )
-
-    return LLMClientConfig(
+    return LLMProfileConfig(
+        name=name,
         provider=provider,
-        base_url=str(_get_required(llm_cfg, "base_url")),
-        api_key=api_key,
-        model=str(_get_required(llm_cfg, "model")),
-        timeout_sec=float(_get_required(llm_cfg, "timeout_sec")),
-        max_tokens=int(_get_required(llm_cfg, "max_tokens")),
+        base_url=str(_get_required(data, "base_url")),
+        api_key=_resolve_env_value(str(_get_required(data, "api_key"))),
+        model=str(_get_required(data, "model")),
+        timeout_sec=float(_get_required(data, "timeout_sec")),
+        max_tokens=int(_get_required(data, "max_tokens")),
+    )
+
+
+def load_llm_profiles(
+    *,
+    config_path: Path | str = _BASE_KERNEL_PATH,
+    override_cfg: dict[str, Any] | None = None,
+) -> dict[str, LLMProfileConfig]:
+    """读取所有 LLM 连接 profile。"""
+    llm_cfg = _effective_llm_config(config_path=config_path, override_cfg=override_cfg)
+    profiles_cfg = _get_required(llm_cfg, "profiles")
+    if not isinstance(profiles_cfg, dict) or not profiles_cfg:
+        raise ValueError("llm.profiles 必须是非空对象")
+    return {name: _parse_profile(name, data) for name, data in profiles_cfg.items()}
+
+
+def load_seat_llm_bindings(
+    *,
+    config_path: Path | str = _BASE_KERNEL_PATH,
+    override_cfg: dict[str, Any] | None = None,
+) -> dict[int, SeatLLMBinding]:
+    """读取 seat0-seat3 到 LLM profile 的绑定。"""
+    llm_cfg = _effective_llm_config(config_path=config_path, override_cfg=override_cfg)
+    seats_cfg = _get_required(llm_cfg, "seats")
+    if not isinstance(seats_cfg, dict):
+        raise ValueError("llm.seats 必须是对象")
+
+    profiles = load_llm_profiles(config_path=config_path, override_cfg=override_cfg)
+    bindings: dict[int, SeatLLMBinding] = {}
+    for seat in range(4):
+        key = f"seat{seat}"
+        seat_cfg = _get_required(seats_cfg, key)
+        if not isinstance(seat_cfg, dict):
+            raise ValueError(f"llm.seats.{key} 必须是对象")
+        profile_name = str(_get_required(seat_cfg, "profile"))
+        if profile_name not in profiles:
+            raise ValueError(f"llm.seats.{key}.profile 引用了不存在的 profile: {profile_name}")
+        bindings[seat] = SeatLLMBinding(
+            seat=seat,
+            profile_name=profile_name,
+            profile=profiles[profile_name],
+        )
+    return bindings
+
+
+def _client_config_from_profile(
+    profile: LLMProfileConfig,
+    runtime_cfg: LLMRuntimeConfig,
+    system_prompt: str,
+) -> LLMClientConfig | None:
+    if _is_missing_api_key(profile.api_key):
+        return None
+    return LLMClientConfig(
+        provider=profile.provider,
+        base_url=profile.base_url,
+        api_key=profile.api_key,
+        model=profile.model,
+        timeout_sec=profile.timeout_sec,
+        max_tokens=profile.max_tokens,
         system_prompt=system_prompt,
         prompt_format=runtime_cfg.prompt_format,
         context_scope=runtime_cfg.context_scope,
@@ -262,6 +339,42 @@ def load_llm_config(
         reserved_output_tokens=runtime_cfg.reserved_output_tokens,
         safety_margin_tokens=runtime_cfg.safety_margin_tokens,
     )
+
+
+def load_seat_llm_configs(
+    *,
+    config_path: Path | str = _BASE_KERNEL_PATH,
+    override_cfg: dict[str, Any] | None = None,
+) -> dict[int, LLMClientConfig | None]:
+    """读取四个座位的 LLM 客户端配置。"""
+    llm_cfg = _effective_llm_config(config_path=config_path, override_cfg=override_cfg)
+    runtime_cfg = load_llm_runtime_config(config_path=config_path, override_cfg=override_cfg)
+
+    system_prompt = str(_get_required(llm_cfg, "system_prompt"))
+    if not system_prompt.strip():
+        raise ValueError(
+            "未配置 system_prompt。请在 llm.system_prompt 中提供完整提示词。"
+        )
+
+    bindings = load_seat_llm_bindings(config_path=config_path, override_cfg=override_cfg)
+    return {
+        seat: _client_config_from_profile(binding.profile, runtime_cfg, system_prompt)
+        for seat, binding in bindings.items()
+    }
+
+
+def load_llm_config(
+    *,
+    config_path: Path | str = _BASE_KERNEL_PATH,
+    seat: int | None = None,
+    override_cfg: dict[str, Any] | None = None,
+) -> LLMClientConfig | None:
+    """读取指定座位的 LLM 客户端配置。"""
+    if seat is None:
+        raise ValueError("load_llm_config 需要显式传入 seat")
+    if seat not in range(4):
+        raise ValueError(f"seat 必须在 0-3 之间: {seat}")
+    return load_seat_llm_configs(config_path=config_path, override_cfg=override_cfg)[seat]
 
 
 def _parse_match_end(match_data: dict[str, Any]) -> MatchEndCondition:

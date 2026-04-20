@@ -9,18 +9,17 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from kernel.replay import ReplayError, replay_from_actions
 from kernel.replay_json import actions_from_match_log
-from llm.config import load_kernel_config, load_llm_config
-from llm.protocol import build_client
+from llm.config import load_kernel_config, load_seat_llm_configs
+from llm.protocol import build_seat_clients
 from llm.runner import run_llm_match
 
 
 def _print_match_results_from_state(state, players: list[dict[str, Any]] | None = None) -> None:
     """打印对局结束后的四家成绩（从 final_state 读取）。"""
-    from kernel.table.model import PrevailingWind
 
     table = state.table
     final_scores = table.scores
@@ -29,7 +28,7 @@ def _print_match_results_from_state(state, players: list[dict[str, Any]] | None 
     # 计算排名
     sorted_seats = sorted(
         range(4),
-        key=lambda s: (-final_scores[s], (s - final_dealer) % 4)
+        key=lambda s: (-final_scores[s], (s - final_dealer) % 4),
     )
 
     # 获取玩家名字
@@ -224,6 +223,7 @@ def _merge_config(
 def _cmd_show_stats(player_id: str) -> int:
     """显示玩家统计（精美卡片式）。"""
     from rich.console import Console
+
     from ui.terminal.components.character_card import render_character_card
 
     console = Console()
@@ -316,9 +316,9 @@ def _cmd_watch_dry_run(
             )
 
     try:
-        from ui.terminal import LiveMatchCallback
-        from llm.runner import run_llm_match
         from llm.agent.profile import load_profile
+        from llm.runner import run_llm_match
+        from ui.terminal import LiveMatchCallback
     except ImportError as e:
         print(f"需要 rich: pip install rich ({e})", file=sys.stderr)
         if simple_log_file:
@@ -337,18 +337,15 @@ def _cmd_watch_dry_run(
             else:
                 player_names[seat] = "默认"
 
-    client = None
-    llm_cfg = None
+    seat_clients = None
+    seat_llm_configs = None
     if not dry_run:
-        llm_cfg = load_llm_config(config_path=kernel_config_path)
-        if llm_cfg is None:
-            print(
-                "未设置 API Key（请在 configs/aima_kernel.yaml 中设置 api_key）。"
-                "使用 --dry-run 可本地试跑。",
-                file=sys.stderr,
-            )
+        try:
+            seat_llm_configs = load_seat_llm_configs(config_path=kernel_config_path)
+            seat_clients = build_seat_clients(seat_llm_configs)
+        except ValueError as e:
+            print(f"LLM 配置错误：{e}", file=sys.stderr)
             return 2
-        client = build_client(llm_cfg)
 
     from llm.config import MatchEndCondition
 
@@ -373,7 +370,7 @@ def _cmd_watch_dry_run(
         rr = run_llm_match(
             seed=seed,
             match_end=me,
-            client=client,
+            seat_clients=seat_clients,
             dry_run=dry_run,
             verbose=False,
             session_audit=session_audit,
@@ -387,7 +384,10 @@ def _cmd_watch_dry_run(
             reserved_output_tokens=reserved_output_tokens,
             safety_margin_tokens=safety_margin_tokens,
             players=players,
-            system_prompt=llm_cfg.system_prompt if llm_cfg else None,
+            system_prompt=next(
+                (cfg.system_prompt for cfg in (seat_llm_configs or {}).values() if cfg is not None),
+                None,
+            ),
             prompt_format=prompt_format,
             enable_conversation_logging=enable_conversation_logging,
         )
@@ -541,7 +541,10 @@ def main(argv: list[str] | None = None) -> int:
         type=str,
         default=None,
         metavar="ID_LIST",
-        help="指定对战玩家，格式: id0,id1,id2,id3（对应座位0-3），如: aggressive_bot_v1,defensive_bot_v1,default,default",
+        help=(
+            "指定对战玩家，格式: id0,id1,id2,id3（对应座位0-3），"
+            "如: aggressive_bot_v1,defensive_bot_v1,default,default"
+        ),
     )
     p.add_argument(
         "--max-hands",
@@ -627,18 +630,19 @@ def main(argv: list[str] | None = None) -> int:
             log_stem,
         )
 
-    client = None
-    llm_cfg = None
+    seat_clients = None
+    seat_llm_configs = None
     if not cfg.dry_run:
-        llm_cfg = load_llm_config(config_path=kernel_config_path)
-        if llm_cfg is None:
-            print(
-                "未设置 API Key（请在 configs/aima_kernel.yaml 中设置 api_key）。"
-                "使用 --dry-run 可本地试跑。",
-                file=sys.stderr,
-            )
+        try:
+            seat_llm_configs = load_seat_llm_configs(config_path=kernel_config_path)
+            seat_clients = build_seat_clients(seat_llm_configs)
+        except ValueError as e:
+            print(f"LLM 配置错误：{e}", file=sys.stderr)
             return 2
-        client = build_client(llm_cfg)
+    system_prompt = next(
+        (cfg.system_prompt for cfg in (seat_llm_configs or {}).values() if cfg is not None),
+        None,
+    )
 
     from llm.config import MatchEndCondition
 
@@ -657,7 +661,7 @@ def main(argv: list[str] | None = None) -> int:
             rr = run_llm_match(
                 seed=cfg.seed,
                 match_end=me,
-                client=client,
+                seat_clients=seat_clients,
                 dry_run=cfg.dry_run,
                 verbose=cfg.verbose,
                 session_audit=cfg.session_audit or log_stem is not None,
@@ -670,7 +674,7 @@ def main(argv: list[str] | None = None) -> int:
                 reserved_output_tokens=cfg.reserved_output_tokens,
                 safety_margin_tokens=cfg.safety_margin_tokens,
                 players=cfg.players,
-                system_prompt=llm_cfg.system_prompt if llm_cfg else None,
+                system_prompt=system_prompt,
                 prompt_format=cfg.prompt_format,
                 enable_conversation_logging=cfg.enable_conversation_logging,
             )
@@ -678,7 +682,7 @@ def main(argv: list[str] | None = None) -> int:
         rr = run_llm_match(
             seed=cfg.seed,
             match_end=me,
-            client=client,
+            seat_clients=seat_clients,
             dry_run=cfg.dry_run,
             verbose=cfg.verbose,
             session_audit=cfg.session_audit or log_stem is not None,
@@ -691,7 +695,7 @@ def main(argv: list[str] | None = None) -> int:
             reserved_output_tokens=cfg.reserved_output_tokens,
             safety_margin_tokens=cfg.safety_margin_tokens,
             players=cfg.players,
-            system_prompt=llm_cfg.system_prompt if llm_cfg else None,
+            system_prompt=system_prompt,
             prompt_format=cfg.prompt_format,
             enable_conversation_logging=cfg.enable_conversation_logging,
         )

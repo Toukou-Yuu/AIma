@@ -7,7 +7,7 @@ import logging
 import threading
 import time
 from contextlib import AbstractContextManager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -15,8 +15,13 @@ from typing import Any
 
 from rich.panel import Panel
 
-from llm.config import LLMRuntimeConfig, MatchEndCondition, load_llm_config, load_llm_runtime_config
-from llm.protocol import build_client
+from llm.config import (
+    LLMRuntimeConfig,
+    MatchEndCondition,
+    load_llm_runtime_config,
+    load_seat_llm_configs,
+)
+from llm.protocol import build_seat_clients
 from llm.runner import RunResult, run_llm_match
 from ui.interactive.utils import load_profile_data
 from ui.terminal import LiveMatchViewer
@@ -130,7 +135,10 @@ class _SessionLoggingContext(AbstractContextManager["_SessionLoggingContext"]):
         for handler in self._root.handlers:
             if handler is self._file_handler:
                 continue
-            if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+            if isinstance(handler, logging.StreamHandler) and not isinstance(
+                handler,
+                logging.FileHandler,
+            ):
                 self._console_levels.append((handler, handler.level))
                 handler.setLevel(logging.WARNING)
 
@@ -193,7 +201,11 @@ def resolve_player_names(players: list[dict[str, Any]] | None) -> dict[int, str]
             names[seat] = "默认 AI"
             continue
         profile = load_profile_data(player_id)
-        names[seat] = str(profile.get("name")) if profile and profile.get("name") else str(player_id)
+        names[seat] = (
+            str(profile.get("name"))
+            if profile and profile.get("name")
+            else str(player_id)
+        )
     return names
 
 
@@ -342,23 +354,31 @@ class MatchSession:
         duration = 0.0
         try:
             with _SessionLoggingContext(self.logs) as log_context:
-                client = None
-                llm_cfg = None
+                seat_clients = None
+                seat_llm_configs = None
                 if not self.config.dry_run:
-                    llm_cfg = load_llm_config(config_path=self.config.config_path)
-                    if llm_cfg is None:
-                        raise RuntimeError("未设置 API Key，请检查内核配置。")
-                    client = build_client(llm_cfg)
+                    seat_llm_configs = load_seat_llm_configs(config_path=self.config.config_path)
+                    seat_clients = build_seat_clients(seat_llm_configs)
+                system_prompt = next(
+                    (
+                        cfg.system_prompt
+                        for cfg in (seat_llm_configs or {}).values()
+                        if cfg is not None
+                    ),
+                    None,
+                )
 
                 run_result = run_llm_match(
                     seed=self.config.seed,
                     match_end=self.config.match_end,
-                    client=client,
+                    seat_clients=seat_clients,
                     dry_run=self.config.dry_run,
                     verbose=False,
                     session_audit=True,
                     simple_log_file=log_context.simple_file,
-                    request_delay_seconds=0.0 if self.config.dry_run else self.config.llm_runtime.request_delay,
+                    request_delay_seconds=(
+                        0.0 if self.config.dry_run else self.config.llm_runtime.request_delay
+                    ),
                     on_step_callback=self._on_step,
                     history_budget=self.config.llm_runtime.history_budget,
                     context_scope=self.config.llm_runtime.context_scope,
@@ -367,7 +387,7 @@ class MatchSession:
                     reserved_output_tokens=self.config.llm_runtime.reserved_output_tokens,
                     safety_margin_tokens=self.config.llm_runtime.safety_margin_tokens,
                     players=self.config.players,
-                    system_prompt=llm_cfg.system_prompt if llm_cfg else None,
+                    system_prompt=system_prompt,
                     prompt_format=self.config.llm_runtime.prompt_format,
                     enable_conversation_logging=self.config.llm_runtime.conversation_logging_enabled,
                 )
