@@ -283,7 +283,31 @@ class TestHandDisplayLabels:
         assert "├── 一姬[东]：" in rendered
         assert "│   ├── 副露:" in rendered
         assert "│   └── 牌河:" in rendered
+        assert "牌河: 无" in rendered
         assert "河尾" not in rendered
+
+    def test_full_mode_preserves_each_seat_reason(self) -> None:
+        from kernel import Action, ActionKind, apply, build_deck, initial_game_state, shuffle_deck
+        from ui.terminal.components.hand_display import HandDisplay
+        from ui.terminal.components.name_resolver import NameResolver
+        from ui.terminal.components.render import TileRenderer
+
+        state = initial_game_state()
+        deck = tuple(shuffle_deck(build_deck(), seed=42))
+        state = apply(state, Action(ActionKind.BEGIN_ROUND, wall=deck)).new_state
+
+        display = HandDisplay(TileRenderer(), NameResolver({0: "一姬", 1: "二阶堂"}))
+        group = display.render_player_tree(
+            state,
+            last_actor_seat=1,
+            seat_reasons={0: "东家旧理由", 1: "南家新理由"},
+            show_reason=True,
+            mode="full",
+        )
+
+        rendered = "\n".join(segment.plain for segment in group.renderables)
+        assert "理由: 东家旧理由" in rendered
+        assert "理由: 南家新理由" in rendered
 
 
 class TestLayoutBuilderResponsive:

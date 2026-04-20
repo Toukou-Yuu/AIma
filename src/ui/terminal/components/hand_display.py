@@ -113,8 +113,14 @@ class HandDisplay:
             )
             if show_reason and mode == "full":
                 seat_reason = seat_reasons.get(seat) if seat_reasons else None
-                if seat_reason and seat == last_actor_seat:
-                    lines.append(self._render_reason_line(seat_reason, is_last=seat == 3))
+                if seat_reason:
+                    lines.append(
+                        self._render_reason_line(
+                            seat_reason,
+                            is_last=seat == 3,
+                            is_active=is_active,
+                        )
+                    )
 
             if seat != 3:
                 lines.append(Text("│", style="bright_black"))
@@ -169,7 +175,7 @@ class HandDisplay:
         if river_text.plain:
             river_line.append(river_text)
         else:
-            river_line.append(Text("（无）", style="dim"))
+            river_line.append(Text("无", style="dim"))
 
         lines.append(meld_line)
         lines.append(river_line)
@@ -217,11 +223,12 @@ class HandDisplay:
         style = "bold bright_cyan" if is_active else "bright_white"
         return Text(padded, style=style)
 
-    def _render_reason_line(self, reason: str, *, is_last: bool) -> Text:
+    def _render_reason_line(self, reason: str, *, is_last: bool, is_active: bool) -> Text:
         clipped = reason if len(reason) <= 72 else f"{reason[:69]}..."
         prefix = "    └── " if is_last else "│   └── "
+        reason_style = "italic bright_cyan" if is_active else "italic cyan"
         return Text.assemble(
             (prefix, "bright_black"),
             ("理由: ", "dim cyan"),
-            (clipped, "italic bright_cyan"),
+            (clipped, reason_style),
         )
