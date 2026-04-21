@@ -59,6 +59,12 @@ VerticalScroll.detail-pane {
     overflow-y: auto;
 }
 
+.profile-card-x-scroll {
+    width: 1fr;
+    height: auto;
+    overflow-x: auto;
+}
+
 .list-pane {
     width: 34;
     height: 1fr;

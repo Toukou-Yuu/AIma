@@ -310,6 +310,20 @@ class TestHandDisplayLabels:
         assert "理由: 南家新理由" in rendered
 
 
+class TestCharacterCardLayout:
+    """测试角色卡片布局约束。"""
+
+    def test_memory_bias_wraps_by_display_width(self) -> None:
+        from ui.terminal.components.character_card import INFO_CONTENT_WIDTH, _wrap_text_by_cells
+
+        label_width = cell_len("整体风格: ")
+        long_bias = "极端进攻型但会在危险巡目突然转向绝对防守" * 3
+        lines = _wrap_text_by_cells(long_bias, INFO_CONTENT_WIDTH - label_width)
+
+        assert len(lines) > 1
+        assert all(cell_len(line) <= INFO_CONTENT_WIDTH - label_width for line in lines)
+
+
 class TestLayoutBuilderResponsive:
     """测试 live 布局的响应式分栏。"""
 

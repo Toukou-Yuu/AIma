@@ -550,6 +550,9 @@ def test_textual_create_profile_template_picker_updates_summary() -> None:
 
 def test_textual_add_ascii_profile_picker_updates_target() -> None:
     """添加 ASCII 时可切换目标角色，而不是卡在默认第一项。"""
+    from textual.containers import HorizontalScroll
+    from textual.widgets import Input
+
     from ui.interactive.tui_app import AImaTextualApp
 
     async def _scenario() -> None:
@@ -559,12 +562,23 @@ def test_textual_add_ascii_profile_picker_updates_target() -> None:
             app.screen.query_one("#home-actions").highlighted = 2
             await pilot.click("#action-open")
             await pilot.pause()
+            assert any(
+                isinstance(widget, HorizontalScroll)
+                for widget in app.screen.query(".profile-card-x-scroll")
+            )
             await pilot.click("#profile-ascii")
             await pilot.pause()
+            path_input = app.screen.query_one("#ascii-path", Input)
+            assert path_input.placeholder == "图片路径：绝对路径，或相对当前启动目录"
             await pilot.click("#ascii-profile")
             await pilot.pause()
             picker = app.screen.query_one("#picker-options")
-            picker.highlighted = 2
+            target_index = next(
+                index
+                for index, (label, _value) in enumerate(app.screen.options)
+                if "卡维" in label
+            )
+            picker.highlighted = target_index
             await pilot.click("#picker-confirm")
             await pilot.pause()
             assert "卡维" in str(app.screen.query_one("#ascii-profile").label)

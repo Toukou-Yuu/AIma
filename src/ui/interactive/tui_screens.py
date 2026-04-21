@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.containers import Container, Horizontal, HorizontalScroll, Vertical, VerticalScroll
 from textual.screen import ModalScreen, Screen
 from textual.timer import Timer
 from textual.widgets import Button, Checkbox, Input, OptionList, Static, TextArea
@@ -1269,7 +1269,8 @@ class ProfileBrowserScreen(BaseScreen):
                 yield Static(Text("角色列表", style="bold bright_magenta"), classes="section-title")
                 yield OptionList(id="profile-list")
             with VerticalScroll(classes="detail-pane", id="profile-preview-scroll"):
-                yield Static(id="profile-preview")
+                with HorizontalScroll(classes="profile-card-x-scroll"):
+                    yield Static(id="profile-preview")
         yield Static("", id="status-line")
         with Horizontal(classes="action-bar"):
             yield Button("创建角色", id="profile-create", variant="primary")
@@ -1329,7 +1330,11 @@ class ProfileDetailScreen(BaseScreen):
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="screen-body", classes="detail-pane"):
-            yield Static(render_character_card(self.player_id, PLAYERS_DIR), id="profile-detail-card")
+            with HorizontalScroll(classes="profile-card-x-scroll"):
+                yield Static(
+                    render_character_card(self.player_id, PLAYERS_DIR),
+                    id="profile-detail-card",
+                )
         yield Static("", id="status-line")
         with Horizontal(classes="action-bar"):
             yield Button("返回角色列表", id="profile-detail-back", variant="primary")
@@ -1455,6 +1460,7 @@ class AddAsciiScreen(BaseScreen):
     TITLE = "添加 ASCII 形象"
     SUBTITLE = "从图片生成终端可显示的字符画"
     BORDER_STYLE = "bright_yellow"
+    IMAGE_PATH_PLACEHOLDER = "图片路径：绝对路径，或相对当前启动目录"
 
     def __init__(self, browser: ProfileBrowserScreen):
         super().__init__()
@@ -1467,7 +1473,7 @@ class AddAsciiScreen(BaseScreen):
         with Horizontal(id="screen-body", classes="pane-row pane-row-large"):
             with Vertical(classes="form-pane"):
                 yield Button("目标角色: 未选择", id="ascii-profile", classes="picker-button")
-                yield Input(placeholder="图片路径", id="ascii-path")
+                yield Input(placeholder=self.IMAGE_PATH_PLACEHOLDER, id="ascii-path")
                 yield Input(value="60", placeholder="输出宽度", id="ascii-width")
             yield Static(classes="detail-pane", id="ascii-summary")
         yield Static("", id="status-line")
