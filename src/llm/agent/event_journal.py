@@ -17,6 +17,7 @@ from kernel.event_log import (
     RoundBeginEvent,
     TsumoEvent,
 )
+from kernel.scoring.dora import dora_from_indicators
 
 if TYPE_CHECKING:
     from llm.agent.context_store import CompressionLevel
@@ -86,7 +87,11 @@ class MatchJournal:
         if history_budget <= 0 or not self.current_hand_events:
             return ""
         records = [
-            _project_public_event(event, viewer_seat=viewer_seat, hand_number=self.current_hand_number)
+            _project_public_event(
+                event,
+                viewer_seat=viewer_seat,
+                hand_number=self.current_hand_number,
+            )
             for event in self.current_hand_events
         ]
         return _render_records(
@@ -165,9 +170,10 @@ def _project_public_event(
     who = _seat_name(event.seat, viewer_seat)
 
     if isinstance(event, RoundBeginEvent):
+        dora_tile = dora_from_indicators((event.dora_indicator,))[0]
         text = (
             f"第{hand_number}局开始：亲家家{event.dealer_seat}，"
-            f"宝牌指示牌 {event.dora_indicator.to_code()}"
+            f"宝牌指示器 {event.dora_indicator.to_code()}，实际宝牌 {dora_tile.to_code()}"
         )
         return PublicEventRecord(event.sequence, text, text, is_key_event=True)
 
@@ -227,7 +233,8 @@ def _project_public_event(
 
     if isinstance(event, MatchEndEvent):
         ranking = ", ".join(f"家{seat}:{rank}" for seat, rank in enumerate(event.ranking))
-        text = f"终局：顺位 {ranking}，最终点数 {', '.join(str(score) for score in event.final_scores)}"
+        final_scores = ", ".join(str(score) for score in event.final_scores)
+        text = f"终局：顺位 {ranking}，最终点数 {final_scores}"
         compact = "终局"
         return PublicEventRecord(event.sequence, text, compact, is_key_event=True)
 
@@ -273,7 +280,10 @@ def _render_records(
         key_events = [record.compact_text for record in older if record.is_key_event]
         if key_events:
             lines.append("关键公共事件: " + "; ".join(key_events[-3:]))
-        latest_threat = next((record.threat_seat for record in reversed(older) if record.threat_seat is not None), None)
+        latest_threat = next(
+            (record.threat_seat for record in reversed(older) if record.threat_seat is not None),
+            None,
+        )
         if latest_threat is not None:
             lines.append(f"最近立直威胁: 家{latest_threat}")
         lines.extend(record.text if detailed else record.compact_text for record in recent)
@@ -286,7 +296,10 @@ def _render_records(
     key_events = [record.compact_text for record in older if record.is_key_event]
     if key_events:
         lines.append("高密度摘要: " + "; ".join(_clip(text, 32) for text in key_events[-4:]))
-    latest_threat = next((record.threat_seat for record in reversed(records) if record.threat_seat is not None), None)
+    latest_threat = next(
+        (record.threat_seat for record in reversed(records) if record.threat_seat is not None),
+        None,
+    )
     if latest_threat is not None:
         lines.append(f"当前主要威胁: 家{latest_threat}")
     lines.extend(_clip(record.compact_text, 96) for record in recent)

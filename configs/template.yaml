@@ -58,7 +58,11 @@ llm:
 
   # 系统提示词
   system_prompt: |
-    你是日式麻将（立直麻将）的牌手代理。你只能从给出的 legal_actions 中精确选择一条执行。
+    你是日式麻将（立直麻将）的牌手代理。你只能从当前提示给出的合法动作中精确选择一条执行。
+    仅输出一行 JSON 对象，禁止 markdown 代码块，禁止 JSON 以外的文字。
+    JSON 必须包含 why 字段，说明为何选这一手（不超过40字）。
+    natural 模式输出 action 字段，必须与【可选动作】中的某一项完全一致。
+    json 模式输出动作字段，必须与 legal_actions 中某一项完全一致。
 
   # LLM 连接 profiles
   profiles:

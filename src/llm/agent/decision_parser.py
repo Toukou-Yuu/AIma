@@ -11,12 +11,29 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
+import re
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from kernel.api.legal_actions import LegalAction
 
 log = logging.getLogger(__name__)
+
+ParseStatus = Literal["matched", "parse_failed", "match_failed"]
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\{.*?\}\s*```", re.DOTALL)
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionParseResult:
+    """结构化的模型响应解析结果。"""
+
+    action: "LegalAction | None"
+    why: str | None
+    choice: dict[str, Any] | None
+    status: ParseStatus
+    note: str | None = None
+    error: str | None = None
 
 
 class DecisionParser:
@@ -39,23 +56,59 @@ class DecisionParser:
         Returns:
             (匹配的合法动作, 决策原因) - 如果解析或匹配失败，返回 (None, None)
         """
+        result = DecisionParser.parse_llm_response_detail(raw_response, legal_actions)
+        if result.action is None:
+            return None, None
+        return result.action, result.why
+
+    @staticmethod
+    def parse_llm_response_detail(
+        raw_response: str,
+        legal_actions: tuple["LegalAction", ...],
+    ) -> DecisionParseResult:
+        """解析 LLM 响应并保留可写入 conversation 的诊断信息。"""
         from llm.parse import extract_json_object
         from llm.validate import explain_text_from_choice, find_matching_legal_action
+
+        note = "fenced_json_accepted" if _JSON_FENCE_RE.search(raw_response.strip()) else None
 
         # 1. 解析 JSON
         try:
             choice = extract_json_object(raw_response)
         except (ValueError, TypeError) as e:
             log.warning("parse failed: %s", e)
-            return None, None
+            return DecisionParseResult(
+                action=None,
+                why=None,
+                choice=None,
+                status="parse_failed",
+                note=note,
+                error=str(e),
+            )
 
         # 2. 提取原因
         why = explain_text_from_choice(choice)
 
         # 3. 匹合法动作
         la = find_matching_legal_action(legal_actions, choice)
+        if la is None:
+            return DecisionParseResult(
+                action=None,
+                why=why,
+                choice=choice,
+                status="match_failed",
+                note=note,
+                error="response did not match any legal action",
+            )
 
-        return la, why
+        return DecisionParseResult(
+            action=la,
+            why=why,
+            choice=choice,
+            status="matched",
+            note=note,
+            error=None,
+        )
 
     @staticmethod
     def validate_decision(

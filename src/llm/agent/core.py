@@ -9,16 +9,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from llm.agent.decision_parser import DecisionParser
 from llm.agent.context_store import PersistentState, TurnContext
+from llm.agent.decision_parser import DecisionParser, DecisionParseResult
 
 if TYPE_CHECKING:
     from kernel.api.legal_actions import LegalAction
     from kernel.engine.state import GameState
     from llm.agent.context import EpisodeContext
     from llm.agent.conversation_logger import ConversationLogger
-    from llm.agent.prompt import PromptProjector
     from llm.agent.profile import PlayerProfile
+    from llm.agent.prompt import PromptProjector
     from llm.protocol import ChatMessage, CompletionClient
 
 log = logging.getLogger(__name__)
@@ -145,7 +145,27 @@ class AgentCore:
 
         raw = client.complete(messages)
 
-        # 9. 记录对话（仅真实对局，用于调试）
+        if session_audit:
+            head = raw if len(raw) <= 600 else raw[:600] + "…"
+            log.debug("llm raw_head seat=%s %r", seat, head)
+            log.debug("llm_frame seat=%s type=%s", seat, frame_type)
+            log.debug(
+                "llm_history seat=%s history_msgs=%s",
+                seat,
+                len(episode_ctx.decision_history),
+            )
+
+        # 11. DEBUG: 保存最后一次请求
+        _debug_save_last_prompt(messages)
+
+        # 12. 解析响应
+        parse_result = DecisionParser.parse_llm_response_detail(raw, acts)
+        la, why = parse_result.action, parse_result.why
+        fallback: LegalAction | None = None
+        if la is None:
+            fallback = DecisionParser.fallback_action(acts)
+
+        # 13. 记录对话（仅真实对局，用于调试）
         if conversation_logger is not None and not dry_run:
             conversation_logger.log_turn(
                 turn_number=len(episode_ctx.decision_history) + 1,
@@ -153,24 +173,14 @@ class AgentCore:
                 phase=state.phase.value,
                 messages=messages,
                 response=raw,
+                parser_result=_parser_log_payload(parse_result, fallback),
             )
 
-        if session_audit:
-            head = raw if len(raw) <= 600 else raw[:600] + "…"
-            log.debug("llm raw_head seat=%s %r", seat, head)
-            log.debug("llm_frame seat=%s type=%s", seat, frame_type)
-            log.debug("llm_history seat=%s history_msgs=%s", seat, len(episode_ctx.decision_history))
-
-        # 11. DEBUG: 保存最后一次请求
-        _debug_save_last_prompt(messages)
-
-        # 12. 解析响应
-        la, why = DecisionParser.parse_llm_response(raw, acts)
-
-        # 13. 处理解析失败
+        # 14. 处理解析失败
         if la is None:
             log.warning("parse or match failed, fallback first legal")
-            fallback = DecisionParser.fallback_action(acts)
+            if fallback is None:
+                fallback = DecisionParser.fallback_action(acts)
             episode_ctx.record_decision(
                 Decision(fallback, None, []),
                 observation=obs,
@@ -179,7 +189,7 @@ class AgentCore:
             )
             return Decision(fallback, None, episode_ctx.decision_history)
 
-        # 14. 记录审计日志
+        # 15. 记录审计日志
         if session_audit:
             from llm.wire import legal_action_to_wire
 
@@ -189,7 +199,7 @@ class AgentCore:
                 json.dumps(legal_action_to_wire(la), ensure_ascii=False),
             )
 
-        # 15. 更新历史
+        # 16. 更新历史
         episode_ctx.record_decision(
             Decision(la, why, []),
             observation=obs,
@@ -198,6 +208,29 @@ class AgentCore:
         )
 
         return Decision(la, why, episode_ctx.decision_history)
+
+
+def _parser_log_payload(
+    result: DecisionParseResult,
+    fallback_action: "LegalAction | None",
+) -> dict[str, object]:
+    """将解析结果转换为 conversation 可持久化的诊断载荷。"""
+    from llm.wire import legal_action_to_wire
+
+    payload: dict[str, object] = {"status": result.status}
+    if result.note is not None:
+        payload["note"] = result.note
+    if result.error is not None:
+        payload["error"] = result.error
+    if result.why is not None:
+        payload["why"] = result.why
+    if result.choice is not None:
+        payload["choice"] = result.choice
+    if result.action is not None:
+        payload["matched_action"] = legal_action_to_wire(result.action)
+    if fallback_action is not None:
+        payload["fallback_action"] = legal_action_to_wire(fallback_action)
+    return payload
 
 
 def _debug_save_last_prompt(messages: list["ChatMessage"]) -> None:

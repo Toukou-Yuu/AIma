@@ -3,22 +3,44 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
-from kernel import Action, ActionKind, apply, build_deck, initial_game_state, legal_actions, shuffle_deck
+from kernel import (
+    Action,
+    ActionKind,
+    GamePhase,
+    LegalAction,
+    Meld,
+    MeldKind,
+    Observation,
+    Suit,
+    Tile,
+    apply,
+    build_deck,
+    initial_game_state,
+    legal_actions,
+    shuffle_deck,
+)
 from llm.agent.context import EpisodeContext
-from llm.agent.context_store import CompressionLevel, ContextEvent, ContextStore, PersistentState, TurnContext
+from llm.agent.context_store import (
+    ContextEvent,
+    ContextStore,
+)
 from llm.agent.event_journal import MatchJournal
 from llm.agent.match_context import MatchContext
 from llm.agent.memory import PlayerMemory
 from llm.agent.profile import PlayerProfile
 from llm.agent.prompt import PromptProjector
-from llm.agent.stats import PlayerStats
 from llm.config import load_llm_runtime_config
+from llm.observation_format import (
+    build_compressed_observation,
+    build_natural_prompt,
+    observation_to_prompt_dict,
+)
 from llm.turns import pending_actor_seats
 from llm.wire import legal_action_to_wire
 from tests.llm_test_utils import build_test_agent
-
 
 _RUNTIME = load_llm_runtime_config(config_path=Path("tests/fixtures/llm_runtime.yaml"))
 
@@ -45,6 +67,40 @@ def _sample_state(seed: int = 21) -> tuple[object, int, tuple[object, ...]]:
     seat = pending_actor_seats(state)[0]
     acts = legal_actions(state, seat)
     return state, seat, acts
+
+
+def _prompt_observation() -> Observation:
+    t1m = Tile(Suit.MAN, 1, False)
+    t3p = Tile(Suit.PIN, 3, False)
+    t4p = Tile(Suit.PIN, 4, False)
+    t5p = Tile(Suit.PIN, 5, False)
+    meld = Meld(
+        kind=MeldKind.CHI,
+        tiles=(t3p, t4p, t5p),
+        called_tile=t4p,
+        from_seat=3,
+    )
+    return Observation(
+        seat=0,
+        dealer_seat=0,
+        phase=GamePhase.IN_ROUND,
+        hand=Counter({t1m: 1}),
+        melds=(),
+        all_melds=((), (), (), (meld,)),
+        river=(),
+        dora_indicators=(Tile(Suit.SOU, 8, False),),
+        ura_indicators=None,
+        riichi_state=(False, False, False, False),
+        scores=(25000, 25000, 25000, 25000),
+        honba=0,
+        kyoutaku=0,
+        turn_seat=0,
+        last_discard=None,
+        last_discard_seat=None,
+        wall_remaining=None,
+        dead_wall=None,
+        hands_by_seat=None,
+    )
 
 
 def test_default_context_scope_is_per_hand() -> None:
@@ -197,3 +253,44 @@ def test_context_store_collapse_keeps_recent_events() -> None:
     assert "已折叠" in projection.text
     assert "第6巡" in projection.text
     assert projection.collapsed_event_count == 4
+
+
+def test_natural_prompt_shows_actual_dora_and_absolute_meld_source() -> None:
+    obs = _prompt_observation()
+    legal = (LegalAction(kind=ActionKind.DRAW, seat=0),)
+
+    prompt = build_natural_prompt(obs, legal)
+
+    assert "【宝牌指示器】八索" in prompt
+    assert "【实际宝牌】九索" in prompt
+    assert "家3: 吃 三筒 四筒 五筒(叫四筒 来自家2)" in prompt
+
+
+def test_prompt_dicts_include_actual_dora_tiles() -> None:
+    obs = _prompt_observation()
+    prompt_dict = observation_to_prompt_dict(obs)
+    compressed = build_compressed_observation(obs)
+
+    assert prompt_dict["dora_tiles"] == ["9s"]
+    assert compressed["dora_tiles"] == ["9s"]
+    assert prompt_dict["melds_by_seat"][3][0]["from_seat"] == 2
+    assert compressed["other_melds"][0]["melds"][0]["from_seat"] == 2
+
+
+def test_natural_prompt_deduplicates_repeated_action_text() -> None:
+    obs = _prompt_observation()
+    t3m = Tile(Suit.MAN, 3, False)
+    t4m = Tile(Suit.MAN, 4, False)
+    legal = (
+        LegalAction(kind=ActionKind.DISCARD, seat=0, tile=t3m, declare_riichi=False),
+        LegalAction(kind=ActionKind.DISCARD, seat=0, tile=t3m, declare_riichi=False),
+        LegalAction(kind=ActionKind.DISCARD, seat=0, tile=t4m, declare_riichi=False),
+    )
+
+    prompt = build_natural_prompt(obs, legal)
+    actions_line = prompt.split("【可选动作】\n", maxsplit=1)[1].split(
+        "\n\n【输出要求】",
+        maxsplit=1,
+    )[0]
+
+    assert actions_line == "打三万, 打四万"

@@ -78,7 +78,8 @@ def test_pass_and_ron_still_invokes_client() -> None:
     )
 
     # 返回 JSON 让 Agent 选择 PASS_CALL
-    client = MagicMock(return_value='{"kind":"pass_call","seat":1}')
+    client = MagicMock()
+    client.complete.return_value = '{"kind":"pass_call","seat":1}'
 
     agent = build_test_agent(system_prompt="你是麻将牌手")
     episode_ctx = EpisodeContext(1)

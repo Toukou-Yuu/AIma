@@ -13,10 +13,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from llm.protocol import ChatMessage
@@ -62,7 +63,7 @@ class ConversationLogger:
             return
 
         try:
-            # 构建输出路径：configs/players/{player_id}/conversations/{YYYYMMDD}-{conversation_id}.md
+            # 构建输出路径：configs/players/{player_id}/conversations/{date}-{id}.md
             date_str = datetime.now().strftime("%Y%m%d")
             output_dir = Path(f"configs/players/{player_id}/conversations")
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -83,6 +84,7 @@ class ConversationLogger:
         phase: str,
         messages: list["ChatMessage"],
         response: str,
+        parser_result: dict[str, Any] | None = None,
     ) -> None:
         """记录一轮对话.
 
@@ -92,6 +94,7 @@ class ConversationLogger:
             phase: 游戏阶段（如 "in_round"）
             messages: 发送给 LLM 的消息列表
             response: LLM 返回的响应
+            parser_result: AIma 本地 parser/fallback 诊断结果
         """
         if not self.enabled or self._file is None:
             return
@@ -102,7 +105,7 @@ class ConversationLogger:
                 self._write_header(self.conversation_id)
                 self._header_written = True
 
-            self._write_turn(turn_number, seat, phase, messages, response)
+            self._write_turn(turn_number, seat, phase, messages, response, parser_result)
             self._file.flush()  # 实时刷新，支持 tail -f
         except Exception as e:
             log.error("failed to log conversation turn: %s", e)
@@ -132,6 +135,7 @@ class ConversationLogger:
         phase: str,
         messages: list["ChatMessage"],
         response: str,
+        parser_result: dict[str, Any] | None,
     ) -> None:
         """写入一轮对话（Markdown 格式）."""
         self._file.write(f"### Turn {turn_number} (seat={seat}, phase={phase})\n\n")
@@ -147,5 +151,11 @@ class ConversationLogger:
 
         self._file.write("**Assistant**:\n")
         self._file.write(f"{response}\n\n")
+
+        if parser_result is not None:
+            self._file.write("**AIma Parser**:\n")
+            self._file.write("```json\n")
+            self._file.write(json.dumps(parser_result, ensure_ascii=False, indent=2))
+            self._file.write("\n```\n\n")
 
         self._file.write("---\n\n")

@@ -163,7 +163,9 @@ def test_chi_stage_lists_chi_open_meld() -> None:
         a for a in acts if a.kind == ActionKind.OPEN_MELD and a.meld and a.meld.kind == MeldKind.CHI
     ]
     assert chi_acts, "应有一条吃 345m 的 OPEN_MELD"
-    assert action_to_natural_text(chi_acts[0], chi_acts[0].seat).startswith("吃")
+    text = action_to_natural_text(chi_acts[0], chi_acts[0].seat)
+    assert text.startswith("吃")
+    assert "来自家0" in text
 
 
 def test_chi_stage_only_shimocha_gets_chi_actions() -> None:

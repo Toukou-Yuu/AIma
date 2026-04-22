@@ -8,8 +8,10 @@ from typing import TYPE_CHECKING
 
 from kernel.api.legal_actions import LegalAction
 from kernel.api.observation import Observation, RiverEntry
-from kernel.tiles.model import Tile, Suit
+from kernel.scoring.dora import dora_from_indicators
+from kernel.tiles.model import Suit, Tile
 from llm.constants import TILE_CN_MAP
+from llm.wire import legal_action_to_wire
 
 if TYPE_CHECKING:
     from typing import Any
@@ -59,7 +61,14 @@ def _hand_to_cn(hand: Counter[Tile] | None) -> str:
     return "\n".join(lines) if lines else "无"
 
 
-def _meld_to_cn(meld: Any) -> str:
+def _discarder_seat_for_meld(owner_seat: int, meld: Any) -> int | None:
+    """将副露中的相对 from_seat 还原为绝对座位。"""
+    if meld.from_seat is None:
+        return None
+    return (owner_seat + meld.from_seat) % 4
+
+
+def _meld_to_cn(meld: Any, owner_seat: int) -> str:
     """将副露转换为中文."""
     tiles_str = " ".join(tile_to_cn(t) for t in meld.tiles)
     kind_cn = {
@@ -75,11 +84,38 @@ def _meld_to_cn(meld: Any) -> str:
     extra = ""
     if meld.called_tile:
         extra = f"(叫{tile_to_cn(meld.called_tile)}"
-        if meld.from_seat is not None:
-            extra += f" 来自家{meld.from_seat}"
+        discarder_seat = _discarder_seat_for_meld(owner_seat, meld)
+        if discarder_seat is not None:
+            extra += f" 来自家{discarder_seat}"
         extra += ")"
 
     return f"{kind_str} {tiles_str}{extra}"
+
+
+def _meld_to_prompt_dict(meld: Any, owner_seat: int) -> dict[str, Any]:
+    """将副露投影为 prompt 字典，from_seat 使用绝对座位。"""
+    out: dict[str, Any] = {
+        "kind": meld.kind.value,
+        "tiles": [t.to_code() for t in meld.tiles],
+    }
+    if meld.called_tile is not None:
+        out["called_tile"] = meld.called_tile.to_code()
+    discarder_seat = _discarder_seat_for_meld(owner_seat, meld)
+    if discarder_seat is not None:
+        out["from_seat"] = discarder_seat
+    return out
+
+
+def _unique_preserve_order(items: list[str]) -> list[str]:
+    """保留顺序去重，避免重复牌导致 prompt 中出现重复动作。"""
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        unique.append(item)
+    return unique
 
 
 def _river_to_cn(river: tuple[RiverEntry, ...], my_seat: int) -> str:
@@ -133,13 +169,13 @@ def action_to_natural_text(action: LegalAction, my_seat: int) -> str:
         return "自摸"
 
     if kind == ActionKind.OPEN_MELD and action.meld:
-        return _meld_to_cn(action.meld)
+        return _meld_to_cn(action.meld, action.seat)
 
     if kind == ActionKind.ANKAN and action.meld:
-        return _meld_to_cn(action.meld)
+        return _meld_to_cn(action.meld, action.seat)
 
     if kind == ActionKind.SHANKUMINKAN and action.meld:
-        return _meld_to_cn(action.meld)
+        return _meld_to_cn(action.meld, action.seat)
 
     if kind == ActionKind.RIICHI:
         return "立直宣言"
@@ -159,7 +195,7 @@ def build_natural_prompt(obs: Observation, legal: tuple[LegalAction, ...]) -> st
 
     # 1. 基本信息
     wind = _calculate_wind(obs.seat, obs.dealer_seat)
-    lines.append(f"【当前状态】")
+    lines.append("【当前状态】")
     lines.append(f"你是家{obs.seat}({wind}位)")
 
     # 2. 手牌
@@ -169,23 +205,26 @@ def build_natural_prompt(obs: Observation, legal: tuple[LegalAction, ...]) -> st
 
     # 3. 副露（自家）
     if obs.melds:
-        lines.append(f"\n【我的副露】")
+        lines.append("\n【我的副露】")
         for m in obs.melds:
-            lines.append(_meld_to_cn(m))
+            lines.append(_meld_to_cn(m, obs.seat))
 
     # 4. 他家副露
     other_melds = []
     for seat_idx, seat_melds in enumerate(obs.all_melds):
         if seat_idx != obs.seat and seat_melds:
             for m in seat_melds:
-                other_melds.append(f"家{seat_idx}: {_meld_to_cn(m)}")
+                other_melds.append(f"家{seat_idx}: {_meld_to_cn(m, seat_idx)}")
     if other_melds:
-        lines.append(f"\n【他家副露】")
+        lines.append("\n【他家副露】")
         lines.append(", ".join(other_melds))
 
-    # 5. 宝牌指示牌
-    dora_str = ", ".join(tile_to_cn(t) for t in obs.dora_indicators)
-    lines.append(f"\n【宝牌指示牌】{dora_str}")
+    # 5. 宝牌指示器与实际宝牌
+    indicator_str = ", ".join(tile_to_cn(t) for t in obs.dora_indicators) or "无"
+    dora_tiles = dora_from_indicators(obs.dora_indicators)
+    dora_str = ", ".join(tile_to_cn(t) for t in dora_tiles) or "无"
+    lines.append(f"\n【宝牌指示器】{indicator_str}")
+    lines.append(f"【实际宝牌】{dora_str}")
 
     # 6. 牌河（完整显示）
     if obs.river:
@@ -208,13 +247,13 @@ def build_natural_prompt(obs: Observation, legal: tuple[LegalAction, ...]) -> st
         lines.append(f"\n【刚才打出】家{last_seat} 打 {last_cn}")
 
     # 10. 合法动作
-    lines.append(f"\n【可选动作】")
-    action_strs = [action_to_natural_text(a, obs.seat) for a in legal]
+    lines.append("\n【可选动作】")
+    action_strs = _unique_preserve_order([action_to_natural_text(a, obs.seat) for a in legal])
     lines.append(", ".join(action_strs))
 
     # 11. 提示输出格式
-    lines.append(f"\n【输出要求】")
-    lines.append("选择一个动作，用JSON格式输出，包含 why 字段说明理由（不超过30字）。")
+    lines.append("\n【输出要求】")
+    lines.append("选择一个动作，用JSON格式输出，包含 why 字段说明理由（不超过40字）。")
     lines.append("示例: {\"action\": \"打三万\", \"why\": \"孤立牌，进张面窄\"}")
 
     return "\n".join(lines)
@@ -239,6 +278,7 @@ def _river_entries(river: tuple[RiverEntry, ...]) -> list[dict[str, Any]]:
         for e in river
     ]
 
+
 def build_compressed_observation(
     obs: Observation,
     prev_obs: Observation | None = None,
@@ -261,16 +301,9 @@ def build_compressed_observation(
         "dealer_seat": obs.dealer_seat,
         "phase": obs.phase.value,
         "hand": _hand_dict(obs.hand),
-        "melds": [
-            {
-                "kind": m.kind.value,
-                "tiles": [t.to_code() for t in m.tiles],
-                **({"called_tile": m.called_tile.to_code()} if m.called_tile is not None else {}),
-                **({"from_seat": m.from_seat} if m.from_seat is not None else {}),
-            }
-            for m in obs.melds
-        ],
+        "melds": [_meld_to_prompt_dict(m, obs.seat) for m in obs.melds],
         "dora_indicators": [t.to_code() for t in obs.dora_indicators],
+        "dora_tiles": [t.to_code() for t in dora_from_indicators(obs.dora_indicators)],
         "riichi_state": list(obs.riichi_state),
         "scores": list(obs.scores),
         "honba": obs.honba,
@@ -296,14 +329,13 @@ def build_compressed_observation(
             if seat_idx != obs.seat and seat_melds:  # 跳过自家
                 melds_summary = []
                 for m in seat_melds:
-                    melds_summary.append({
-                        "kind": m.kind.value,
-                        "tiles": [t.to_code() for t in m.tiles],
-                    })
-                out["other_melds"].append({
-                    "seat": seat_idx,
-                    "melds": melds_summary,
-                })
+                    melds_summary.append(_meld_to_prompt_dict(m, seat_idx))
+                out["other_melds"].append(
+                    {
+                        "seat": seat_idx,
+                        "melds": melds_summary,
+                    }
+                )
 
     # 可选：生成变化说明
     if prev_obs is not None:
@@ -355,29 +387,14 @@ def observation_to_prompt_dict(obs: Observation) -> dict[str, Any]:
         "dealer_seat": obs.dealer_seat,
         "phase": obs.phase.value,
         "hand": _hand_dict(obs.hand),
-        "melds": [
-            {
-                "kind": m.kind.value,
-                "tiles": [t.to_code() for t in m.tiles],
-                **({"called_tile": m.called_tile.to_code()} if m.called_tile is not None else {}),
-                **({"from_seat": m.from_seat} if m.from_seat is not None else {}),
-            }
-            for m in obs.melds
-        ],
+        "melds": [_meld_to_prompt_dict(m, obs.seat) for m in obs.melds],
         "melds_by_seat": [
-            [
-                {
-                    "kind": m.kind.value,
-                    "tiles": [t.to_code() for t in m.tiles],
-                    **({"called_tile": m.called_tile.to_code()} if m.called_tile is not None else {}),
-                    **({"from_seat": m.from_seat} if m.from_seat is not None else {}),
-                }
-                for m in seat_melds
-            ]
-            for seat_melds in obs.all_melds
+            [_meld_to_prompt_dict(m, seat_idx) for m in seat_melds]
+            for seat_idx, seat_melds in enumerate(obs.all_melds)
         ],
         "river": _river_entries(obs.river),
         "dora_indicators": [t.to_code() for t in obs.dora_indicators],
+        "dora_tiles": [t.to_code() for t in dora_from_indicators(obs.dora_indicators)],
         "riichi_state": list(obs.riichi_state),
         "scores": list(obs.scores),
         "honba": obs.honba,
@@ -492,7 +509,9 @@ def build_delta_observation(
 
     # 宝牌变化
     if len(curr_obs.dora_indicators) > len(prev_obs.dora_indicators):
-        delta["new_dora"] = curr_obs.dora_indicators[-1].to_code()
+        new_indicator = curr_obs.dora_indicators[-1]
+        delta["new_dora_indicator"] = new_indicator.to_code()
+        delta["new_dora_tile"] = dora_from_indicators((new_indicator,))[0].to_code()
 
     # 立直状态变化
     new_riichi = []
