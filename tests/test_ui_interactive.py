@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime
 from pathlib import Path
 
 
@@ -210,6 +211,41 @@ def test_load_replay_summary_extracts_match_result(tmp_path: Path) -> None:
     assert summary.ranking_by_seat == (1, 4, 2, 3)
     assert "东家#1" in summary.ranking_label
     assert "35,000" in summary.score_label
+
+
+def test_replay_summary_separates_status_from_stop_reason(tmp_path: Path) -> None:
+    """结束状态只表达完成度，结束原因表达为什么结束。"""
+    from ui.interactive.data import ReplaySummary
+
+    def make_summary(reason: str, final_phase: str = "hand_over") -> ReplaySummary:
+        return ReplaySummary(
+            path=tmp_path / "sample.json",
+            stem="sample",
+            modified_at=datetime.now(),
+            seed=1,
+            stopped_reason=reason,
+            final_phase=final_phase,
+            action_count=0,
+            step_count=0,
+            ranking_by_seat=None,
+            final_scores=None,
+        )
+
+    hands_completed = make_summary("hands_completed:4")
+    assert hands_completed.status_label == "已完成"
+    assert hands_completed.reason_label == "局数完成（4局）"
+
+    natural_end = make_summary("match_end", final_phase="match_end")
+    assert natural_end.status_label == "已完成"
+    assert natural_end.reason_label == "自然终局"
+
+    truncated = make_summary("max_player_steps:500")
+    assert truncated.status_label == "已截断"
+    assert truncated.reason_label == "步数截断"
+
+    failed = make_summary("step_failed:seat0 缺少 LLM client")
+    assert failed.status_label == "异常"
+    assert failed.reason_label == "执行失败: seat0 缺少 LLM client"
 
 
 def test_replay_detail_run_uses_session_runner(monkeypatch, tmp_path: Path) -> None:
