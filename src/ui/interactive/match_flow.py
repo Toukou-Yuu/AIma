@@ -19,6 +19,7 @@ from ui.interactive.chrome import (
     render_summary_panel,
 )
 from ui.interactive.data import SEAT_LABELS, load_replay_summary
+from ui.interactive.formatting import format_duration, format_timestamp
 from ui.interactive.framework import Page, Prompt
 from ui.interactive.match_session import (
     MatchSession,
@@ -31,25 +32,6 @@ from ui.interactive.replay import ReplayDetailPage
 from ui.interactive.token_usage import render_token_summary_panel
 
 console = Console()
-
-
-def _format_timestamp(timestamp: float | None) -> str:
-    """格式化时间戳。"""
-    if timestamp is None:
-        return "未开始"
-    from datetime import datetime
-
-    return datetime.fromtimestamp(timestamp).strftime("%H:%M:%S")
-
-
-def _format_duration(seconds: float | None) -> str:
-    """格式化耗时。"""
-    if seconds is None:
-        return "0.0 秒"
-    if seconds < 60:
-        return f"{seconds:.1f} 秒"
-    minutes, remain = divmod(seconds, 60)
-    return f"{int(minutes)} 分 {remain:.1f} 秒"
 
 
 def _session_status_text(session: MatchSession) -> tuple[str, str]:
@@ -70,7 +52,7 @@ def _render_runtime_panel(session: MatchSession) -> Panel:
     status_label, status_style = _session_status_text(session)
     rows = [
         ("状态", Text(status_label, style=status_style)),
-        ("开始时间", _format_timestamp(session.started_at)),
+        ("开始时间", format_timestamp(session.started_at)),
         ("最近动作", snapshot.action_label),
         ("最新阶段", snapshot.phase_label),
         ("快照步数", str(snapshot.callback_steps)),
@@ -287,9 +269,9 @@ class MatchSettlementPage(Page):
         run_result = result.run_result
         outcome_rows = [
             ("状态", Text(status_label, style=status_style)),
-            ("开始时间", _format_timestamp(self.session.started_at)),
-            ("结束时间", _format_timestamp(self.session.finished_at)),
-            ("总耗时", _format_duration(result.duration_seconds)),
+            ("开始时间", format_timestamp(self.session.started_at)),
+            ("结束时间", format_timestamp(self.session.finished_at)),
+            ("总耗时", format_duration(result.duration_seconds)),
             ("seed", str(self.session.config.seed)),
         ]
         if run_result is not None:

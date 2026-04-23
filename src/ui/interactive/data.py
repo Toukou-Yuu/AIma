@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import threading
-import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +10,7 @@ from typing import Any
 
 from llm.config import load_kernel_config
 from ui.interactive.utils import KERNEL_CONFIG_PATH, PLAYERS_DIR, load_profile_data
+from ui.services import llm_connection
 
 SEAT_LABELS = ("东家", "南家", "西家", "北家")
 _PLACEHOLDER_KEYS = {"", "your-api-key", "your-api-key-here"}
@@ -213,9 +212,6 @@ class HomeSnapshot:
     recent_replays: tuple[ReplaySummary, ...]
 
 
-_PROBE_CACHE: dict[tuple[str, str, str, str], tuple[float, tuple[str, str, str]]] = {}
-_PROBE_IN_FLIGHT: set[tuple[str, str, str, str]] = set()
-_PROBE_LOCK = threading.Lock()
 def _safe_load_yaml(path: Path) -> dict[str, Any]:
     """安全加载已合并配置；失败时返回空 dict。"""
     try:
@@ -241,150 +237,14 @@ def _provider_label(provider: str, base_url: str) -> str:
     return "远程模型"
 
 
-def _probe_openai_connection(
-    *,
-    base_url: str,
-    api_key: str,
-    timeout_sec: float,
-) -> tuple[str, str, str]:
-    """探测 OpenAI 兼容接口。"""
-    import httpx
-
-    url = base_url.rstrip("/") + "/models"
-    headers = {"Authorization": f"Bearer {api_key}"}
-    with httpx.Client(timeout=timeout_sec) as client:
-        response = client.get(url, headers=headers)
-    if response.status_code == 200:
-        return ("已连接", "green", "接口可达")
-    if response.status_code in (401, 403):
-        return ("鉴权失败", "red", f"HTTP {response.status_code}")
-    return ("连接异常", "yellow", f"HTTP {response.status_code}")
-
-
-def _probe_anthropic_connection(
-    *,
-    base_url: str,
-    api_key: str,
-    timeout_sec: float,
-) -> tuple[str, str, str]:
-    """探测 Anthropic 接口。"""
-    import httpx
-
-    url = base_url.rstrip("/") + "/v1/models"
-    headers = {
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-    }
-    with httpx.Client(timeout=timeout_sec) as client:
-        response = client.get(url, headers=headers)
-    if response.status_code == 200:
-        return ("已连接", "green", "接口可达")
-    if response.status_code in (401, 403):
-        return ("鉴权失败", "red", f"HTTP {response.status_code}")
-    return ("连接异常", "yellow", f"HTTP {response.status_code}")
-
-
-def _probe_connection_status(
-    *,
-    provider: str,
-    base_url: str,
-    api_key: str,
-    configured: bool,
-    timeout_sec: float = 1.5,
-) -> tuple[str, str, str]:
-    """探测当前配置是否已连接到 LLM。"""
-    if not configured:
-        return ("未连接", "yellow", "缺少 API Key")
-
-    try:
-        if provider == "anthropic":
-            result = _probe_anthropic_connection(
-                base_url=base_url,
-                api_key=api_key,
-                timeout_sec=timeout_sec,
-            )
-        else:
-            result = _probe_openai_connection(
-                base_url=base_url,
-                api_key=api_key,
-                timeout_sec=timeout_sec,
-            )
-    except ImportError:
-        result = ("未检查", "yellow", "缺少 httpx")
-    except Exception as exc:
-        try:
-            import httpx
-        except ImportError:
-            result = ("未检查", "yellow", exc.__class__.__name__)
-        else:
-            if isinstance(exc, httpx.TimeoutException):
-                result = ("未连接", "yellow", "探测超时")
-            elif isinstance(exc, httpx.HTTPError):
-                result = ("未连接", "yellow", exc.__class__.__name__)
-            else:
-                result = ("未连接", "yellow", exc.__class__.__name__)
-    return result
-
-
-def _get_cached_probe_status(
-    cache_key: tuple[str, str, str, str],
-) -> tuple[str, str, str] | None:
-    """读取已缓存的探测结果。"""
-    with _PROBE_LOCK:
-        cached = _PROBE_CACHE.get(cache_key)
-        if cached is None:
-            return None
-        return cached[1]
-
-
-def _store_probe_status(
-    cache_key: tuple[str, str, str, str],
-    result: tuple[str, str, str],
-) -> None:
-    """写入探测缓存。"""
-    with _PROBE_LOCK:
-        _PROBE_CACHE[cache_key] = (time.monotonic(), result)
-        _PROBE_IN_FLIGHT.discard(cache_key)
-
-
-def _schedule_probe_refresh(
-    *,
-    cache_key: tuple[str, str, str, str],
-    provider: str,
-    base_url: str,
-    api_key: str,
-    configured: bool,
-) -> None:
-    """后台刷新探测结果，不阻塞页面渲染。"""
-    with _PROBE_LOCK:
-        if cache_key in _PROBE_IN_FLIGHT:
-            return
-        _PROBE_IN_FLIGHT.add(cache_key)
-
-    def _worker() -> None:
-        try:
-            result = _probe_connection_status(
-                provider=provider,
-                base_url=base_url,
-                api_key=api_key,
-                configured=configured,
-            )
-            _store_probe_status(cache_key, result)
-        except Exception:
-            _store_probe_status(cache_key, ("未连接", "yellow", "探测失败"))
-
-    thread = threading.Thread(target=_worker, daemon=True)
-    thread.start()
-
-
 def _profile_status_from_config(name: str, profile_cfg: dict[str, Any]) -> LLMProfileStatus:
     api_key = str(profile_cfg.get("api_key", "")).strip()
     configured = api_key not in _PLACEHOLDER_KEYS
     provider = str(profile_cfg.get("provider", ""))
     base_url = str(profile_cfg.get("base_url", ""))
     cache_key = (provider, base_url, api_key, str(configured))
-    cached_probe = _get_cached_probe_status(cache_key)
-    _schedule_probe_refresh(
+    cached_probe = llm_connection.get_cached_probe_status(cache_key)
+    llm_connection.schedule_probe_refresh(
         cache_key=cache_key,
         provider=provider,
         base_url=base_url,

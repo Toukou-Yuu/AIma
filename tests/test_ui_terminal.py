@@ -14,6 +14,22 @@ from rich.text import Text
 
 from kernel.tiles.model import Suit, Tile
 
+
+def _make_event_formatter():
+    from ui.terminal.components import EventFormatter, NameResolver
+
+    return EventFormatter(NameResolver())
+
+
+def _make_hand_display(names: dict[int, str] | None = None):
+    from ui.terminal.components import HandDisplay, NameResolver, TileRenderer
+
+    resolver = NameResolver()
+    if names:
+        resolver.set_seat_names(names)
+    return HandDisplay(TileRenderer(), resolver)
+
+
 # =============================================================================
 # tiles.py 测试
 # =============================================================================
@@ -583,29 +599,29 @@ class TestParseHandTiles:
 
 
 # =============================================================================
-# viewer.py 核心渲染函数测试（通过私有方法测试）
+# terminal components 公共 API 测试
 # =============================================================================
 
 
-class TestHandToRich:
-    """测试 _hand_to_rich 方法。"""
+class TestTileRendererHand:
+    """测试 TileRenderer.render_hand。"""
 
     def test_empty_hand_shows_placeholder(self) -> None:
         """空手牌显示占位符。"""
-        from ui.terminal.viewer import LiveMatchViewer
+        from ui.terminal.components import TileRenderer
 
-        viewer = LiveMatchViewer()
+        renderer = TileRenderer()
         # Counter() 表示空手牌
-        text = viewer._hand_to_rich(Counter(), set())
+        text = renderer.render_hand(Counter(), set())
         assert "空" in text.plain or len(text.plain) == 0
 
     def test_simple_hand_render(self) -> None:
         """简单手牌渲染。"""
-        from ui.terminal.viewer import LiveMatchViewer
+        from ui.terminal.components import TileRenderer
 
-        viewer = LiveMatchViewer()
+        renderer = TileRenderer()
         hand = Counter({Tile(Suit.MAN, 1): 2, Tile(Suit.MAN, 2): 1})
-        text = viewer._hand_to_rich(hand, set())
+        text = renderer.render_hand(hand, set())
         # 验证有内容
         assert len(text.plain) > 0
         # 验证牌码存在
@@ -613,40 +629,40 @@ class TestHandToRich:
 
     def test_hand_with_dora_highlights(self) -> None:
         """包含宝牌的手牌高亮显示。"""
-        from ui.terminal.viewer import LiveMatchViewer
+        from ui.terminal.components import TileRenderer
 
-        viewer = LiveMatchViewer()
+        renderer = TileRenderer()
         dora_tile = Tile(Suit.MAN, 3)
         hand = Counter({Tile(Suit.MAN, 3): 1, Tile(Suit.MAN, 4): 1})
-        text = viewer._hand_to_rich(hand, {dora_tile})
+        text = renderer.render_hand(hand, {dora_tile})
         # 验证有内容
         assert len(text.plain) > 0
 
 
-class TestRiverToStr:
-    """测试 _river_to_str 方法。"""
+class TestTileRendererRiver:
+    """测试 TileRenderer.render_river。"""
 
     def test_empty_river_shows_placeholder(self) -> None:
         """空牌河返回空 Text。"""
-        from ui.terminal.viewer import LiveMatchViewer
+        from ui.terminal.components import TileRenderer
 
-        viewer = LiveMatchViewer()
+        renderer = TileRenderer()
         # 空牌河
-        text = viewer._river_to_str((), 0)
+        text = renderer.render_river((), 0, set())
         assert len(text.plain) == 0 or "无" in text.plain
 
     def test_river_with_tiles(self) -> None:
         """有牌的牌河。"""
         from kernel.deal.model import RiverEntry
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
+        from ui.terminal.components import TileRenderer
 
-        viewer = LiveMatchViewer()
+        renderer = TileRenderer()
         tile1 = Tile(Suit.MAN, 1)
         tile2 = Tile(Suit.MAN, 2)
         river = (RiverEntry(seat=0, tile=tile1, riichi=False),
                  RiverEntry(seat=0, tile=tile2, riichi=False))
-        text = viewer._river_to_str(river, 0)
+        text = renderer.render_river(river, 0, set())
         # 验证牌码存在
         assert len(text.plain) > 0
 
@@ -654,32 +670,30 @@ class TestRiverToStr:
         """立直打牌用方括号标记。"""
         from kernel.deal.model import RiverEntry
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
+        from ui.terminal.components import TileRenderer
 
-        viewer = LiveMatchViewer()
+        renderer = TileRenderer()
         tile = Tile(Suit.MAN, 1)
         river = (RiverEntry(seat=0, tile=tile, riichi=True),)
-        text = viewer._river_to_str(river, 0)
+        text = renderer.render_river(river, 0, set())
         # 验证有方括号
         assert "[" in text.plain or "]" in text.plain
 
 
 class TestFormatEvent:
-    """测试 _format_event 方法。"""
+    """测试 EventFormatter.format_event。"""
 
     def test_round_begin_event(self) -> None:
         """RoundBeginEvent 格式化。"""
         from kernel.event_log import RoundBeginEvent
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         dora_indicator = Tile(Suit.MAN, 1)
         ev = RoundBeginEvent(
             seat=None, sequence=0, dealer_seat=0,
             dora_indicator=dora_indicator, seeds=(0, 1, 2, 3)
         )
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "配牌" in text.plain or "宝牌" in text.plain
 
@@ -687,12 +701,10 @@ class TestFormatEvent:
         """DrawTileEvent 格式化。"""
         from kernel.event_log import DrawTileEvent
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         tile = Tile(Suit.MAN, 3)
         ev = DrawTileEvent(seat=1, sequence=1, tile=tile, is_rinshan=False, wall_remaining=60)
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "摸" in text.plain
 
@@ -700,12 +712,10 @@ class TestFormatEvent:
         """岭上摸牌。"""
         from kernel.event_log import DrawTileEvent
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         tile = Tile(Suit.MAN, 5)
         ev = DrawTileEvent(seat=0, sequence=5, tile=tile, is_rinshan=True, wall_remaining=55)
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "岭上" in text.plain
 
@@ -713,9 +723,7 @@ class TestFormatEvent:
         """DiscardTileEvent 格式化。"""
         from kernel.event_log import DiscardTileEvent
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         tile = Tile(Suit.PIN, 5)
         ev = DiscardTileEvent(
             seat=2,
@@ -724,7 +732,7 @@ class TestFormatEvent:
             is_tsumogiri=False,
             declare_riichi=False,
         )
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "打" in text.plain
 
@@ -732,9 +740,7 @@ class TestFormatEvent:
         """立直打牌。"""
         from kernel.event_log import DiscardTileEvent
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         tile = Tile(Suit.SOU, 1)
         ev = DiscardTileEvent(
             seat=0,
@@ -743,7 +749,7 @@ class TestFormatEvent:
             is_tsumogiri=False,
             declare_riichi=True,
         )
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "立直" in text.plain
 
@@ -751,9 +757,7 @@ class TestFormatEvent:
         """摸切打牌。"""
         from kernel.event_log import DiscardTileEvent
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         tile = Tile(Suit.MAN, 7)
         ev = DiscardTileEvent(
             seat=1,
@@ -762,7 +766,7 @@ class TestFormatEvent:
             is_tsumogiri=True,
             declare_riichi=False,
         )
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "摸切" in text.plain
 
@@ -770,12 +774,10 @@ class TestFormatEvent:
         """RonEvent 格式化。"""
         from kernel.event_log import RonEvent
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         win_tile = Tile(Suit.MAN, 9)
         ev = RonEvent(seat=1, sequence=20, win_tile=win_tile, discard_seat=0)
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "荣和" in text.plain
 
@@ -783,12 +785,10 @@ class TestFormatEvent:
         """TsumoEvent 格式化。"""
         from kernel.event_log import TsumoEvent
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         win_tile = Tile(Suit.HONOR, 1)
         ev = TsumoEvent(seat=2, sequence=25, win_tile=win_tile, is_rinshan=False)
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "自摸" in text.plain or "和了" in text.plain
 
@@ -796,34 +796,28 @@ class TestFormatEvent:
         """岭上自摸。"""
         from kernel.event_log import TsumoEvent
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         win_tile = Tile(Suit.PIN, 4)
         ev = TsumoEvent(seat=0, sequence=30, win_tile=win_tile, is_rinshan=True)
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "岭上" in text.plain
 
     def test_hand_over_event_with_winners(self) -> None:
         """HandOverEvent 有和了者。"""
         from kernel.event_log import HandOverEvent
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         ev = HandOverEvent(seat=None, sequence=50, winners=(0,), payments=(1000, -1000, 0, 0))
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "和了" in text.plain
 
     def test_hand_over_event_flow(self) -> None:
         """HandOverEvent 流局。"""
         from kernel.event_log import HandOverEvent
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         ev = HandOverEvent(seat=None, sequence=60, winners=(), payments=(0, 0, 0, 0))
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "流局" in text.plain
 
@@ -831,11 +825,9 @@ class TestFormatEvent:
         """荒牌流局。"""
         from kernel.event_log import FlowEvent
         from kernel.flow.model import FlowKind
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         ev = FlowEvent(seat=0, sequence=70, flow_kind=FlowKind.EXHAUSTED, tenpai_seats=frozenset())
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "荒牌" in text.plain
 
@@ -843,11 +835,9 @@ class TestFormatEvent:
         """九种九牌流局。"""
         from kernel.event_log import FlowEvent
         from kernel.flow.model import FlowKind
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         ev = FlowEvent(seat=0, sequence=5, flow_kind=FlowKind.NINE_NINE, tenpai_seats=None)
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "九种九牌" in text.plain
 
@@ -856,13 +846,11 @@ class TestFormatEvent:
         from kernel.event_log import CallEvent
         from kernel.hand.melds import Meld, MeldKind
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         tiles = (Tile(Suit.MAN, 1), Tile(Suit.MAN, 2), Tile(Suit.MAN, 3))
         meld = Meld(kind=MeldKind.CHI, tiles=tiles, called_tile=Tile(Suit.MAN, 2), from_seat=2)
         ev = CallEvent(seat=1, sequence=8, meld=meld, call_kind="chi")
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "吃" in text.plain
 
@@ -871,13 +859,11 @@ class TestFormatEvent:
         from kernel.event_log import CallEvent
         from kernel.hand.melds import Meld, MeldKind
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         tiles = (Tile(Suit.PIN, 5), Tile(Suit.PIN, 5), Tile(Suit.PIN, 5))
         meld = Meld(kind=MeldKind.PON, tiles=tiles, called_tile=Tile(Suit.PIN, 5), from_seat=1)
         ev = CallEvent(seat=2, sequence=9, meld=meld, call_kind="pon")
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "碰" in text.plain
 
@@ -886,9 +872,7 @@ class TestFormatEvent:
         from kernel.event_log import CallEvent
         from kernel.hand.melds import Meld, MeldKind
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        formatter = _make_event_formatter()
         tiles = (Tile(Suit.SOU, 7), Tile(Suit.SOU, 7), Tile(Suit.SOU, 7), Tile(Suit.SOU, 7))
         meld = Meld(
             kind=MeldKind.DAIMINKAN,
@@ -897,18 +881,16 @@ class TestFormatEvent:
             from_seat=1,
         )
         ev = CallEvent(seat=0, sequence=12, meld=meld, call_kind="daiminkan")
-        text = viewer._format_event(ev)
+        text = formatter.format_event(ev)
         assert text is not None
         assert "杠" in text.plain
 
 
-class TestRenderHeader:
-    """测试 _render_header 方法。"""
+class TestTableSummary:
+    """测试 LiveMatchViewer.describe_table。"""
 
     def test_header_contains_wind_and_round(self) -> None:
         """场况包含场风和局数。"""
-        from rich.console import Console
-
         from kernel import Action, ActionKind, apply, build_deck, initial_game_state, shuffle_deck
         from ui.terminal.viewer import LiveMatchViewer
 
@@ -918,18 +900,12 @@ class TestRenderHeader:
         outcome = apply(state, Action(ActionKind.BEGIN_ROUND, wall=deck))
         state = outcome.new_state
 
-        table = viewer._render_header(state)
-        # 使用 Console 渲染 Table 为文本
-        console = Console()
-        with console.capture() as capture:
-            console.print(table)
-        text = capture.get()
+        summary = viewer.describe_table(state)
+        text = f"{summary.summary_line}\n{summary.score_line}"
         assert "東" in text or "局" in text or "风" in text
 
     def test_header_contains_scores(self) -> None:
         """场况包含分数。"""
-        from rich.console import Console
-
         from kernel import Action, ActionKind, apply, build_deck, initial_game_state, shuffle_deck
         from ui.terminal.viewer import LiveMatchViewer
 
@@ -939,18 +915,13 @@ class TestRenderHeader:
         outcome = apply(state, Action(ActionKind.BEGIN_ROUND, wall=deck))
         state = outcome.new_state
 
-        table = viewer._render_header(state)
-        console = Console()
-        with console.capture() as capture:
-            console.print(table)
-        text = capture.get()
+        summary = viewer.describe_table(state)
+        text = f"{summary.summary_line}\n{summary.score_line}"
         # 默认分数 25000（紧凑格式带逗号分隔）
         assert "25,000" in text or "25000" in text
 
     def test_header_contains_dora_indicators(self) -> None:
         """场况包含宝牌指示器。"""
-        from rich.console import Console
-
         from kernel import Action, ActionKind, apply, build_deck, initial_game_state, shuffle_deck
         from ui.terminal.viewer import LiveMatchViewer
 
@@ -960,35 +931,28 @@ class TestRenderHeader:
         outcome = apply(state, Action(ActionKind.BEGIN_ROUND, wall=deck))
         state = outcome.new_state
 
-        table = viewer._render_header(state)
-        console = Console()
-        with console.capture() as capture:
-            console.print(table)
-        text = capture.get()
+        summary = viewer.describe_table(state)
+        text = f"{summary.summary_line}\n{summary.score_line}"
         assert "宝牌指示器" in text
 
 
-class TestMeldsToStr:
-    """测试 _melds_to_str 方法。"""
+class TestMeldDisplay:
+    """测试 HandDisplay 副露格式化。"""
 
     def test_empty_melds_returns_none(self) -> None:
         """无副露返回 '无'。"""
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
-        text = viewer._melds_to_str([], 0, 0)
+        display = _make_hand_display()
+        text = display.format_melds([], 0)
         assert text == "无"
 
     def test_melds_with_chi(self) -> None:
         """吃副露。"""
         from kernel.hand.melds import Meld, MeldKind
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        display = _make_hand_display()
         tiles = (Tile(Suit.MAN, 1), Tile(Suit.MAN, 2), Tile(Suit.MAN, 3))
         meld = Meld(kind=MeldKind.CHI, tiles=tiles, called_tile=Tile(Suit.MAN, 2), from_seat=2)
-        text = viewer._melds_to_str([meld], 0, 0)
+        text = display.format_melds([meld], 0)
         assert text  # 验证有内容
         assert "吃" in text
 
@@ -996,12 +960,10 @@ class TestMeldsToStr:
         """碰副露。"""
         from kernel.hand.melds import Meld, MeldKind
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
+        display = _make_hand_display()
         tiles = (Tile(Suit.PIN, 5), Tile(Suit.PIN, 5), Tile(Suit.PIN, 5))
         meld = Meld(kind=MeldKind.PON, tiles=tiles, called_tile=Tile(Suit.PIN, 5), from_seat=1)
-        text = viewer._melds_to_str([meld], 0, 0)
+        text = display.format_melds([meld], 0)
         assert text
         assert "碰" in text
 
@@ -1009,10 +971,7 @@ class TestMeldsToStr:
         """副露来源显示角色名，字牌不泄漏 raw code。"""
         from kernel.hand.melds import Meld, MeldKind
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
-
-        viewer = LiveMatchViewer()
-        viewer.set_player_names({2: "卡维"})
+        display = _make_hand_display({2: "卡维"})
         east = Tile(Suit.HONOR, 1)
         meld = Meld(
             kind=MeldKind.PON,
@@ -1021,7 +980,7 @@ class TestMeldsToStr:
             from_seat=2,
         )
 
-        text = viewer._melds_to_str([meld], 0, 0)
+        text = display.format_melds([meld], 0)
 
         assert text == "碰卡维[東東東]"
         assert "1z" not in text
@@ -1047,35 +1006,35 @@ class TestMeldsToStr:
         assert display.format_melds_compact([meld]) == "碰[東東東]"
 
 
-class TestDoraIndicatorsToRich:
-    """测试 _dora_indicators_to_rich 方法。"""
+class TestDoraIndicators:
+    """测试 TileRenderer.render_dora_indicators。"""
 
     def test_empty_indicators(self) -> None:
         """空指示器列表。"""
-        from ui.terminal.viewer import LiveMatchViewer
+        from ui.terminal.components import TileRenderer
 
-        viewer = LiveMatchViewer()
-        result = viewer._dora_indicators_to_rich(())
+        renderer = TileRenderer()
+        result = renderer.render_dora_indicators(())
         assert len(result) == 0
 
     def test_single_indicator(self) -> None:
         """单个指示器。"""
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
+        from ui.terminal.components import TileRenderer
 
-        viewer = LiveMatchViewer()
+        renderer = TileRenderer()
         tile = Tile(Suit.MAN, 3)
-        result = viewer._dora_indicators_to_rich((tile,))
+        result = renderer.render_dora_indicators((tile,))
         assert len(result) == 1
 
     def test_multiple_indicators(self) -> None:
         """多个指示器。"""
         from kernel.tiles.model import Suit, Tile
-        from ui.terminal.viewer import LiveMatchViewer
+        from ui.terminal.components import TileRenderer
 
-        viewer = LiveMatchViewer()
+        renderer = TileRenderer()
         tiles = (Tile(Suit.MAN, 1), Tile(Suit.PIN, 2), Tile(Suit.SOU, 3))
-        result = viewer._dora_indicators_to_rich(tiles)
+        result = renderer.render_dora_indicators(tiles)
         # 结果包含牌和空格分隔符
         # 格式：牌1, 空格, 牌2, 空格, 牌3 = 5 个元素
         assert len(result) >= 3
@@ -1096,8 +1055,6 @@ class TestLiveMatchViewerIntegration:
         viewer = LiveMatchViewer(delay=0.5, show_reason=True)
         assert viewer.delay == 0.5
         assert viewer.show_reason is True
-        assert viewer._wins == [0, 0, 0, 0]
-        assert viewer._rounds == 0
 
     def test_step_returns_panel(self) -> None:
         """step 方法返回 Panel。"""
@@ -1116,10 +1073,10 @@ class TestLiveMatchViewerIntegration:
     def test_update_stats_counts_wins(self) -> None:
         """统计更新正确计算和了次数。"""
         from kernel.event_log import HandOverEvent
-        from ui.terminal.viewer import LiveMatchViewer
+        from ui.terminal.components import StatsTracker
 
-        viewer = LiveMatchViewer()
-        viewer._update_stats(
+        tracker = StatsTracker()
+        tracker.update_from_events(
             (
                 HandOverEvent(
                     seat=None,
@@ -1129,9 +1086,10 @@ class TestLiveMatchViewerIntegration:
                 ),
             )
         )
+        snapshot = tracker.snapshot()
 
-        assert viewer._wins == [0, 0, 1, 0]
-        assert viewer._rounds == 1
+        assert snapshot.wins == (0, 0, 1, 0)
+        assert snapshot.rounds == 1
 
     def test_prompt_diagnostics_persist_per_seat(self) -> None:
         """上下文诊断按座位持久化，而不是只显示最新一次。"""
@@ -1262,7 +1220,7 @@ class TestLiveMatchCallback:
 
         callback = LiveMatchCallback()
         callback.set_player_names({0: "一姬", 1: "八木唯", 2: "卡维", 3: "藤田佳奈"})
-        assert callback.viewer._seat_names[0] == "一姬"
+        assert callback.viewer.format_action_label("家0 discard") == "一姬 打牌"
 
 
 # =============================================================================

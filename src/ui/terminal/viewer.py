@@ -113,8 +113,6 @@ class LiveMatchViewer:
         )
 
         # 状态追踪
-        self._wins = [0, 0, 0, 0]
-        self._rounds = 0
         self._last_action_str: str = ""
         self._last_reason: str = ""
         self._step = 0
@@ -172,8 +170,6 @@ class LiveMatchViewer:
             return f"摸牌 {localize_tile_codes(body[len('draw '):].strip())}".strip()
         return localize_tile_codes(body)
 
-    # === 公共接口（向后兼容） ===
-
     def step(
         self,
         state: GameState,
@@ -220,10 +216,6 @@ class LiveMatchViewer:
         self._stats_tracker.update_from_events(events)
         self._event_history.extend(events)
 
-        # 同步统计状态（用于外部访问）
-        stats_snapshot = self._stats_tracker.snapshot()
-        self._wins = list(stats_snapshot.wins)
-        self._rounds = stats_snapshot.rounds
         self._table_summary = self.describe_table(state)
 
         terminal_size = shutil.get_terminal_size(fallback=(160, 44))
@@ -355,40 +347,6 @@ class LiveMatchViewer:
         except ReplayError as e:
             self.console.print(f"[red]回放失败: {e}[/]")
 
-    # === 内部方法（保留用于测试兼容） ===
-
-    def _hand_to_rich(self, hand, dora_tiles: set) -> Panel:
-        """手牌渲染（兼容旧测试）。"""
-        return self._renderer.render_hand(hand, dora_tiles)
-
-    def _river_to_str(self, river, seat: int, revealed_indicators: tuple = ()) -> Panel:
-        """牌河渲染（兼容旧测试）。"""
-        dora_tiles = self._renderer.compute_dora_tiles(revealed_indicators)
-        return self._renderer.render_river(river, seat, dora_tiles)
-
-    def _format_event(self, ev) -> Panel | None:
-        """事件格式化（兼容旧测试）。"""
-        return self._event_formatter.format_event(ev)
-
-    def _render_header(self, state: GameState) -> Panel:
-        """场况渲染（兼容旧测试）。"""
-        return self._layout_builder._render_header(state, self._last_actor_seat)
-
-    def _melds_to_str(self, melds, owner_seat: int, dealer_seat: int) -> str:
-        """副露格式化（兼容旧测试）。"""
-        return self._hand_display.format_melds(melds, owner_seat, dealer_seat)
-
-    def _dora_indicators_to_rich(self, indicators: tuple) -> list:
-        """宝牌指示器渲染（兼容旧测试）。"""
-        return self._renderer.render_dora_indicators(indicators)
-
-    def _update_stats(self, events: tuple) -> None:
-        """统计更新（兼容旧测试）。"""
-        self._stats_tracker.update_from_events(events)
-        stats_snapshot = self._stats_tracker.snapshot()
-        self._wins = list(stats_snapshot.wins)
-        self._rounds = stats_snapshot.rounds
-
     def describe_table(self, state: GameState) -> TableSummary:
         """返回牌桌摘要，供 Textual live 状态条复用。"""
         line1, line2 = self._layout_builder.describe_table_lines(state, self._last_actor_seat)
@@ -437,9 +395,7 @@ class LiveMatchCallback:
 
     def set_player_names(self, names: dict[int, str]) -> None:
         """设置各席玩家名字。"""
-        self.viewer._seat_names = names
-        self.viewer._name_resolver.set_seat_names(names)
-        self.viewer._stats_tracker.set_seat_names(names)
+        self.viewer.set_player_names(names)
 
     def on_step(
         self,
@@ -491,7 +447,6 @@ def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3) -> None:
         outcome = apply(state, action)
         state = outcome.new_state
 
-        viewer._update_stats(outcome.events)
         live.update(viewer.step(state, outcome.events, "开局配牌"))
         time.sleep(delay)
 
@@ -543,7 +498,6 @@ def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3) -> None:
             try:
                 outcome = apply(state, action)
                 state = outcome.new_state
-                viewer._update_stats(outcome.events)
                 live.update(viewer.step(state, outcome.events, action_str))
                 time.sleep(delay)
             except Exception as e:

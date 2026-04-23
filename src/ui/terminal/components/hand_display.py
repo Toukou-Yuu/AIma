@@ -40,10 +40,8 @@ class HandDisplay:
         self,
         melds: list,
         owner_seat: int,
-        dealer_seat: int,
     ) -> str:
         """格式化完整副露描述。"""
-        del dealer_seat
         return self._meld_display.format_melds(
             melds,
             owner_seat,
@@ -106,7 +104,6 @@ class HandDisplay:
                 self._render_multiline_block(
                     board,
                     seat,
-                    dealer,
                     label_text,
                     hand_text,
                     riichi_mark,
@@ -130,7 +127,6 @@ class HandDisplay:
         self,
         board,
         seat: int,
-        dealer: int,
         label_text: Text,
         hand_text: Text,
         riichi_mark: str,
@@ -147,7 +143,7 @@ class HandDisplay:
 
         melds = board.melds[seat]
         melds_text = (
-            self.format_melds(melds, seat, dealer)
+            self.format_melds(melds, seat)
             if mode == "full"
             else self.format_melds_compact(melds)
         )

@@ -48,11 +48,11 @@ def test_load_model_summary_reports_probe_status(tmp_path: Path, monkeypatch) ->
     calls: list[object] = []
 
     monkeypatch.setattr(
-        "ui.interactive.data._get_cached_probe_status",
+        "ui.interactive.data.llm_connection.get_cached_probe_status",
         lambda cache_key: ("已连接", "green", "接口可达"),
     )
     monkeypatch.setattr(
-        "ui.interactive.data._schedule_probe_refresh",
+        "ui.interactive.data.llm_connection.schedule_probe_refresh",
         lambda **kwargs: calls.append(kwargs),
     )
 
@@ -93,8 +93,14 @@ def test_load_model_summary_without_cache_returns_pending(tmp_path: Path, monkey
         encoding="utf-8",
     )
 
-    monkeypatch.setattr("ui.interactive.data._get_cached_probe_status", lambda cache_key: None)
-    monkeypatch.setattr("ui.interactive.data._schedule_probe_refresh", lambda **kwargs: None)
+    monkeypatch.setattr(
+        "ui.interactive.data.llm_connection.get_cached_probe_status",
+        lambda cache_key: None,
+    )
+    monkeypatch.setattr(
+        "ui.interactive.data.llm_connection.schedule_probe_refresh",
+        lambda **kwargs: None,
+    )
 
     summary = load_model_summary(config_path)
 
@@ -134,9 +140,12 @@ def test_load_model_summary_probes_profiles_not_seats(tmp_path: Path, monkeypatc
     )
 
     calls: list[dict[str, object]] = []
-    monkeypatch.setattr("ui.interactive.data._get_cached_probe_status", lambda cache_key: None)
     monkeypatch.setattr(
-        "ui.interactive.data._schedule_probe_refresh",
+        "ui.interactive.data.llm_connection.get_cached_probe_status",
+        lambda cache_key: None,
+    )
+    monkeypatch.setattr(
+        "ui.interactive.data.llm_connection.schedule_probe_refresh",
         lambda **kwargs: calls.append(kwargs),
     )
 
@@ -414,10 +423,10 @@ def test_token_summary_panel_renders_aggregate_diagnostics() -> None:
     assert "公共事件x1" in rendered
 
 
-def test_match_setup_summary_shows_seat_model_bindings(monkeypatch) -> None:
+def test_match_setup_summary_shows_seat_model_bindings() -> None:
     """正式对局配置页展示每席角色到 LLM profile 的绑定。"""
     from ui.interactive.data import ModelSummary, SeatModelBinding
-    from ui.interactive.tui_screens import MatchSetupScreen
+    from ui.interactive.view_models import MatchSetupDraft, build_match_setup_rows
 
     model_summary = ModelSummary(
         provider_label="OpenAI 兼容",
@@ -436,12 +445,21 @@ def test_match_setup_summary_shows_seat_model_bindings(monkeypatch) -> None:
             SeatModelBinding(3, "北家", "deepseek", "deepseek-chat", "探测中", "yellow"),
         ),
     )
-    screen = MatchSetupScreen()
-    screen._profile_options = [("一姬", "ichihime")]
-    players = [{"id": "ichihime", "seat": 0}, {"id": "default", "seat": 1}]
-
-    rows = screen._seat_model_rows(players, model_summary)
-    rendered = "\n".join(value.plain for _, value in rows)
+    rows = build_match_setup_rows(
+        MatchSetupDraft(
+            selected_player_ids=("ichihime", "default", "default", "default"),
+            seed="0",
+            max_hands="8",
+            watch=True,
+            delay="0.5",
+        ),
+        player_options=[("一姬", "ichihime")],
+        model_summary=model_summary,
+    )
+    rendered = "\n".join(
+        value.plain if hasattr(value, "plain") else str(value)
+        for _, value in rows
+    )
 
     assert "一姬 -> local · qwen · 已连接" in rendered
     assert "默认 AI (dry-run) -> dry-run" in rendered

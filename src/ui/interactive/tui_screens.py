@@ -20,6 +20,7 @@ from textual.widgets.option_list import Option
 from llm.config import MatchEndCondition
 from ui.interactive.chrome import render_empty_state, render_page_header, render_summary_panel
 from ui.interactive.data import (
+    SEAT_LABELS,
     HomeSnapshot,
     ReplaySummary,
     build_home_snapshot,
@@ -27,6 +28,7 @@ from ui.interactive.data import (
     load_recent_replay_summaries,
     load_replay_summary,
 )
+from ui.interactive.formatting import format_duration, format_replay_speed, format_timestamp
 from ui.interactive.match_session import (
     MatchSession,
     MatchSessionConfig,
@@ -49,9 +51,13 @@ from ui.interactive.utils import (
     create_profile,
     list_profiles,
 )
+from ui.interactive.view_models import (
+    MatchSetupDraft,
+    build_match_setup_rows,
+    player_display_name,
+    selected_players_from_ids,
+)
 from ui.terminal.components.character_card import render_character_card
-
-SEAT_LABELS = ("东家", "南家", "西家", "北家")
 
 _HOME_ACTIONS = (
     ("quick", "demo演示", "无需 API Key，直接观看一场 dry-run 对局"),
@@ -66,27 +72,6 @@ _WATCH_SPEEDS = (0.1, 0.3, 0.5, 1.0)
 def _bool_text(enabled: bool, positive: str, negative: str) -> Text:
     label = positive if enabled else negative
     return Text(label, style="green" if enabled else "yellow")
-
-
-def _format_timestamp(timestamp: float | None) -> str:
-    if timestamp is None:
-        return "未开始"
-    from datetime import datetime
-
-    return datetime.fromtimestamp(timestamp).strftime("%H:%M:%S")
-
-
-def _format_duration(seconds: float | None) -> str:
-    if seconds is None:
-        return "0.0 秒"
-    if seconds < 60:
-        return f"{seconds:.1f} 秒"
-    minutes, remain = divmod(seconds, 60)
-    return f"{int(minutes)} 分 {remain:.1f} 秒"
-
-
-def _format_replay_speed(delay_seconds: float) -> str:
-    return f"{delay_seconds:.1f} 秒 / 步"
 
 
 def _render_recent_replays_panel(replays: tuple[ReplaySummary, ...]) -> Panel:
@@ -193,7 +178,7 @@ def _render_match_runtime_panel(session: MatchSession) -> Panel:
     snapshot = session.snapshot
     rows = [
         ("状态", Text(status_label, style=status_style)),
-        ("开始时间", _format_timestamp(session.started_at)),
+        ("开始时间", format_timestamp(session.started_at)),
         ("最近动作", snapshot.action_label),
         ("最新阶段", snapshot.phase_label),
         ("快照步数", str(snapshot.callback_steps)),
@@ -304,7 +289,7 @@ def _render_match_overview_panel(session: MatchSession, result: MatchSessionResu
             if result.run_result
             else (result.error_message or "unknown"),
         ),
-        ("耗时", _format_duration(result.duration_seconds)),
+        ("耗时", format_duration(result.duration_seconds)),
         ("seed", str(session.config.seed)),
         ("目标局数", str(session.config.target_hands)),
     ]
@@ -332,7 +317,7 @@ def _render_replay_runtime_panel(session: ReplaySession) -> Panel:
     snapshot = session.snapshot
     rows = [
         ("状态", Text(status_label, style=status_style)),
-        ("开始时间", _format_timestamp(session.started_at)),
+        ("开始时间", format_timestamp(session.started_at)),
         ("当前步骤", f"{snapshot.current_step} / {snapshot.total_steps}"),
         ("最近动作", snapshot.action_label),
         ("当前阶段", snapshot.phase_label),
@@ -348,7 +333,7 @@ def _render_replay_summary_panel(summary: ReplaySummary, delay_seconds: float) -
         ("结束原因", summary.reason_label),
         ("终局阶段", summary.final_phase),
         ("动作数", str(summary.action_count)),
-        ("当前速度", _format_replay_speed(delay_seconds)),
+        ("当前速度", format_replay_speed(delay_seconds)),
     ]
     return render_summary_panel("牌谱概览", rows, border_style="bright_blue")
 
@@ -356,9 +341,9 @@ def _render_replay_summary_panel(summary: ReplaySummary, delay_seconds: float) -
 def _render_replay_result_panel(result: ReplaySessionResult, delay_seconds: float) -> Panel:
     rows = [
         ("状态", "正常完成" if result.succeeded else "执行失败"),
-        ("耗时", _format_duration(result.duration_seconds)),
+        ("耗时", format_duration(result.duration_seconds)),
         ("结束状态", result.summary.status_label),
-        ("回放速度", _format_replay_speed(delay_seconds)),
+        ("回放速度", format_replay_speed(delay_seconds)),
     ]
     if result.error_message:
         rows.append(("错误", Text(result.error_message, style="red")))
@@ -376,7 +361,7 @@ def _render_replay_live_status_bar(session: ReplaySession) -> Panel:
         (f"{snapshot.current_step}/{snapshot.total_steps}", "cyan"),
         (" | ", "dim"),
         ("速度 ", "dim"),
-        (_format_replay_speed(session.config.delay_seconds), "yellow"),
+        (format_replay_speed(session.config.delay_seconds), "yellow"),
         (" | ", "dim"),
         (snapshot.table_summary or "等待牌桌快照", "white"),
     )
@@ -729,75 +714,33 @@ class MatchSetupScreen(BaseScreen):
         self._refresh_summary()
         self.query_one("#match-start", Button).focus()
 
-    def _selected_players(self) -> list[dict[str, Any]]:
-        return [
-            {"id": player_id, "seat": seat}
-            for seat, player_id in enumerate(self._selected_player_ids)
-        ]
-
-    def _player_display_name(self, player_id: str) -> str:
-        if player_id == "default":
-            return "默认 AI (dry-run)"
-        for label, value in self._profile_options:
-            if value == player_id:
-                return label
-        return player_id
+    def _current_draft(self) -> MatchSetupDraft:
+        return MatchSetupDraft(
+            selected_player_ids=tuple(self._selected_player_ids),
+            seed=self.query_one("#match-seed", Input).value or "0",
+            max_hands=self.query_one("#match-hands", Input).value or "8",
+            watch=self.query_one("#match-watch", Checkbox).value,
+            delay=self.query_one("#match-delay", Input).value or "0.5",
+        )
 
     def _refresh_player_buttons(self) -> None:
         for seat, player_id in enumerate(self._selected_player_ids):
             button = self.query_one(f"#match-seat-{seat}", Button)
-            button.label = f"{SEAT_LABELS[seat]}: {self._player_display_name(player_id)}"
+            name = player_display_name(player_id, self._profile_options)
+            button.label = f"{SEAT_LABELS[seat]}: {name}"
 
     def _refresh_summary(self) -> None:
         self._refresh_player_buttons()
-        players = self._selected_players()
+        draft = self._current_draft()
         model_summary = load_model_summary(KERNEL_CONFIG_PATH)
-        seed = self.query_one("#match-seed", Input).value or "0"
-        max_hands = self.query_one("#match-hands", Input).value or "8"
-        watch = self.query_one("#match-watch", Checkbox).value
-        delay = self.query_one("#match-delay", Input).value or "0.5"
-        rows = [
-            ("随机种子", "随机" if seed == "0" else seed),
-            ("目标局数", max_hands),
-            ("观战模式", "实时观战" if watch else "后台运行"),
-        ]
-        if watch:
-            rows.append(("观战延迟", f"{delay} 秒"))
-        rows.extend(self._seat_model_rows(players, model_summary))
+        rows = build_match_setup_rows(
+            draft,
+            player_options=self._profile_options,
+            model_summary=model_summary,
+        )
         self.query_one("#match-summary", Static).update(
             _render_form_summary("当前对局计划", rows, border_style="bright_yellow")
         )
-
-    def _seat_model_rows(
-        self,
-        players: list[dict[str, Any]],
-        model_summary,
-    ) -> list[tuple[str, Text]]:
-        bindings = {binding.seat: binding for binding in model_summary.seat_bindings}
-        rows: list[tuple[str, Text]] = []
-        for player in players:
-            seat = int(player["seat"])
-            player_name = self._player_display_name(str(player["id"]))
-            if player["id"] == "default":
-                rows.append((SEAT_LABELS[seat], Text(f"{player_name} -> dry-run", style="dim")))
-                continue
-            binding = bindings.get(seat)
-            if binding is None:
-                rows.append((SEAT_LABELS[seat], Text(f"{player_name} -> 未绑定 LLM", style="red")))
-                continue
-            rows.append(
-                (
-                    SEAT_LABELS[seat],
-                    Text(
-                        (
-                            f"{player_name} -> {binding.profile_name} · "
-                            f"{binding.model} · {binding.connection_label}"
-                        ),
-                        style=binding.connection_style,
-                    ),
-                )
-            )
-        return rows
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id in {"match-seed", "match-hands", "match-delay"}:
@@ -835,7 +778,7 @@ class MatchSetupScreen(BaseScreen):
             return
 
         watch = self.query_one("#match-watch", Checkbox).value
-        players = self._selected_players()
+        players = selected_players_from_ids(self._selected_player_ids)
         uses_llm = any(player["id"] != "default" for player in players)
         model_summary = load_model_summary(KERNEL_CONFIG_PATH)
         if uses_llm and not model_summary.configured:
@@ -987,7 +930,7 @@ class MatchControlScreen(BaseScreen):
                     [
                         ("最近动作", snapshot.action_label),
                         ("最新阶段", snapshot.phase_label),
-                        ("开始时间", _format_timestamp(self.session.started_at)),
+                        ("开始时间", format_timestamp(self.session.started_at)),
                     ],
                     border_style="bright_magenta",
                 )

@@ -175,15 +175,6 @@ class LayoutBuilder:
 
         return line1, Text.assemble(*score_parts)
 
-    def _render_header(
-        self,
-        state: GameState,
-        active_seat: int | None = None,
-    ) -> Group:
-        """兼容旧测试：返回场况摘要。"""
-        line1, line2 = self.describe_table_lines(state, active_seat)
-        return Group(line1, line2)
-
     def _select_profile(self, viewport_width: int, viewport_height: int) -> LiveLayoutProfile:
         """根据终端尺寸选择布局档位。"""
         if viewport_height < 28 or viewport_width < 118:
