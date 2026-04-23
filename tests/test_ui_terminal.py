@@ -280,8 +280,8 @@ class TestHandDisplayLabels:
         group = display.render_player_tree(state, mode="compact")
 
         rendered = "\n".join(segment.plain for segment in group.renderables)
-        assert "一姬[东]：" in rendered
-        assert "├── 一姬[东]：" in rendered
+        assert "一姬[东] 25,000 · 和0(0%)：" in rendered
+        assert "├── 一姬[东] 25,000 · 和0(0%)：" in rendered
         assert "│   ├── 副露:" in rendered
         assert "│   └── 牌河:" in rendered
         assert "牌河: 无" in rendered
@@ -309,6 +309,8 @@ class TestHandDisplayLabels:
         rendered = "\n".join(segment.plain for segment in group.renderables)
         assert "理由: 东家旧理由" in rendered
         assert "理由: 南家新理由" in rendered
+        assert "│   ├── 牌河:" in rendered
+        assert "│   └── 理由: 东家旧理由" in rendered
 
 
 class TestCharacterCardLayout:
@@ -364,7 +366,7 @@ class TestLayoutBuilderResponsive:
         assert panel.title is None
         assert panel.renderable is not None
 
-    def test_sidebar_status_panel_uses_multiline_scores(self) -> None:
+    def test_sidebar_status_panel_keeps_only_table_status(self) -> None:
         from kernel import Action, ActionKind, apply, build_deck, initial_game_state, shuffle_deck
         from ui.terminal.components.event_formatter import EventFormatter
         from ui.terminal.components.hand_display import HandDisplay
@@ -397,8 +399,8 @@ class TestLayoutBuilderResponsive:
         )
         rendered = "\n".join(line.plain for line in lines)
 
-        assert "一姬 25,000" in rendered
-        assert "二阶堂 25,000" in rendered
+        assert "一姬 25,000" not in rendered
+        assert "二阶堂 25,000" not in rendered
         assert "宝牌" in rendered
 
 
@@ -1099,11 +1101,121 @@ class TestLiveMatchViewerIntegration:
 
     def test_step_returns_panel(self) -> None:
         """step 方法返回 Panel。"""
-        pass
+        from rich.panel import Panel
+
+        from kernel import Action, ActionKind, apply, build_deck, initial_game_state, shuffle_deck
+        from ui.terminal.viewer import LiveMatchViewer
+
+        state = initial_game_state()
+        deck = tuple(shuffle_deck(build_deck(), seed=42))
+        state = apply(state, Action(ActionKind.BEGIN_ROUND, wall=deck)).new_state
+        viewer = LiveMatchViewer()
+
+        assert isinstance(viewer.step(state, (), "家0 discard"), Panel)
 
     def test_update_stats_counts_wins(self) -> None:
         """统计更新正确计算和了次数。"""
-        pass
+        from kernel.event_log import HandOverEvent
+        from ui.terminal.viewer import LiveMatchViewer
+
+        viewer = LiveMatchViewer()
+        viewer._update_stats(
+            (
+                HandOverEvent(
+                    seat=None,
+                    sequence=1,
+                    winners=(2,),
+                    payments=(0, 0, 0, 0),
+                ),
+            )
+        )
+
+        assert viewer._wins == [0, 0, 1, 0]
+        assert viewer._rounds == 1
+
+    def test_prompt_diagnostics_persist_per_seat(self) -> None:
+        """上下文诊断按座位持久化，而不是只显示最新一次。"""
+        from rich.console import Console
+
+        from kernel import Action, ActionKind, apply, build_deck, initial_game_state, shuffle_deck
+        from llm.agent.token_budget import PromptDiagnostics
+        from ui.terminal.viewer import LiveMatchViewer
+
+        state = initial_game_state()
+        deck = tuple(shuffle_deck(build_deck(), seed=42))
+        state = apply(state, Action(ActionKind.BEGIN_ROUND, wall=deck)).new_state
+        diagnostics = PromptDiagnostics(
+            estimated_tokens=4800,
+            prompt_budget_tokens=6656,
+            context_budget_tokens=8192,
+            reserved_output_tokens=1024,
+            safety_margin_tokens=512,
+            selected_blocks=(),
+            trimmed_blocks=(),
+            max_compression_state="collapse",
+            over_budget=False,
+        )
+        viewer = LiveMatchViewer()
+        viewer.set_player_names({0: "一姬", 1: "二阶堂"})
+        viewer.step(state, (), "家0 discard", "理由", prompt_diagnostics=diagnostics)
+        panel = viewer.step(state, (), "家1 discard", "")
+        console = Console(width=220, color_system=None)
+
+        with console.capture() as capture:
+            console.print(panel)
+
+        rendered = capture.get()
+        assert "一姬[东]" in rendered
+        assert "上下文: 4.8k/6.7k" in rendered
+        assert "collapse · 正常" in rendered
+
+    def test_event_history_persists_multiple_steps(self) -> None:
+        """事件面板显示历史事件，而不是只显示当前 step 事件。"""
+        from rich.console import Console
+
+        from kernel import Action, ActionKind, apply, build_deck, initial_game_state, shuffle_deck
+        from kernel.event_log import DiscardTileEvent, DrawTileEvent
+        from kernel.tiles.model import Suit, Tile
+        from ui.terminal.viewer import LiveMatchViewer
+
+        state = initial_game_state()
+        deck = tuple(shuffle_deck(build_deck(), seed=42))
+        state = apply(state, Action(ActionKind.BEGIN_ROUND, wall=deck)).new_state
+        viewer = LiveMatchViewer()
+        viewer.step(
+            state,
+            (
+                DrawTileEvent(
+                    seat=0,
+                    sequence=1,
+                    tile=Tile(Suit.MAN, 1),
+                    is_rinshan=False,
+                    wall_remaining=69,
+                ),
+            ),
+            "家0 draw",
+        )
+        panel = viewer.step(
+            state,
+            (
+                DiscardTileEvent(
+                    seat=1,
+                    sequence=2,
+                    tile=Tile(Suit.HONOR, 1),
+                    is_tsumogiri=False,
+                    declare_riichi=False,
+                ),
+            ),
+            "家1 discard",
+        )
+        console = Console(width=220, color_system=None)
+
+        with console.capture() as capture:
+            console.print(panel)
+
+        rendered = capture.get()
+        assert "从本墙摸" in rendered
+        assert "打 東" in rendered
 
 
 class TestLiveMatchViewerActionLabels:

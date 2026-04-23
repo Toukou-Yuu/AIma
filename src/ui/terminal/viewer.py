@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 import shutil
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -122,7 +123,9 @@ class LiveMatchViewer:
         self._seat_decision_times: dict[int, float] = {}
         self._seat_names: dict[int, str] = {}
         self._table_summary = TableSummary("", "")
-        self._prompt_diagnostics: PromptDiagnostics | None = None
+        self._seat_prompt_diagnostics: dict[int, PromptDiagnostics] = {}
+        self._active_context_seat: int | None = None
+        self._event_history: deque = deque(maxlen=64)
 
     def set_player_names(self, names: dict[int, str]) -> None:
         """设置各席玩家名字（同步到所有组件）。
@@ -196,13 +199,17 @@ class LiveMatchViewer:
         self._step += 1
         self._last_action_str = self.format_action_label(action_str)
         self._last_reason = reason
-        self._prompt_diagnostics = prompt_diagnostics
+        self._active_context_seat = None
 
         # 解析 action_str 获取行动者座位
         self._last_actor_seat = None
         seat_match = re.match(r"^家([0-3])\s+", action_str)
         if seat_match:
             self._last_actor_seat = int(seat_match.group(1))
+
+        if self._last_actor_seat is not None and prompt_diagnostics is not None:
+            self._seat_prompt_diagnostics[self._last_actor_seat] = prompt_diagnostics
+            self._active_context_seat = self._last_actor_seat
 
         # 更新决策理由和时间
         if self._last_actor_seat is not None and reason:
@@ -211,10 +218,12 @@ class LiveMatchViewer:
 
         # 使用组件更新统计
         self._stats_tracker.update_from_events(events)
+        self._event_history.extend(events)
 
         # 同步统计状态（用于外部访问）
-        self._wins = list(self._stats_tracker._wins)
-        self._rounds = self._stats_tracker._rounds
+        stats_snapshot = self._stats_tracker.snapshot()
+        self._wins = list(stats_snapshot.wins)
+        self._rounds = stats_snapshot.rounds
         self._table_summary = self.describe_table(state)
 
         terminal_size = shutil.get_terminal_size(fallback=(160, 44))
@@ -232,7 +241,9 @@ class LiveMatchViewer:
             self.show_reason,
             viewport_width=viewport_width,
             viewport_height=viewport_height,
-            prompt_diagnostics=self._prompt_diagnostics,
+            seat_prompt_diagnostics=self._seat_prompt_diagnostics,
+            active_context_seat=self._active_context_seat,
+            event_history=tuple(self._event_history),
         )
 
     def run_from_replay(
@@ -319,7 +330,6 @@ class LiveMatchViewer:
                     try:
                         outcome = apply(state, action)
                         state = outcome.new_state
-                        self._stats_tracker.update_from_events(outcome.events)
 
                         action_str = f"Step {i+1}: {action.kind.value}"
                         reason = reasons[i] if i < len(reasons) else None
@@ -375,8 +385,9 @@ class LiveMatchViewer:
     def _update_stats(self, events: tuple) -> None:
         """统计更新（兼容旧测试）。"""
         self._stats_tracker.update_from_events(events)
-        self._wins = list(self._stats_tracker._wins)
-        self._rounds = self._stats_tracker._rounds
+        stats_snapshot = self._stats_tracker.snapshot()
+        self._wins = list(stats_snapshot.wins)
+        self._rounds = stats_snapshot.rounds
 
     def describe_table(self, state: GameState) -> TableSummary:
         """返回牌桌摘要，供 Textual live 状态条复用。"""

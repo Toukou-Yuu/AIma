@@ -18,6 +18,7 @@ from ui.terminal.components.tiles import tile_to_rich
 if TYPE_CHECKING:
     from kernel.engine.state import GameState
     from ui.terminal.components.name_resolver import NameResolver
+    from ui.terminal.components.stats_tracker import StatsSnapshot
 
 
 RenderMode = Literal["full", "normal", "compact"]
@@ -66,6 +67,8 @@ class HandDisplay:
         seat_decision_times: dict[int, float] | None = None,
         show_reason: bool = True,
         mode: RenderMode = "full",
+        seat_contexts: dict[int, Text] | None = None,
+        stats_snapshot: "StatsSnapshot | None" = None,
     ) -> Group:
         """按档位渲染四家手牌。"""
         del seat_decision_times
@@ -78,7 +81,13 @@ class HandDisplay:
         dealer = table.dealer_seat
         dora_tiles = self._renderer.compute_dora_tiles(board.revealed_indicators)
         hand_labels = {
-            seat: self._name_resolver.format_hand_label(seat, dealer) for seat in range(4)
+            seat: self._format_hand_label(
+                seat,
+                dealer,
+                table.scores[seat],
+                stats_snapshot,
+            )
+            for seat in range(4)
         }
         label_width = self._compute_label_width(hand_labels.values())
 
@@ -103,18 +112,12 @@ class HandDisplay:
                     riichi_mark,
                     dora_tiles,
                     mode,
+                    is_active=is_active,
+                    reason=seat_reasons.get(seat) if seat_reasons else None,
+                    show_reason=show_reason,
+                    context_text=seat_contexts.get(seat) if seat_contexts else None,
                 )
             )
-            if show_reason and mode == "full":
-                seat_reason = seat_reasons.get(seat) if seat_reasons else None
-                if seat_reason:
-                    lines.append(
-                        self._render_reason_line(
-                            seat_reason,
-                            is_last=seat == 3,
-                            is_active=is_active,
-                        )
-                    )
 
             if seat != 3:
                 lines.append(Text("│", style="bright_black"))
@@ -133,6 +136,10 @@ class HandDisplay:
         riichi_mark: str,
         dora_tiles: set,
         mode: RenderMode,
+        is_active: bool,
+        reason: str | None,
+        show_reason: bool,
+        context_text: Text | None,
     ) -> list[Text]:
         is_last = seat == 3
         branch_prefix = "└── " if is_last else "├── "
@@ -147,7 +154,7 @@ class HandDisplay:
         river_limit = 10 if mode == "full" else 6 if mode == "normal" else 4
         river_text = self._render_river_tail(board.river, seat, dora_tiles, limit=river_limit)
 
-        lines = [
+        lines: list[Text] = [
             Text.assemble(
                 (branch_prefix, "bright_black"),
                 label_text,
@@ -157,23 +164,47 @@ class HandDisplay:
             )
         ]
 
-        meld_line = Text.assemble(
-            (f"{child_prefix}├── ", "bright_black"),
-            ("副露: ", "dim"),
-            (melds_text if melds_text else "无", "bright_magenta" if melds else "dim"),
-        )
-        river_line = Text.assemble(
-            (f"{child_prefix}└── ", "bright_black"),
-            ("牌河: ", "dim"),
-        )
-        if river_text.plain:
-            river_line.append(river_text)
-        else:
-            river_line.append(Text("无", style="dim"))
+        children: list[tuple[str, Text]] = [
+            (
+                "副露: ",
+                Text(
+                    melds_text if melds_text else "无",
+                    style="bright_magenta" if melds else "dim",
+                ),
+            ),
+            ("牌河: ", river_text if river_text.plain else Text("无", style="dim")),
+        ]
+        if show_reason and mode == "full" and reason:
+            reason_style = "italic bright_cyan" if is_active else "italic cyan"
+            children.append(("理由: ", Text(self._clip_reason(reason), style=reason_style)))
+        if context_text is not None:
+            children.append(("上下文: ", context_text))
 
-        lines.append(meld_line)
-        lines.append(river_line)
+        for idx, (label, content) in enumerate(children):
+            lines.append(
+                self._render_child_line(
+                    child_prefix,
+                    is_last_child=idx == len(children) - 1,
+                    label=label,
+                    content=content,
+                )
+            )
         return lines
+
+    def _render_child_line(
+        self,
+        child_prefix: str,
+        *,
+        is_last_child: bool,
+        label: str,
+        content: Text,
+    ) -> Text:
+        branch = "└── " if is_last_child else "├── "
+        return Text.assemble(
+            (f"{child_prefix}{branch}", "bright_black"),
+            (label, "dim cyan" if label == "理由: " else "dim"),
+            content,
+        )
 
     def _render_hand_text(self, board, seat: int, dora_tiles: set) -> Text:
         hand = board.hands[seat]
@@ -217,12 +248,17 @@ class HandDisplay:
         style = "bold bright_cyan" if is_active else "bright_white"
         return Text(padded, style=style)
 
-    def _render_reason_line(self, reason: str, *, is_last: bool, is_active: bool) -> Text:
-        clipped = reason if len(reason) <= 72 else f"{reason[:69]}..."
-        prefix = "    └── " if is_last else "│   └── "
-        reason_style = "italic bright_cyan" if is_active else "italic cyan"
-        return Text.assemble(
-            (prefix, "bright_black"),
-            ("理由: ", "dim cyan"),
-            (clipped, reason_style),
-        )
+    def _format_hand_label(
+        self,
+        seat: int,
+        dealer: int,
+        score: int,
+        stats_snapshot: "StatsSnapshot | None",
+    ) -> str:
+        base_label = self._name_resolver.format_hand_label(seat, dealer).rstrip("：")
+        wins = stats_snapshot.win_count(seat) if stats_snapshot is not None else 0
+        win_rate = stats_snapshot.win_rate(seat) if stats_snapshot is not None else 0.0
+        return f"{base_label} {score:,} · 和{wins}({round(win_rate * 100):d}%)："
+
+    def _clip_reason(self, reason: str) -> str:
+        return reason if len(reason) <= 72 else f"{reason[:69]}..."

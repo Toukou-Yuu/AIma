@@ -42,6 +42,9 @@ idea.md
 .codex/
 ref_repository/
 
+# 架构分析备忘（临时探查产物）
+probe/
+
 # UI：demo 生成的预览图
 src/ui/output.png
 

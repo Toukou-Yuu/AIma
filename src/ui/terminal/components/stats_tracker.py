@@ -2,10 +2,28 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from rich.console import Group
 from rich.text import Text
 
 _WIND_NAMES = ["东", "南", "西", "北"]
+
+
+@dataclass(frozen=True, slots=True)
+class StatsSnapshot:
+    """当前 live 对局的和了统计快照。"""
+
+    wins: tuple[int, int, int, int]
+    rounds: int
+
+    def win_count(self, seat: int) -> int:
+        return self.wins[seat]
+
+    def win_rate(self, seat: int) -> float:
+        if self.rounds == 0:
+            return 0.0
+        return self.wins[seat] / self.rounds
 
 
 class StatsTracker:
@@ -69,6 +87,18 @@ class StatsTracker:
             )
             lines.append(line)
         return Group(*lines)
+
+    def snapshot(self) -> StatsSnapshot:
+        """返回只读统计快照，避免外部访问私有字段。"""
+        return StatsSnapshot(
+            wins=(
+                self._wins[0],
+                self._wins[1],
+                self._wins[2],
+                self._wins[3],
+            ),
+            rounds=self._rounds,
+        )
 
     def get_win_count(self, seat: int) -> int:
         return self._wins[seat]

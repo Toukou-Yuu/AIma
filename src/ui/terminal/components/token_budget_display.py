@@ -57,6 +57,27 @@ class TokenBudgetDisplay:
             ),
         )
 
+    def render_inline(
+        self,
+        diagnostics: PromptDiagnostics | None,
+        *,
+        active: bool = False,
+    ) -> Text:
+        """Render one-line token pressure for per-seat hand trees."""
+        if diagnostics is None:
+            return Text("暂无 LLM 请求", style="dim")
+
+        style = "bold bright_magenta" if active else self._usage_style(diagnostics.usage_ratio)
+        return Text.assemble(
+            (self._format_usage(diagnostics).replace(" / ", "/"), style),
+            (" · ", "dim"),
+            (self._format_percent(diagnostics.usage_ratio), style),
+            (" · ", "dim"),
+            (diagnostics.max_compression_state, "bright_white" if active else "white"),
+            (" · ", "dim"),
+            (self._status_text(diagnostics), style),
+        )
+
     def _format_usage(self, diagnostics: PromptDiagnostics) -> str:
         return (
             f"{self._format_token_count(diagnostics.estimated_tokens)} / "

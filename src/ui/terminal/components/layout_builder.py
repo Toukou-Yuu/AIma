@@ -65,10 +65,17 @@ class LayoutBuilder:
         show_reason: bool = True,
         viewport_width: int = 140,
         viewport_height: int = 40,
-        prompt_diagnostics: "PromptDiagnostics | None" = None,
+        seat_prompt_diagnostics: dict[int, "PromptDiagnostics"] | None = None,
+        active_context_seat: int | None = None,
+        event_history: tuple | None = None,
     ) -> Panel:
         """构建 live 牌桌主视图。"""
         profile = self._select_profile(viewport_width, viewport_height)
+        seat_contexts = self._build_seat_context_lines(
+            seat_prompt_diagnostics or {},
+            active_context_seat=active_context_seat,
+            profile=profile,
+        )
 
         hand_panel = Panel(
             self._hand_display.render_player_tree(
@@ -79,6 +86,8 @@ class LayoutBuilder:
                 seat_decision_times,
                 show_reason,
                 mode=profile.mode,
+                seat_contexts=seat_contexts,
+                stats_snapshot=self._stats_tracker.snapshot(),
             ),
             title="[bold green]手牌[/]",
             border_style="green",
@@ -87,9 +96,7 @@ class LayoutBuilder:
 
         sidebar = Group(
             self._render_table_status_panel(state, last_actor_seat, profile),
-            self._render_context_panel(prompt_diagnostics, profile),
-            self._render_stats_panel(state, profile),
-            self._render_events_panel(events, profile),
+            self._render_events_panel(event_history or events, profile),
         )
 
         grid = Table.grid(expand=True, padding=(0, 1))
@@ -182,20 +189,20 @@ class LayoutBuilder:
         if viewport_height < 28 or viewport_width < 118:
             return LiveLayoutProfile(
                 mode="compact",
-                sidebar_event_count=3,
+                sidebar_event_count=5,
                 sidebar_min_width=28,
                 show_score_line=True,
             )
         if viewport_height < 36 or viewport_width < 152:
             return LiveLayoutProfile(
                 mode="normal",
-                sidebar_event_count=3,
+                sidebar_event_count=8,
                 sidebar_min_width=30,
                 show_score_line=True,
             )
         return LiveLayoutProfile(
             mode="full",
-            sidebar_event_count=4,
+            sidebar_event_count=12,
             sidebar_min_width=32,
             show_score_line=True,
         )
@@ -214,32 +221,24 @@ class LayoutBuilder:
             padding=(0, 1),
         )
 
-    def _render_stats_panel(self, state: GameState, profile: LiveLayoutProfile) -> Panel:
-        dealer_seat = state.table.dealer_seat
-        return Panel(
-            self._stats_tracker.render_sidebar(
-                dealer_seat=dealer_seat,
-                compact=(profile.mode == "compact"),
-            ),
-            title="[bold bright_blue]和了[/]",
-            border_style="bright_blue",
-            padding=(0, 1),
-        )
-
-    def _render_context_panel(
+    def _build_seat_context_lines(
         self,
-        diagnostics: "PromptDiagnostics | None",
+        diagnostics_by_seat: dict[int, "PromptDiagnostics"],
+        *,
+        active_context_seat: int | None,
         profile: LiveLayoutProfile,
-    ) -> Panel:
-        return Panel(
-            self._token_budget_display.render_sidebar(
+    ) -> dict[int, Text]:
+        include_empty = profile.mode != "compact"
+        lines: dict[int, Text] = {}
+        for seat in range(4):
+            diagnostics = diagnostics_by_seat.get(seat)
+            if diagnostics is None and not include_empty:
+                continue
+            lines[seat] = self._token_budget_display.render_inline(
                 diagnostics,
-                compact=(profile.mode == "compact"),
-            ),
-            title="[bold bright_magenta]上下文[/]",
-            border_style="bright_magenta",
-            padding=(0, 1),
-        )
+                active=diagnostics is not None and seat == active_context_seat,
+            )
+        return lines
 
     def _render_events_panel(self, events: tuple, profile: LiveLayoutProfile) -> Panel:
         return Panel(
@@ -297,18 +296,6 @@ class LayoutBuilder:
                     Text.assemble(
                         ("宝牌指示器 ", "dim"),
                         (dora_codes, "bright_white"),
-                    )
-                )
-
-        if profile.show_score_line:
-            for seat, score in enumerate(table.scores):
-                name = self._name_resolver.get_name(seat, f"S{seat}")
-                style = "bright_cyan" if seat == active_seat else "white"
-                lines.append(
-                    Text.assemble(
-                        (name, style),
-                        (" ", "dim"),
-                        (f"{score:,}", "bold bright_yellow" if seat == active_seat else "yellow"),
                     )
                 )
 
