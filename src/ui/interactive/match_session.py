@@ -336,17 +336,11 @@ class MatchSession:
         reason: str | None = "",
         prompt_diagnostics: PromptDiagnostics | None = None,
     ) -> None:
-        decision_time = 0.0
-        snapshot = self.snapshot
-        if snapshot.updated_at is not None:
-            decision_time = max(0.0, time.time() - snapshot.updated_at)
-
         panel = self._viewer.step(
             state,
             events,
             action_str,
             reason or "",
-            decision_time,
             prompt_diagnostics,
         )
         display_action = self._viewer.format_action_label(action_str or "等待动作")

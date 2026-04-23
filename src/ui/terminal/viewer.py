@@ -118,7 +118,6 @@ class LiveMatchViewer:
         self._step = 0
         self._last_actor_seat: int | None = None
         self._seat_reasons: dict[int, str] = {}
-        self._seat_decision_times: dict[int, float] = {}
         self._seat_names: dict[int, str] = {}
         self._table_summary = TableSummary("", "")
         self._seat_prompt_diagnostics: dict[int, PromptDiagnostics] = {}
@@ -176,7 +175,6 @@ class LiveMatchViewer:
         events: tuple,
         action_str: str = "",
         reason: str = "",
-        decision_time: float = 0.0,
         prompt_diagnostics: "PromptDiagnostics | None" = None,
     ) -> Panel:
         """单步渲染（供外部调用）。
@@ -186,7 +184,6 @@ class LiveMatchViewer:
             events: 事件元组
             action_str: 动作描述
             reason: 决策理由
-            decision_time: 决策时间
             prompt_diagnostics: 当前模型上下文 token 诊断
 
         Returns:
@@ -210,7 +207,6 @@ class LiveMatchViewer:
         # 更新决策理由和时间
         if self._last_actor_seat is not None and reason:
             self._seat_reasons[self._last_actor_seat] = reason
-            self._seat_decision_times[self._last_actor_seat] = decision_time
 
         # 使用组件更新统计
         self._stats_tracker.update_from_events(events)
@@ -229,7 +225,6 @@ class LiveMatchViewer:
             self._last_action_str,
             self._last_actor_seat,
             self._seat_reasons,
-            self._seat_decision_times,
             self.show_reason,
             viewport_width=viewport_width,
             viewport_height=viewport_height,
@@ -406,9 +401,7 @@ class LiveMatchCallback:
         prompt_diagnostics: "PromptDiagnostics | None" = None,
     ) -> None:
         """每步调用。"""
-        decision_time = 0.0
         if self._decision_start_time is not None:
-            decision_time = time.time() - self._decision_start_time
             self._decision_start_time = time.time()
 
         panel = self.viewer.step(
@@ -416,7 +409,6 @@ class LiveMatchCallback:
             events,
             action_str,
             reason,
-            decision_time,
             prompt_diagnostics,
         )
         if self.live:

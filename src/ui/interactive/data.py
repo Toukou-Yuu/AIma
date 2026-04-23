@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from llm.config import load_kernel_config
-from ui.interactive.utils import KERNEL_CONFIG_PATH, PLAYERS_DIR, load_profile_data
+from ui.interactive.utils import KERNEL_CONFIG_PATH, load_profile_data
 from ui.services import llm_connection
 
 SEAT_LABELS = ("东家", "南家", "西家", "北家")
@@ -399,10 +399,8 @@ def load_model_summary(config_path: Path = KERNEL_CONFIG_PATH) -> ModelSummary:
 
 def load_roster_entries(
     config_path: Path = KERNEL_CONFIG_PATH,
-    players_dir: Path = PLAYERS_DIR,
 ) -> tuple[RosterEntry, ...]:
     """读取默认阵容摘要。"""
-    del players_dir  # 预留给将来多路径扩展
     cfg = _safe_load_yaml(config_path)
     raw_players = cfg.get("players", [])
     players_by_seat: dict[int, str] = {}
@@ -543,13 +541,12 @@ def load_recent_replay_summaries(
 def build_home_snapshot(
     *,
     config_path: Path = KERNEL_CONFIG_PATH,
-    players_dir: Path = PLAYERS_DIR,
     replay_dir: Path = Path("logs/replay"),
     replay_limit: int = 3,
 ) -> HomeSnapshot:
     """组装主菜单首页所需数据。"""
     return HomeSnapshot(
         model=load_model_summary(config_path),
-        roster=load_roster_entries(config_path, players_dir),
+        roster=load_roster_entries(config_path),
         recent_replays=load_recent_replay_summaries(replay_dir, limit=replay_limit),
     )

@@ -86,7 +86,7 @@ class Page(ABC):
         ...
 
     def _on_interrupt(self) -> NavigationAction | None:
-        """处理中断（保留供少量兼容场景使用）。"""
+        """处理页面中断请求。"""
         if self.allow_back:
             console.print("\n[dim]已返回上一层[/dim]")
             return BACK

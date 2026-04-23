@@ -62,15 +62,12 @@ class HandDisplay:
         last_actor_seat: int | None = None,
         last_action_str: str = "",
         seat_reasons: dict[int, str] | None = None,
-        seat_decision_times: dict[int, float] | None = None,
         show_reason: bool = True,
         mode: RenderMode = "full",
         seat_contexts: dict[int, Text] | None = None,
         stats_snapshot: "StatsSnapshot | None" = None,
     ) -> Group:
         """按档位渲染四家手牌。"""
-        del seat_decision_times
-
         board = state.board
         table = state.table
         if not board:

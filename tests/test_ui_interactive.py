@@ -468,7 +468,7 @@ def test_match_setup_summary_shows_seat_model_bindings() -> None:
 def test_home_model_binding_summary_uses_absolute_seat_codes() -> None:
     """主菜单 LLM 绑定摘要使用 S0-S3，避免误解为风位绑定。"""
     from ui.interactive.data import ModelSummary, SeatModelBinding
-    from ui.interactive.tui_screens import _format_model_binding_summary
+    from ui.interactive.screens.home import _format_model_binding_summary
 
     model_summary = ModelSummary(
         provider_label="OpenAI 兼容",

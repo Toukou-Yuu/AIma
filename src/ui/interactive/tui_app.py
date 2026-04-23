@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from textual.app import App
 
-from ui.interactive.tui_screens import HomeScreen, QuickStartScreen
+from ui.interactive.screens import HomeScreen, QuickStartScreen
 
 
 class AImaTextualApp(App[None]):
