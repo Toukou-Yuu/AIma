@@ -68,7 +68,7 @@ def test_run_llm_match_uses_seat_scoped_clients() -> None:
     runtime = load_test_runtime_config()
     clients = {seat: _RecordingClient() for seat in range(4)}
 
-    run_llm_match(
+    result = run_llm_match(
         seed=7,
         match_end=match_end,
         dry_run=False,
@@ -86,6 +86,10 @@ def test_run_llm_match_uses_seat_scoped_clients() -> None:
     )
 
     assert any(client.calls > 0 for client in clients.values())
+    assert any(item is not None for item in result.token_diagnostics)
+    doc = result.as_match_log()
+    assert "token_diagnostics" in doc
+    assert len(doc["token_diagnostics"]) == len(result.actions_wire)
 
 
 def test_run_llm_match_requires_current_seat_client() -> None:

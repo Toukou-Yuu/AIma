@@ -39,6 +39,7 @@ from ui.terminal.components.tiles import localize_tile_codes
 
 if TYPE_CHECKING:
     from kernel.engine.state import GameState
+    from llm.agent.token_budget import PromptDiagnostics
     from llm.runner import RunResult
 
 
@@ -121,6 +122,7 @@ class LiveMatchViewer:
         self._seat_decision_times: dict[int, float] = {}
         self._seat_names: dict[int, str] = {}
         self._table_summary = TableSummary("", "")
+        self._prompt_diagnostics: PromptDiagnostics | None = None
 
     def set_player_names(self, names: dict[int, str]) -> None:
         """设置各席玩家名字（同步到所有组件）。
@@ -176,6 +178,7 @@ class LiveMatchViewer:
         action_str: str = "",
         reason: str = "",
         decision_time: float = 0.0,
+        prompt_diagnostics: "PromptDiagnostics | None" = None,
     ) -> Panel:
         """单步渲染（供外部调用）。
 
@@ -185,6 +188,7 @@ class LiveMatchViewer:
             action_str: 动作描述
             reason: 决策理由
             decision_time: 决策时间
+            prompt_diagnostics: 当前模型上下文 token 诊断
 
         Returns:
             Panel 对象（可用于 Live 更新）
@@ -192,6 +196,7 @@ class LiveMatchViewer:
         self._step += 1
         self._last_action_str = self.format_action_label(action_str)
         self._last_reason = reason
+        self._prompt_diagnostics = prompt_diagnostics
 
         # 解析 action_str 获取行动者座位
         self._last_actor_seat = None
@@ -227,6 +232,7 @@ class LiveMatchViewer:
             self.show_reason,
             viewport_width=viewport_width,
             viewport_height=viewport_height,
+            prompt_diagnostics=self._prompt_diagnostics,
         )
 
     def run_from_replay(
@@ -236,6 +242,7 @@ class LiveMatchViewer:
         events_list: list,
         action_strs: list,
         reasons: list | None = None,
+        token_diagnostics: list | None = None,
     ) -> None:
         """从回放数据运行动态观战。
 
@@ -245,12 +252,15 @@ class LiveMatchViewer:
             events_list: 事件列表
             action_strs: 动作描述列表
             reasons: 决策理由列表（可选）
+            token_diagnostics: token 诊断列表（可选）
         """
         reasons = reasons or []
+        token_diagnostics = token_diagnostics or []
         with Live(console=self.console, refresh_per_second=4) as live:
             for i, (state, events, action_str) in enumerate(zip(states, events_list, action_strs)):
                 reason = reasons[i] if i < len(reasons) else ""
-                panel = self.step(state, events, action_str, reason)
+                diagnostics = token_diagnostics[i] if i < len(token_diagnostics) else None
+                panel = self.step(state, events, action_str, reason, prompt_diagnostics=diagnostics)
                 live.update(panel)
                 time.sleep(self.delay)
 
@@ -291,6 +301,7 @@ class LiveMatchViewer:
 
         data = json.loads(path.read_text(encoding="utf-8"))
         reasons = data.get("reasons", [])
+        raw_token_diagnostics = data.get("token_diagnostics", [])
 
         try:
             actions = actions_from_match_log(data)
@@ -312,7 +323,18 @@ class LiveMatchViewer:
 
                         action_str = f"Step {i+1}: {action.kind.value}"
                         reason = reasons[i] if i < len(reasons) else None
-                        live.update(self.step(state, outcome.events, action_str, reason))
+                        diagnostics = None
+                        if i < len(raw_token_diagnostics):
+                            diagnostics = _parse_prompt_diagnostics(raw_token_diagnostics[i])
+                        live.update(
+                            self.step(
+                                state,
+                                outcome.events,
+                                action_str,
+                                reason,
+                                prompt_diagnostics=diagnostics,
+                            )
+                        )
                         time.sleep(self.delay if delay is None else delay)
                     except Exception as e:
                         self.console.print(f"[red]回放错误 at step {i}: {e}[/]")
@@ -414,6 +436,7 @@ class LiveMatchCallback:
         events: tuple,
         action_str: str = "",
         reason: str = "",
+        prompt_diagnostics: "PromptDiagnostics | None" = None,
     ) -> None:
         """每步调用。"""
         decision_time = 0.0
@@ -421,7 +444,14 @@ class LiveMatchCallback:
             decision_time = time.time() - self._decision_start_time
             self._decision_start_time = time.time()
 
-        panel = self.viewer.step(state, events, action_str, reason, decision_time)
+        panel = self.viewer.step(
+            state,
+            events,
+            action_str,
+            reason,
+            decision_time,
+            prompt_diagnostics,
+        )
         if self.live:
             self.live.update(panel)
 
@@ -512,6 +542,18 @@ def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3) -> None:
     viewer.console.print(
         f"\n[bold green]演示结束[/] 步数: {viewer._step}, 终局状态: {state.phase.value}"
     )
+
+
+def _parse_prompt_diagnostics(raw: object) -> "PromptDiagnostics | None":
+    """Parse replay prompt diagnostics when present."""
+    if not isinstance(raw, dict):
+        return None
+    from llm.agent.token_budget import PromptDiagnostics
+
+    try:
+        return PromptDiagnostics.from_wire(raw)
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 if __name__ == "__main__":

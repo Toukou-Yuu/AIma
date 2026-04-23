@@ -168,8 +168,9 @@ acts = legal_actions(state, seat)
 if len(acts) == 1 and acts[0].kind in (PASS_CALL, DRAW):
     return Decision(acts[0], None, history)  # 跳过 LLM
 
-# 3. 构建消息（PromptProjector + PromptBudgetPlanner）
-messages = prompt_projector.build_messages(...)
+# 3. 构建消息与上下文 token 诊断（PromptProjector + PromptBudgetPlanner）
+projection = prompt_projector.build_projection(...)
+messages = projection.messages
 
 # 4. 调用 LLM（AIma 本地上下文已全部体现在 messages 中）
 raw = client.complete(messages)

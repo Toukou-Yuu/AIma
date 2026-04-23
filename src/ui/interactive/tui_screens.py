@@ -41,6 +41,7 @@ from ui.interactive.replay_session import (
     ReplaySessionResult,
     ReplaySessionState,
 )
+from ui.interactive.token_usage import render_token_summary_panel
 from ui.interactive.utils import (
     KERNEL_CONFIG_PATH,
     PERSONA_TEMPLATES,
@@ -297,7 +298,12 @@ def _render_match_standings_panel(result: MatchSessionResult) -> Panel:
 def _render_match_overview_panel(session: MatchSession, result: MatchSessionResult) -> Panel:
     rows = [
         ("状态", "正常完成" if result.succeeded else "执行失败"),
-        ("结束原因", result.run_result.stopped_reason if result.run_result else (result.error_message or "unknown")),
+        (
+            "结束原因",
+            result.run_result.stopped_reason
+            if result.run_result
+            else (result.error_message or "unknown"),
+        ),
         ("耗时", _format_duration(result.duration_seconds)),
         ("seed", str(session.config.seed)),
         ("目标局数", str(session.config.target_hands)),
@@ -691,12 +697,28 @@ class MatchSetupScreen(BaseScreen):
             with VerticalScroll(classes="form-pane", id="match-form-pane"):
                 yield Static(Text("玩家配置", style="bold bright_yellow"), classes="section-title")
                 for seat, label in enumerate(SEAT_LABELS):
-                    yield Button(f"{label}: 默认 AI (dry-run)", id=f"match-seat-{seat}", classes="picker-button")
+                    yield Button(
+                        f"{label}: 默认 AI (dry-run)",
+                        id=f"match-seat-{seat}",
+                        classes="picker-button",
+                    )
                 yield Static(Text("运行参数", style="bold bright_yellow"), classes="section-title")
-                yield Input(value="", placeholder="随机种子：留空或填 0 表示每次随机生成一场新对局", id="match-seed")
-                yield Input(value="", placeholder="目标局数：留空默认 8，4=东风战，8=半庄战", id="match-hands")
+                yield Input(
+                    value="",
+                    placeholder="随机种子：留空或填 0 表示每次随机生成一场新对局",
+                    id="match-seed",
+                )
+                yield Input(
+                    value="",
+                    placeholder="目标局数：留空默认 8，4=东风战，8=半庄战",
+                    id="match-hands",
+                )
                 yield Checkbox("实时观战", value=True, id="match-watch")
-                yield Input(value="", placeholder="观战延迟：留空默认 0.5 秒，控制每个动作之间暂停多久", id="match-delay")
+                yield Input(
+                    value="",
+                    placeholder="观战延迟：留空默认 0.5 秒，控制每个动作之间暂停多久",
+                    id="match-delay",
+                )
             yield Static(classes="detail-pane", id="match-summary")
         yield Static("", id="status-line")
         with Horizontal(classes="action-bar"):
@@ -881,7 +903,9 @@ class LiveMatchScreen(BaseScreen):
         self._refresh_live()
 
     def _refresh_live(self) -> None:
-        self.query_one("#match-live-status", Static).update(_render_match_live_status_bar(self.session))
+        self.query_one("#match-live-status", Static).update(
+            _render_match_live_status_bar(self.session)
+        )
         snapshot = self.session.snapshot
         if snapshot.panel is None:
             self.query_one("#match-live-panel", Static).update(
@@ -946,8 +970,12 @@ class MatchControlScreen(BaseScreen):
         self._refresh_control()
 
     def _refresh_control(self) -> None:
-        self.query_one("#match-control-runtime", Static).update(_render_match_runtime_panel(self.session))
-        self.query_one("#match-control-config", Static).update(_render_match_config_panel(self.session))
+        self.query_one("#match-control-runtime", Static).update(
+            _render_match_runtime_panel(self.session)
+        )
+        self.query_one("#match-control-config", Static).update(
+            _render_match_config_panel(self.session)
+        )
         result = self.session.result
         if result is not None:
             self.query_one("#match-control-extra", Static).update(_render_match_log_panel(result))
@@ -996,6 +1024,7 @@ class MatchSettlementScreen(BaseScreen):
             with Horizontal(classes="pane-row"):
                 yield Static(classes="pane", id="settlement-overview")
                 yield Static(classes="pane", id="settlement-logs")
+            yield Static(classes="pane", id="settlement-token")
             yield Static(classes="pane", id="settlement-standings")
         yield Static("", id="status-line")
         with Horizontal(classes="action-bar"):
@@ -1017,7 +1046,13 @@ class MatchSettlementScreen(BaseScreen):
             _render_match_overview_panel(self.session, result)
         )
         self.query_one("#settlement-logs", Static).update(_render_match_log_panel(result))
-        self.query_one("#settlement-standings", Static).update(_render_match_standings_panel(result))
+        token_diagnostics = result.run_result.token_diagnostics if result.run_result else ()
+        self.query_one("#settlement-token", Static).update(
+            render_token_summary_panel(token_diagnostics)
+        )
+        self.query_one("#settlement-standings", Static).update(
+            _render_match_standings_panel(result)
+        )
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         result = self.session.result
@@ -1224,7 +1259,9 @@ class ReplayLiveScreen(BaseScreen):
         self._refresh_live()
 
     def _refresh_live(self) -> None:
-        self.query_one("#replay-live-status", Static).update(_render_replay_live_status_bar(self.session))
+        self.query_one("#replay-live-status", Static).update(
+            _render_replay_live_status_bar(self.session)
+        )
         snapshot = self.session.snapshot
         if snapshot.panel is None:
             self.query_one("#replay-live-panel", Static).update(
@@ -1411,7 +1448,10 @@ class CreateProfileScreen(BaseScreen):
             self.dismiss()
             return
         if event.button.id == "profile-template":
-            template_options = [(template["name"], key) for key, template in PERSONA_TEMPLATES.items()]
+            template_options = [
+                (template["name"], key)
+                for key, template in PERSONA_TEMPLATES.items()
+            ]
             await self.app.push_screen(
                 OptionPickerScreen(
                     title="选择人格模板",
@@ -1486,11 +1526,18 @@ class AddAsciiScreen(BaseScreen):
 
     def _refresh_summary(self) -> None:
         player_id = self._selected_profile
-        display_name = next((label for label, value in self._profile_options if value == player_id), player_id or "未选择")
+        display_name = next(
+            (label for label, value in self._profile_options if value == player_id),
+            player_id or "未选择",
+        )
         self.query_one("#ascii-profile", Button).label = f"目标角色: {display_name}"
         path_text = self.query_one("#ascii-path", Input).value or "(待填写)"
         width_text = self.query_one("#ascii-width", Input).value or "60"
-        output_path = PLAYERS_DIR / player_id / "ascii.txt" if player_id else Path("configs/players/<player>/ascii.txt")
+        output_path = (
+            PLAYERS_DIR / player_id / "ascii.txt"
+            if player_id
+            else Path("configs/players/<player>/ascii.txt")
+        )
         self.query_one("#ascii-summary", Static).update(
             _render_form_summary(
                 "生成计划",

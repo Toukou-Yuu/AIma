@@ -13,6 +13,7 @@ from rich.panel import Panel
 from kernel import apply
 from kernel.engine.state import initial_game_state
 from kernel.replay_json import actions_from_match_log
+from llm.agent.token_budget import PromptDiagnostics
 from ui.interactive.data import ReplaySummary, load_replay_summary
 from ui.terminal import LiveMatchViewer
 
@@ -71,7 +72,11 @@ class ReplaySession:
     def __init__(self, config: ReplaySessionConfig) -> None:
         self.config = config
         self.summary = load_replay_summary(config.replay_path)
-        self._viewer = LiveMatchViewer(delay=0.0, show_reason=False, target_hands=max(1, self.summary.action_count))
+        self._viewer = LiveMatchViewer(
+            delay=0.0,
+            show_reason=False,
+            target_hands=max(1, self.summary.action_count),
+        )
         self._lock = threading.Lock()
         self._done = threading.Event()
         self._pause = threading.Event()
@@ -241,6 +246,7 @@ class ReplaySession:
             data = json.loads(self.config.replay_path.read_text(encoding="utf-8"))
             actions = actions_from_match_log(data)
             reasons = data.get("reasons", [])
+            raw_token_diagnostics = data.get("token_diagnostics", [])
             total_steps = len(actions)
 
             state = initial_game_state()
@@ -269,12 +275,18 @@ class ReplaySession:
                 outcome = apply(state, action)
                 state = outcome.new_state
                 reason = reasons[index - 1] if index - 1 < len(reasons) else ""
+                prompt_diagnostics = None
+                if index - 1 < len(raw_token_diagnostics):
+                    prompt_diagnostics = _parse_prompt_diagnostics(
+                        raw_token_diagnostics[index - 1]
+                    )
                 raw_action_label = f"Step {index}: {action.kind.value}"
                 panel = self._viewer.step(
                     state,
                     outcome.events,
                     raw_action_label,
                     reason,
+                    prompt_diagnostics=prompt_diagnostics,
                 )
                 table_summary = self._viewer.describe_table(state)
                 self._set_snapshot(
@@ -286,7 +298,10 @@ class ReplaySession:
                     current_step=index,
                     total_steps=total_steps,
                 )
-                if index != total_steps and not self._sleep_with_controls(self.config.delay_seconds):
+                if (
+                    index != total_steps
+                    and not self._sleep_with_controls(self.config.delay_seconds)
+                ):
                     raise RuntimeError("replay stopped")
 
             duration = time.time() - (self.started_at or time.time())
@@ -305,7 +320,20 @@ class ReplaySession:
                     duration_seconds=duration,
                     error_message=None if str(exc) == "replay stopped" else str(exc),
                 )
-                self._state = ReplaySessionState.STOPPED if str(exc) == "replay stopped" else ReplaySessionState.FAILED
+                self._state = (
+                    ReplaySessionState.STOPPED
+                    if str(exc) == "replay stopped"
+                    else ReplaySessionState.FAILED
+                )
                 self._finished_at = time.time()
         finally:
             self._done.set()
+
+
+def _parse_prompt_diagnostics(raw: object) -> PromptDiagnostics | None:
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return PromptDiagnostics.from_wire(raw)
+    except (KeyError, TypeError, ValueError):
+        return None

@@ -16,9 +16,11 @@ from ui.terminal.components.name_resolver import NameResolver
 from ui.terminal.components.render import TileRenderer
 from ui.terminal.components.stats_tracker import StatsTracker
 from ui.terminal.components.tiles import localize_tile_codes
+from ui.terminal.components.token_budget_display import TokenBudgetDisplay
 
 if TYPE_CHECKING:
     from kernel.engine.state import GameState
+    from llm.agent.token_budget import PromptDiagnostics
 
 
 RenderMode = Literal["full", "normal", "compact"]
@@ -50,6 +52,7 @@ class LayoutBuilder:
         self._event_formatter = event_formatter
         self._hand_display = hand_display
         self._name_resolver = name_resolver
+        self._token_budget_display = TokenBudgetDisplay()
 
     def build_panel(
         self,
@@ -62,6 +65,7 @@ class LayoutBuilder:
         show_reason: bool = True,
         viewport_width: int = 140,
         viewport_height: int = 40,
+        prompt_diagnostics: "PromptDiagnostics | None" = None,
     ) -> Panel:
         """构建 live 牌桌主视图。"""
         profile = self._select_profile(viewport_width, viewport_height)
@@ -83,6 +87,7 @@ class LayoutBuilder:
 
         sidebar = Group(
             self._render_table_status_panel(state, last_actor_seat, profile),
+            self._render_context_panel(prompt_diagnostics, profile),
             self._render_stats_panel(state, profile),
             self._render_events_panel(events, profile),
         )
@@ -218,6 +223,21 @@ class LayoutBuilder:
             ),
             title="[bold bright_blue]和了[/]",
             border_style="bright_blue",
+            padding=(0, 1),
+        )
+
+    def _render_context_panel(
+        self,
+        diagnostics: "PromptDiagnostics | None",
+        profile: LiveLayoutProfile,
+    ) -> Panel:
+        return Panel(
+            self._token_budget_display.render_sidebar(
+                diagnostics,
+                compact=(profile.mode == "compact"),
+            ),
+            title="[bold bright_magenta]上下文[/]",
+            border_style="bright_magenta",
             padding=(0, 1),
         )
 

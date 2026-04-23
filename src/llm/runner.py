@@ -36,6 +36,7 @@ from llm.agent import PlayerAgent
 from llm.agent.context import EpisodeContext
 from llm.agent.event_journal import MatchJournal
 from llm.agent.match_context import MatchContext
+from llm.agent.token_budget import PromptDiagnostics
 from llm.config import MatchEndCondition
 from llm.protocol import CompletionClient
 from llm.table_snapshot_text import action_wire_to_cn, write_snapshot_block
@@ -285,9 +286,14 @@ class RunResult:
     actions_wire: tuple[dict[str, Any], ...] = ()
     events_wire: tuple[dict[str, Any], ...] = ()
     reasons: tuple[str | None, ...] = ()  # 每个动作的决策理由
+    token_diagnostics: tuple[PromptDiagnostics | None, ...] = ()
 
     def as_match_log(self) -> dict[str, Any]:
         """可 ``json.dump`` 的牌谱顶层结构。"""
+        token_diagnostics_wire = tuple(
+            item.to_wire() if item is not None else None
+            for item in self.token_diagnostics
+        )
         return match_log_document(
             seed=self.seed,
             stopped_reason=self.stopped_reason,
@@ -296,6 +302,7 @@ class RunResult:
             actions_wire=self.actions_wire,
             events_wire=self.events_wire,
             reasons=self.reasons,
+            token_diagnostics=token_diagnostics_wire,
         )
 
 
@@ -318,7 +325,11 @@ def run_llm_match(
     session_audit: bool = False,
     simple_log_file: TextIO | None = None,
     on_step_callback: (
-        Callable[[GameState, tuple[GameEvent, ...], str, str | None], None] | None
+        Callable[
+            [GameState, tuple[GameEvent, ...], str, str | None, PromptDiagnostics | None],
+            None,
+        ]
+        | None
     ) = None,
     players: list[dict[str, Any]] | None = None,
     system_prompt: str | None = None,
@@ -435,11 +446,13 @@ def run_llm_match(
     actions_acc: list[dict[str, Any]] = []
     events_acc: list[dict[str, Any]] = []
     reasons_acc: list[str | None] = []  # 收集决策理由
+    token_diagnostics_acc: list[PromptDiagnostics | None] = []
 
     begin_act = Action(ActionKind.BEGIN_ROUND, wall=wall)
     try:
         begin_out = apply(state, begin_act)
         actions_acc.append(action_to_wire(begin_act))
+        token_diagnostics_acc.append(None)
         _append_events_with_settlement_log(
             events_acc,
             begin_out.events,
@@ -466,7 +479,7 @@ def run_llm_match(
         )
         # 初始状态显示（让 UI 先渲染配牌结果）
         if on_step_callback is not None:
-            on_step_callback(state, begin_out.events, "开局配牌", None)
+            on_step_callback(state, begin_out.events, "开局配牌", None, None)
         if session_audit:
             br = _live_wall_remaining_tiles(state.board)
             log.info(
@@ -485,6 +498,7 @@ def run_llm_match(
             actions_wire=(),
             events_wire=(),
             reasons=(),
+            token_diagnostics=(),
         )
 
     kernel_steps = 0
@@ -540,6 +554,7 @@ def run_llm_match(
             try:
                 noop_out = apply(state, noop_act)
                 actions_acc.append(action_to_wire(noop_act))
+                token_diagnostics_acc.append(None)
                 _append_events_with_settlement_log(
                     events_acc,
                     noop_out.events,
@@ -604,6 +619,7 @@ def run_llm_match(
                     drain_act = Action(ActionKind.CALL_PASS_DRAIN)
                     step_out = apply(state, drain_act)
                     actions_acc.append(action_to_wire(drain_act))
+                    token_diagnostics_acc.append(None)
                     _append_events_with_settlement_log(
                         events_acc,
                         step_out.events,
@@ -678,6 +694,7 @@ def run_llm_match(
                 discarded_tile_for_log = act.tile
             step_out = apply(state, act)
             actions_acc.append(action_to_wire(act))
+            token_diagnostics_acc.append(decision.prompt_diagnostics)
             _append_events_with_settlement_log(
                 events_acc,
                 step_out.events,
@@ -722,7 +739,13 @@ def run_llm_match(
             if on_step_callback is not None:
                 try:
                     action_str = _format_callback_action_label(act)
-                    on_step_callback(state, step_out.events, action_str, llm_why)
+                    on_step_callback(
+                        state,
+                        step_out.events,
+                        action_str,
+                        llm_why,
+                        decision.prompt_diagnostics,
+                    )
                 except Exception:
                     # 回调异常不应中断对局
                     pass
@@ -757,4 +780,5 @@ def run_llm_match(
         actions_wire=tuple(actions_acc),
         events_wire=tuple(events_acc),
         reasons=tuple(reasons_acc),
+        token_diagnostics=tuple(token_diagnostics_acc),
     )

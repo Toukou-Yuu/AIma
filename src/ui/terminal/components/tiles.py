@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 
 from rich.text import Text
 
@@ -34,7 +35,7 @@ _HONOR_MAP = {
 }
 
 _WIND_NAMES = ["东", "南", "西", "北"]
-_TILE_CODE_PATTERN = re.compile(r"\b([1-9][mpsz]r?)\b")
+_TILE_CODE_PATTERN = re.compile(r"([1-9][mpsz]r?)")
 
 
 def tile_to_rich(tile_code: str, is_dora: bool = False) -> Text:
@@ -81,6 +82,19 @@ def tile_code_to_display(tile_code: str) -> str:
     if suit == "z":
         return _HONOR_MAP.get(tile_code[0], tile_code[0])
     return tile_code.replace("r", "")
+
+
+def tile_to_display(tile: object) -> str:
+    """将 Tile-like 对象转换为终端文案。"""
+    to_code = getattr(tile, "to_code", None)
+    if not callable(to_code):
+        return str(tile)
+    return tile_code_to_display(str(to_code()))
+
+
+def tiles_to_display(tiles: Iterable[object], *, separator: str = "") -> str:
+    """将一组 Tile-like 对象转换为终端文案。"""
+    return separator.join(tile_to_display(tile) for tile in tiles)
 
 
 def localize_tile_codes(text: str) -> str:

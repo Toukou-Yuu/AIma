@@ -15,6 +15,7 @@ from typing import Any
 
 from rich.panel import Panel
 
+from llm.agent.token_budget import PromptDiagnostics
 from llm.config import (
     LLMRuntimeConfig,
     MatchEndCondition,
@@ -83,6 +84,7 @@ class MatchSessionSnapshot:
     score_summary: str
     updated_at: float | None
     callback_steps: int
+    prompt_diagnostics: PromptDiagnostics | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,6 +237,7 @@ class MatchSession:
             score_summary="",
             updated_at=None,
             callback_steps=0,
+            prompt_diagnostics=None,
         )
         self._result: MatchSessionResult | None = None
         self._started_at: float | None = None
@@ -310,6 +313,7 @@ class MatchSession:
         table_summary: str,
         score_summary: str,
         callback_steps: int,
+        prompt_diagnostics: PromptDiagnostics | None,
     ) -> None:
         with self._lock:
             self._snapshot = MatchSessionSnapshot(
@@ -321,6 +325,7 @@ class MatchSession:
                 score_summary=score_summary,
                 updated_at=time.time(),
                 callback_steps=callback_steps,
+                prompt_diagnostics=prompt_diagnostics,
             )
 
     def _on_step(
@@ -329,13 +334,21 @@ class MatchSession:
         events: tuple,
         action_str: str = "",
         reason: str | None = "",
+        prompt_diagnostics: PromptDiagnostics | None = None,
     ) -> None:
         decision_time = 0.0
         snapshot = self.snapshot
         if snapshot.updated_at is not None:
             decision_time = max(0.0, time.time() - snapshot.updated_at)
 
-        panel = self._viewer.step(state, events, action_str, reason or "", decision_time)
+        panel = self._viewer.step(
+            state,
+            events,
+            action_str,
+            reason or "",
+            decision_time,
+            prompt_diagnostics,
+        )
         display_action = self._viewer.format_action_label(action_str or "等待动作")
         table_summary = self._viewer.describe_table(state)
         self._set_snapshot(
@@ -346,6 +359,7 @@ class MatchSession:
             table_summary=table_summary.summary_line,
             score_summary=table_summary.score_line,
             callback_steps=self.snapshot.callback_steps + 1,
+            prompt_diagnostics=prompt_diagnostics,
         )
         if self.config.watch_enabled and self.config.watch_delay > 0:
             time.sleep(self.config.watch_delay)

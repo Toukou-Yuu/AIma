@@ -171,6 +171,7 @@ class TestTileCodeLocalization:
         from ui.terminal.components.tiles import localize_tile_codes
 
         assert localize_tile_codes("打牌 1z 2m") == "打牌 東 2m"
+        assert localize_tile_codes("碰[1z1z1z]") == "碰[東東東]"
 
 
 class TestWindWithSeat:
@@ -414,6 +415,63 @@ class TestStatsTrackerSidebar:
         assert "一姬" in rendered
         assert "二阶堂" in rendered
         assert "东家" not in rendered
+
+
+class TestTokenBudgetDisplay:
+    """测试上下文 token 压力展示。"""
+
+    def test_full_sidebar_uses_compact_two_line_layout(self) -> None:
+        from llm.agent.token_budget import BlockTokenUsage, PromptDiagnostics
+        from ui.terminal.components.token_budget_display import TokenBudgetDisplay
+
+        diagnostics = PromptDiagnostics(
+            estimated_tokens=4800,
+            prompt_budget_tokens=6656,
+            context_budget_tokens=8192,
+            reserved_output_tokens=1024,
+            safety_margin_tokens=512,
+            selected_blocks=(
+                BlockTokenUsage(
+                    block_id="current_turn",
+                    role="user",
+                    priority=0,
+                    required=True,
+                    state="collapse",
+                    estimated_tokens=4800,
+                ),
+            ),
+            trimmed_blocks=(),
+            max_compression_state="collapse",
+            over_budget=False,
+        )
+
+        group = TokenBudgetDisplay().render_sidebar(diagnostics)
+        rendered = "\n".join(line.plain for line in group.renderables)
+
+        assert "4.8k / 6.7k -- [" in rendered
+        assert "72%" in rendered
+        assert "collapse · 正常" in rendered
+
+    def test_compact_sidebar_mentions_trimmed_blocks(self) -> None:
+        from llm.agent.token_budget import PromptDiagnostics
+        from ui.terminal.components.token_budget_display import TokenBudgetDisplay
+
+        diagnostics = PromptDiagnostics(
+            estimated_tokens=9,
+            prompt_budget_tokens=10,
+            context_budget_tokens=10,
+            reserved_output_tokens=0,
+            safety_margin_tokens=0,
+            selected_blocks=(),
+            trimmed_blocks=("public_history",),
+            max_compression_state="drop",
+            over_budget=False,
+        )
+
+        group = TokenBudgetDisplay().render_sidebar(diagnostics, compact=True)
+        rendered = "\n".join(line.plain for line in group.renderables)
+
+        assert "9/10 · 90% · drop · 丢弃 公共事件" in rendered
 
 
 class TestParseHandTiles:
@@ -944,6 +1002,47 @@ class TestMeldsToStr:
         text = viewer._melds_to_str([meld], 0, 0)
         assert text
         assert "碰" in text
+
+    def test_melds_use_player_name_and_localize_honor_tiles(self) -> None:
+        """副露来源显示角色名，字牌不泄漏 raw code。"""
+        from kernel.hand.melds import Meld, MeldKind
+        from kernel.tiles.model import Suit, Tile
+        from ui.terminal.viewer import LiveMatchViewer
+
+        viewer = LiveMatchViewer()
+        viewer.set_player_names({2: "卡维"})
+        east = Tile(Suit.HONOR, 1)
+        meld = Meld(
+            kind=MeldKind.PON,
+            tiles=(east, east, east),
+            called_tile=east,
+            from_seat=2,
+        )
+
+        text = viewer._melds_to_str([meld], 0, 0)
+
+        assert text == "碰卡维[東東東]"
+        assert "1z" not in text
+        assert "东家" not in text
+
+    def test_compact_melds_localize_honor_tiles(self) -> None:
+        """紧凑副露也必须复用牌面本地化。"""
+        from kernel.hand.melds import Meld, MeldKind
+        from kernel.tiles.model import Suit, Tile
+        from ui.terminal.components.hand_display import HandDisplay
+        from ui.terminal.components.name_resolver import NameResolver
+        from ui.terminal.components.render import TileRenderer
+
+        east = Tile(Suit.HONOR, 1)
+        meld = Meld(
+            kind=MeldKind.PON,
+            tiles=(east, east, east),
+            called_tile=east,
+            from_seat=1,
+        )
+        display = HandDisplay(TileRenderer(), NameResolver())
+
+        assert display.format_melds_compact([meld]) == "碰[東東東]"
 
 
 class TestDoraIndicatorsToRich:

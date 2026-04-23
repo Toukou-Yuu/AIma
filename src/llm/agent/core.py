@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from llm.agent.conversation_logger import ConversationLogger
     from llm.agent.profile import PlayerProfile
     from llm.agent.prompt import PromptProjector
+    from llm.agent.token_budget import PromptDiagnostics
     from llm.protocol import ChatMessage, CompletionClient
 
 log = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ class Decision:
     action: "LegalAction"
     why: str | None
     history: list[Decision]  # 本局决策历史（决策链）
+    prompt_diagnostics: "PromptDiagnostics | None" = None
 
 
 class AgentCore:
@@ -129,12 +131,13 @@ class AgentCore:
         frame_type = prompt_projector.get_frame_type(episode_ctx, should_send_keyframe)
 
         # 6. 构建消息
-        messages = prompt_projector.build_messages(
+        projection = prompt_projector.build_projection(
             turn_context,
             persistent_state=persistent_state,
             episode_ctx=episode_ctx,
             should_send_keyframe=should_send_keyframe,
         )
+        messages = projection.messages
 
         # 7. 更新帧信息
         episode_ctx.update_frame(obs)
@@ -187,7 +190,7 @@ class AgentCore:
                 legal_actions=acts,
                 phase=state.phase.value,
             )
-            return Decision(fallback, None, episode_ctx.decision_history)
+            return Decision(fallback, None, episode_ctx.decision_history, projection.diagnostics)
 
         # 15. 记录审计日志
         if session_audit:
@@ -207,7 +210,7 @@ class AgentCore:
             phase=state.phase.value,
         )
 
-        return Decision(la, why, episode_ctx.decision_history)
+        return Decision(la, why, episode_ctx.decision_history, projection.diagnostics)
 
 
 def _parser_log_payload(

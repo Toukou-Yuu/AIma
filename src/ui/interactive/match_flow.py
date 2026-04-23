@@ -28,6 +28,7 @@ from ui.interactive.match_session import (
     create_session_stem,
 )
 from ui.interactive.replay import ReplayDetailPage
+from ui.interactive.token_usage import render_token_summary_panel
 
 console = Console()
 
@@ -148,7 +149,13 @@ class MatchWatchPage(Page):
         if self.session.is_finished:
             return "settlement"
 
-        console.print(Columns([_render_runtime_panel(self.session), _render_config_panel(self.session)], expand=True, equal=True))
+        console.print(
+            Columns(
+                [_render_runtime_panel(self.session), _render_config_panel(self.session)],
+                expand=True,
+                equal=True,
+            )
+        )
         console.print()
 
         snapshot = self.session.snapshot
@@ -203,7 +210,13 @@ class MatchControlPage(Page):
         if self.session.is_finished:
             return "settlement"
 
-        console.print(Columns([_render_runtime_panel(self.session), _render_config_panel(self.session)], expand=True, equal=True))
+        console.print(
+            Columns(
+                [_render_runtime_panel(self.session), _render_config_panel(self.session)],
+                expand=True,
+                equal=True,
+            )
+        )
         console.print()
 
         actions: list[ActionOption] = [
@@ -254,6 +267,9 @@ class MatchSettlementPage(Page):
         console.print(self._render_overview(result))
         console.print()
         console.print(_render_standings_panel(result))
+        console.print()
+        token_diagnostics = result.run_result.token_diagnostics if result.run_result else ()
+        console.print(render_token_summary_panel(token_diagnostics))
         console.print()
         console.print(_render_log_panel(result))
         console.print()
@@ -347,6 +363,9 @@ def run_match_session_flow(config: MatchSessionConfig) -> None:
 
         settlement_action = MatchSettlementPage(session).run()
         if settlement_action == "restart":
-            active_config = replace(active_config, session_stem=create_session_stem(active_config.label))
+            active_config = replace(
+                active_config,
+                session_stem=create_session_stem(active_config.label),
+            )
             continue
         return

@@ -11,6 +11,7 @@ from rich.console import Group
 from rich.text import Text
 
 from kernel.deal.model import TurnPhase
+from ui.terminal.components.meld_display import MeldDisplay
 from ui.terminal.components.render import TileRenderer
 from ui.terminal.components.tiles import tile_to_rich
 
@@ -32,6 +33,7 @@ class HandDisplay:
     ) -> None:
         self._renderer = renderer
         self._name_resolver = name_resolver
+        self._meld_display = MeldDisplay(name_resolver)
 
     def format_melds(
         self,
@@ -40,28 +42,20 @@ class HandDisplay:
         dealer_seat: int,
     ) -> str:
         """格式化完整副露描述。"""
-        from llm.table_snapshot_text import _meld_segment
-
-        if not melds:
-            return "无"
-        return " ".join(_meld_segment(m, owner_seat, dealer_seat) for m in melds)
+        del dealer_seat
+        return self._meld_display.format_melds(
+            melds,
+            owner_seat,
+            include_source=True,
+        )
 
     def format_melds_compact(self, melds: list) -> str:
         """格式化紧凑副露描述。"""
-        if not melds:
-            return "无"
-        parts = []
-        for meld in melds:
-            tiles_s = "".join(tile.to_code() for tile in meld.tiles)
-            kind_name = {
-                "chi": "吃",
-                "pon": "碰",
-                "daiminkan": "杠",
-                "ankan": "暗",
-                "shankuminkan": "加",
-            }.get(meld.kind.value, meld.kind.value)
-            parts.append(f"{kind_name}[{tiles_s}]")
-        return " ".join(parts)
+        return self._meld_display.format_melds(
+            melds,
+            owner_seat=0,
+            include_source=False,
+        )
 
     def render_player_tree(
         self,

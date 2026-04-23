@@ -110,12 +110,19 @@ def test_default_context_scope_is_per_hand() -> None:
     agent = build_test_agent(system_prompt="你是麻将牌手")
 
     ctx = EpisodeContext(seat, match_id="matchA", hand_number=1)
-    agent.decide(state, seat, episode_ctx=ctx, client=client, dry_run=False)
+    decision = agent.decide(state, seat, episode_ctx=ctx, client=client, dry_run=False)
     agent.decide(state, seat, episode_ctx=ctx, client=client, dry_run=False)
 
     second_messages = [msg.content for msg in client.messages[1]]
     assert any("本局我的决策历史" in content for content in second_messages)
     assert not any("本场前情摘要" in content for content in second_messages)
+    assert decision.prompt_diagnostics is not None
+    assert decision.prompt_diagnostics.prompt_budget_tokens == (
+        _RUNTIME.context_budget_tokens
+        - _RUNTIME.reserved_output_tokens
+        - _RUNTIME.safety_margin_tokens
+    )
+    assert decision.prompt_diagnostics.estimated_tokens > 0
 
 
 def test_per_match_context_scope_reuses_local_match_archive() -> None:

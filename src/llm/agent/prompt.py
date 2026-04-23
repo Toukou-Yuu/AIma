@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from llm.agent.context_store import PersistentState, TurnContext
@@ -18,6 +19,7 @@ from llm.agent.token_budget import (
     PromptBlockVariant,
     PromptBudgetConfig,
     PromptBudgetPlanner,
+    PromptDiagnostics,
     TokenEstimateService,
 )
 
@@ -30,6 +32,14 @@ if TYPE_CHECKING:
 ProjectionMode = Literal["natural", "json"]
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class PromptProjection:
+    """Projected chat messages plus token diagnostics."""
+
+    messages: list["ChatMessage"]
+    diagnostics: PromptDiagnostics
 
 
 class PromptProjector:
@@ -69,14 +79,14 @@ class PromptProjector:
             estimator=self._estimator,
         )
 
-    def build_messages(
+    def build_projection(
         self,
         turn_context: TurnContext,
         *,
         persistent_state: PersistentState,
         episode_ctx: "EpisodeContext",
         should_send_keyframe: bool = True,
-    ) -> list["ChatMessage"]:
+    ) -> PromptProjection:
         """构建完整消息列表。"""
         from llm.protocol import ChatMessage
 
@@ -101,6 +111,8 @@ class PromptProjector:
             include_self_history=window.include_self_history,
         )
         plan = self._planner.plan(blocks)
+        if plan.diagnostics is None:
+            raise RuntimeError("prompt budget planner did not produce diagnostics")
         if plan.estimated_tokens > plan.prompt_budget_tokens:
             log.warning(
                 "prompt over budget after compression seat=%s estimated=%s budget=%s",
@@ -108,7 +120,8 @@ class PromptProjector:
                 plan.estimated_tokens,
                 plan.prompt_budget_tokens,
             )
-        return [ChatMessage(role=block.role, content=block.text) for block in plan.blocks]
+        messages = [ChatMessage(role=block.role, content=block.text) for block in plan.blocks]
+        return PromptProjection(messages=messages, diagnostics=plan.diagnostics)
 
     def _build_user_prompt(
         self,
@@ -228,7 +241,10 @@ class PromptProjector:
         )
         return blocks
 
-    def _build_archive_variants(self, episode_ctx: "EpisodeContext") -> tuple[PromptBlockVariant, ...]:
+    def _build_archive_variants(
+        self,
+        episode_ctx: "EpisodeContext",
+    ) -> tuple[PromptBlockVariant, ...]:
         allowed = self._allowed_states()
         variants: list[PromptBlockVariant] = []
         for state in allowed:
@@ -242,7 +258,10 @@ class PromptProjector:
                 variants.append(PromptBlockVariant(state, text))
         return self._dedupe_variants(variants)
 
-    def _build_public_history_variants(self, episode_ctx: "EpisodeContext") -> tuple[PromptBlockVariant, ...]:
+    def _build_public_history_variants(
+        self,
+        episode_ctx: "EpisodeContext",
+    ) -> tuple[PromptBlockVariant, ...]:
         allowed = self._allowed_states()
         variants: list[PromptBlockVariant] = []
         detailed = self.prompt_mode == "natural"
@@ -259,7 +278,10 @@ class PromptProjector:
                 variants.append(PromptBlockVariant(state, text))
         return self._dedupe_variants(variants)
 
-    def _build_self_history_variants(self, episode_ctx: "EpisodeContext") -> tuple[PromptBlockVariant, ...]:
+    def _build_self_history_variants(
+        self,
+        episode_ctx: "EpisodeContext",
+    ) -> tuple[PromptBlockVariant, ...]:
         allowed = self._allowed_states()
         variants: list[PromptBlockVariant] = []
         detailed = self.prompt_mode == "natural"

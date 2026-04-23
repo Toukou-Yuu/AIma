@@ -329,6 +329,7 @@ def test_match_session_snapshot_action_label_is_localized(monkeypatch, tmp_path:
 
     from rich.panel import Panel
 
+    from llm.agent.token_budget import PromptDiagnostics
     from llm.config import LLMRuntimeConfig, MatchEndCondition
     from ui.interactive.match_session import MatchSession, MatchSessionConfig
 
@@ -366,9 +367,51 @@ def test_match_session_snapshot_action_label_is_localized(monkeypatch, tmp_path:
     monkeypatch.setattr(session._viewer, "step", lambda *args, **kwargs: Panel("ok"))
 
     state = SimpleNamespace(phase=SimpleNamespace(value="in_round"))
-    session._on_step(state, (), "家0 discard", None)
+    diagnostics = PromptDiagnostics(
+        estimated_tokens=100,
+        prompt_budget_tokens=200,
+        context_budget_tokens=300,
+        reserved_output_tokens=50,
+        safety_margin_tokens=50,
+        selected_blocks=(),
+        trimmed_blocks=(),
+        max_compression_state="full",
+        over_budget=False,
+    )
+    session._on_step(state, (), "家0 discard", None, diagnostics)
 
     assert session.snapshot.action_label == "一姬 打牌"
+    assert session.snapshot.prompt_diagnostics == diagnostics
+
+
+def test_token_summary_panel_renders_aggregate_diagnostics() -> None:
+    """结算页展示整局上下文压力摘要。"""
+    from rich.console import Console
+
+    from llm.agent.token_budget import PromptDiagnostics
+    from ui.interactive.token_usage import render_token_summary_panel
+
+    diagnostics = PromptDiagnostics(
+        estimated_tokens=4800,
+        prompt_budget_tokens=6656,
+        context_budget_tokens=8192,
+        reserved_output_tokens=1024,
+        safety_margin_tokens=512,
+        selected_blocks=(),
+        trimmed_blocks=("public_history",),
+        max_compression_state="drop",
+        over_budget=False,
+    )
+    panel = render_token_summary_panel((diagnostics,))
+    console = Console(width=90, color_system=None)
+
+    with console.capture() as capture:
+        console.print(panel)
+
+    rendered = capture.get()
+    assert "上下文诊断" in rendered
+    assert "4.8k / 6.7k (72%)" in rendered
+    assert "公共事件x1" in rendered
 
 
 def test_match_setup_summary_shows_seat_model_bindings(monkeypatch) -> None:
