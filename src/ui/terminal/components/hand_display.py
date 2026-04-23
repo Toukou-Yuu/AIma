@@ -18,7 +18,6 @@ from ui.terminal.components.tiles import tile_to_rich
 if TYPE_CHECKING:
     from kernel.engine.state import GameState
     from ui.terminal.components.name_resolver import NameResolver
-    from ui.terminal.components.stats_tracker import StatsSnapshot
 
 
 RenderMode = Literal["full", "normal", "compact"]
@@ -65,7 +64,6 @@ class HandDisplay:
         show_reason: bool = True,
         mode: RenderMode = "full",
         seat_contexts: dict[int, Text] | None = None,
-        stats_snapshot: "StatsSnapshot | None" = None,
     ) -> Group:
         """按档位渲染四家手牌。"""
         board = state.board
@@ -76,12 +74,7 @@ class HandDisplay:
         dealer = table.dealer_seat
         dora_tiles = self._renderer.compute_dora_tiles(board.revealed_indicators)
         hand_labels = {
-            seat: self._format_hand_label(
-                seat,
-                dealer,
-                table.scores[seat],
-                stats_snapshot,
-            )
+            seat: self._format_hand_label(seat, dealer)
             for seat in range(4)
         }
         label_width = self._compute_label_width(hand_labels.values())
@@ -245,13 +238,8 @@ class HandDisplay:
         self,
         seat: int,
         dealer: int,
-        score: int,
-        stats_snapshot: "StatsSnapshot | None",
     ) -> str:
-        base_label = self._name_resolver.format_hand_label(seat, dealer).rstrip("：")
-        wins = stats_snapshot.win_count(seat) if stats_snapshot is not None else 0
-        win_rate = stats_snapshot.win_rate(seat) if stats_snapshot is not None else 0.0
-        return f"{base_label} {score:,} · 和{wins}({round(win_rate * 100):d}%)："
+        return self._name_resolver.format_hand_label(seat, dealer)
 
     def _clip_reason(self, reason: str) -> str:
         return reason if len(reason) <= 72 else f"{reason[:69]}..."

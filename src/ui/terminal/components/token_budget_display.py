@@ -67,15 +67,24 @@ class TokenBudgetDisplay:
         if diagnostics is None:
             return Text("暂无 LLM 请求", style="dim")
 
-        style = "bold bright_magenta" if active else self._usage_style(diagnostics.usage_ratio)
+        style = (
+            self._active_style(diagnostics)
+            if active
+            else self._usage_style(diagnostics.usage_ratio)
+        )
         return Text.assemble(
-            (self._format_usage(diagnostics).replace(" / ", "/"), style),
-            (" · ", "dim"),
+            (self._bar(diagnostics.usage_ratio, framed=False), style),
+            (" ", "dim"),
             (self._format_percent(diagnostics.usage_ratio), style),
-            (" · ", "dim"),
-            (diagnostics.max_compression_state, "bright_white" if active else "white"),
-            (" · ", "dim"),
-            (self._status_text(diagnostics), style),
+            (" (", "dim"),
+            (self._format_usage(diagnostics), style),
+            (")", "dim"),
+            (" || ", "dim"),
+            ("本轮请求 ", "dim"),
+            (self._format_token_count(self._current_turn_tokens(diagnostics)), style),
+            (" || ", "dim"),
+            ("status: ", "dim"),
+            (f"{diagnostics.max_compression_state} · {self._status_text(diagnostics)}", style),
         )
 
     def _format_usage(self, diagnostics: PromptDiagnostics) -> str:
@@ -92,10 +101,17 @@ class TokenBudgetDisplay:
     def _format_percent(self, ratio: float) -> str:
         return f"{round(ratio * 100):d}%"
 
-    def _bar(self, ratio: float) -> str:
+    def _bar(self, ratio: float, *, framed: bool = True) -> str:
         filled = max(0, min(self._BAR_WIDTH, round(ratio * self._BAR_WIDTH)))
         empty = self._BAR_WIDTH - filled
-        return "[" + ("█" * filled) + ("░" * empty) + "]"
+        bar = ("█" * filled) + ("░" * empty)
+        return f"[{bar}]" if framed else bar
+
+    def _current_turn_tokens(self, diagnostics: PromptDiagnostics) -> int:
+        for block in diagnostics.selected_blocks:
+            if block.block_id == "current_turn":
+                return block.estimated_tokens
+        return diagnostics.estimated_tokens
 
     def _usage_style(self, ratio: float) -> str:
         if ratio > 0.9:
@@ -103,6 +119,11 @@ class TokenBudgetDisplay:
         if ratio >= 0.7:
             return "yellow"
         return "green"
+
+    def _active_style(self, diagnostics: PromptDiagnostics) -> str:
+        if diagnostics.over_budget:
+            return "bold red"
+        return "bold bright_cyan"
 
     def _status_text(self, diagnostics: PromptDiagnostics) -> str:
         if diagnostics.over_budget:

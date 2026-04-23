@@ -25,6 +25,7 @@ from llm.config import (
 from llm.protocol import build_seat_clients
 from llm.runner import RunResult, run_llm_match
 from ui.interactive.utils import load_profile_data
+from ui.match_labels import format_match_target_label
 from ui.terminal import LiveMatchViewer
 
 _LOG_REPLAY_DIR = Path("logs") / "replay"
@@ -60,6 +61,11 @@ class MatchSessionConfig:
     def target_hands(self) -> int:
         """目标局数。"""
         return self.match_end.value
+
+    @property
+    def target_label(self) -> str:
+        """面向观战 UI 的对局目标标签。"""
+        return format_match_target_label(self.match_end.value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,6 +228,10 @@ class MatchSession:
             delay=config.watch_delay,
             show_reason=not config.dry_run,
             target_hands=config.target_hands,
+        )
+        self._viewer.set_session_summary(
+            seed=config.seed,
+            target_label=config.target_label,
         )
         self._viewer.set_player_names(self.player_names)
         self._lock = threading.Lock()

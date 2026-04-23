@@ -296,8 +296,10 @@ class TestHandDisplayLabels:
         group = display.render_player_tree(state, mode="compact")
 
         rendered = "\n".join(segment.plain for segment in group.renderables)
-        assert "一姬[东] 25,000 · 和0(0%)：" in rendered
-        assert "├── 一姬[东] 25,000 · 和0(0%)：" in rendered
+        assert "一姬[东]：" in rendered
+        assert "├── 一姬[东]：" in rendered
+        assert "25,000" not in rendered
+        assert "和0" not in rendered
         assert "│   ├── 副露:" in rendered
         assert "│   └── 牌河:" in rendered
         assert "牌河: 无" in rendered
@@ -406,6 +408,7 @@ class TestLayoutBuilderResponsive:
             HandDisplay(renderer, resolver),
             resolver,
         )
+        layout.set_session_summary(seed=42, target_label="单局演示")
 
         profile = layout._select_profile(120, 30)
         lines = layout._build_sidebar_status_lines(
@@ -415,8 +418,13 @@ class TestLayoutBuilderResponsive:
         )
         rendered = "\n".join(line.plain for line in lines)
 
-        assert "一姬 25,000" not in rendered
-        assert "二阶堂 25,000" not in rendered
+        assert "对局设置" in rendered
+        assert "seed 42" in rendered
+        assert "目标 单局演示" in rendered
+        assert "点数 / 和了统计（已终局 0 局）" in rendered
+        assert "一姬 25,000点" in rendered
+        assert "二阶堂 25,000点" in rendered
+        assert "和了 0/0局 · 和了率 --" in rendered
         assert "宝牌" in rendered
 
 
@@ -432,6 +440,8 @@ class TestStatsTrackerSidebar:
 
         assert "一姬" in rendered
         assert "二阶堂" in rendered
+        assert "和了 0/0局" in rendered
+        assert "和了率 --" in rendered
         assert "东家" not in rendered
 
 
@@ -490,6 +500,45 @@ class TestTokenBudgetDisplay:
         rendered = "\n".join(line.plain for line in group.renderables)
 
         assert "9/10 · 90% · drop · 丢弃 公共事件" in rendered
+
+    def test_inline_context_prioritizes_total_context_with_current_turn(self) -> None:
+        from llm.agent.token_budget import BlockTokenUsage, PromptDiagnostics
+        from ui.terminal.components.token_budget_display import TokenBudgetDisplay
+
+        diagnostics = PromptDiagnostics(
+            estimated_tokens=4800,
+            prompt_budget_tokens=6656,
+            context_budget_tokens=8192,
+            reserved_output_tokens=1024,
+            safety_margin_tokens=512,
+            selected_blocks=(
+                BlockTokenUsage(
+                    block_id="public_history",
+                    role="user",
+                    priority=30,
+                    required=False,
+                    state="collapse",
+                    estimated_tokens=3700,
+                ),
+                BlockTokenUsage(
+                    block_id="current_turn",
+                    role="user",
+                    priority=0,
+                    required=True,
+                    state="full",
+                    estimated_tokens=1100,
+                ),
+            ),
+            trimmed_blocks=(),
+            max_compression_state="collapse",
+            over_budget=False,
+        )
+
+        line = TokenBudgetDisplay().render_inline(diagnostics, active=True)
+
+        assert "█████████░░░ 72% (4.8k / 6.7k)" in line.plain
+        assert "本轮请求 1.1k" in line.plain
+        assert "status: collapse · 正常" in line.plain
 
 
 class TestParseHandTiles:
@@ -1096,7 +1145,7 @@ class TestLiveMatchViewerIntegration:
         from rich.console import Console
 
         from kernel import Action, ActionKind, apply, build_deck, initial_game_state, shuffle_deck
-        from llm.agent.token_budget import PromptDiagnostics
+        from llm.agent.token_budget import BlockTokenUsage, PromptDiagnostics
         from ui.terminal.viewer import LiveMatchViewer
 
         state = initial_game_state()
@@ -1108,7 +1157,16 @@ class TestLiveMatchViewerIntegration:
             context_budget_tokens=8192,
             reserved_output_tokens=1024,
             safety_margin_tokens=512,
-            selected_blocks=(),
+            selected_blocks=(
+                BlockTokenUsage(
+                    block_id="current_turn",
+                    role="user",
+                    priority=0,
+                    required=True,
+                    state="full",
+                    estimated_tokens=1200,
+                ),
+            ),
             trimmed_blocks=(),
             max_compression_state="collapse",
             over_budget=False,
@@ -1124,7 +1182,8 @@ class TestLiveMatchViewerIntegration:
 
         rendered = capture.get()
         assert "一姬[东]" in rendered
-        assert "上下文: 4.8k/6.7k" in rendered
+        assert "上下文: █████████░░░ 72% (4.8k / 6.7k)" in rendered
+        assert "本轮请求 1.2k" in rendered
         assert "collapse · 正常" in rendered
 
     def test_event_history_persists_multiple_steps(self) -> None:

@@ -43,40 +43,11 @@ def render_match_config_panel(session: MatchSession) -> Panel:
     rows = [
         ("模式", "Dry-run" if session.config.dry_run else "LLM 对局"),
         ("seed", str(session.config.seed)),
-        ("目标局数", str(session.config.target_hands)),
+        ("目标", session.config.target_label),
         ("玩家", player_text),
         ("日志 stem", session.logs.stem),
     ]
     return render_summary_panel("配置摘要", rows, border_style="bright_blue")
-
-
-def render_match_live_status_bar(session: MatchSession) -> Panel:
-    status_label, status_style = _match_status(session)
-    snapshot = session.snapshot
-    mode_label = "Dry-run" if session.config.dry_run else "LLM 对局"
-    line1 = Text.assemble(
-        ("状态 ", "dim"),
-        (status_label, status_style),
-        (" | ", "dim"),
-        (snapshot.table_summary or "等待牌桌快照", "white"),
-        (" | ", "dim"),
-        ("步数 ", "dim"),
-        (str(snapshot.callback_steps), "cyan"),
-    )
-    line2 = Text.assemble(
-        ("模式 ", "dim"),
-        (mode_label, "white"),
-        (" | ", "dim"),
-        ("seed ", "dim"),
-        (str(session.config.seed), "yellow"),
-        (" | ", "dim"),
-        ("目标 ", "dim"),
-        (str(session.config.target_hands), "yellow"),
-        (" | ", "dim"),
-        ("最近动作 ", "dim"),
-        (snapshot.action_label, "bold bright_white"),
-    )
-    return _render_live_status_bar(line1, line2, border_style="bright_cyan")
 
 
 def render_match_log_panel(result: MatchSessionResult) -> Panel:
@@ -130,7 +101,7 @@ def render_match_overview_panel(session: MatchSession, result: MatchSessionResul
         ),
         ("耗时", format_duration(result.duration_seconds)),
         ("seed", str(session.config.seed)),
-        ("目标局数", str(session.config.target_hands)),
+        ("目标", session.config.target_label),
     ]
     if result.error_message:
         rows.append(("错误", Text(result.error_message, style="red")))

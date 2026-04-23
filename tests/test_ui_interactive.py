@@ -257,6 +257,16 @@ def test_replay_summary_separates_status_from_stop_reason(tmp_path: Path) -> Non
     assert failed.reason_label == "执行失败: seat0 缺少 LLM client"
 
 
+def test_match_target_label_uses_match_type_names() -> None:
+    """观战目标使用局制语义标签，而不是裸局数。"""
+    from ui.match_labels import format_match_target_label
+
+    assert format_match_target_label(1) == "单局演示"
+    assert format_match_target_label(4) == "东风战"
+    assert format_match_target_label(8) == "半庄/南风战"
+    assert format_match_target_label(3) == "3局自定义"
+
+
 def test_replay_detail_run_uses_session_runner(monkeypatch, tmp_path: Path) -> None:
     """回放启动走进程内会话运行器，参数保持 CLI 列表形式。"""
     from ui.interactive.data import ReplaySummary
@@ -528,6 +538,8 @@ def test_textual_quick_start_opens_live_match_screen() -> None:
             await pilot.click("#quick-start")
             await pilot.pause(1.0)
             assert type(app.screen).__name__ == "LiveMatchScreen"
+            assert not list(app.screen.query("#match-live-status"))
+            assert app.screen.query_one("#match-live-panel")
 
     asyncio.run(_scenario())
 

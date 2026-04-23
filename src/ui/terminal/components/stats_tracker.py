@@ -55,16 +55,15 @@ class StatsTracker:
 
             name = self._seat_names.get(seat) or f"S{seat}"
             wins = self._wins[seat]
-            pct_str = f"{wins / self._rounds * 100:.0f}%" if self._rounds > 0 else "—"
+            pct_str = f"{wins / self._rounds * 100:.0f}%" if self._rounds > 0 else "--"
             style = "bright_yellow" if wins > 0 else "white"
             parts.extend(
                 [
                     (name, style),
-                    (": ", "dim"),
-                    (str(wins), "bold bright_cyan" if wins > 0 else "cyan"),
-                    ("(", "dim"),
+                    (" 和了 ", "dim"),
+                    (f"{wins}/{self._rounds}局", "bold bright_cyan" if wins > 0 else "cyan"),
+                    (" 和了率 ", "dim"),
                     (pct_str, "yellow" if wins > 0 else "dim"),
-                    (")", "dim"),
                 ]
             )
         return Text.assemble(*parts)
@@ -74,15 +73,15 @@ class StatsTracker:
         lines = []
         for seat in range(4):
             wins = self._wins[seat]
-            pct_str = f"{wins / self._rounds * 100:.0f}%" if self._rounds > 0 else "—"
+            pct_str = f"{wins / self._rounds * 100:.0f}%" if self._rounds > 0 else "--"
             label = self._seat_names.get(seat) or f"{_WIND_NAMES[(seat - dealer_seat) % 4]}家"
             separator = "  " if compact else "  "
             line = Text.assemble(
                 (label, "bright_white"),
                 (separator, "dim"),
-                (str(wins), "bold bright_cyan" if wins > 0 else "cyan"),
-                (" 次", "dim"),
-                ("  ", "dim"),
+                ("和了 ", "dim"),
+                (f"{wins}/{self._rounds}局", "bold bright_cyan" if wins > 0 else "cyan"),
+                ("  和了率 ", "dim"),
                 (pct_str, "yellow" if wins > 0 else "dim"),
             )
             lines.append(line)

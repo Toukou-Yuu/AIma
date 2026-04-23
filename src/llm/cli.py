@@ -363,6 +363,7 @@ def _cmd_watch_dry_run(
         delay=delay,
         show_reason=show_reason and not dry_run,
         target_hands=me.value if me else 8,
+        seed=seed,
     ) as callback:
         # 设置玩家名字
         if player_names:

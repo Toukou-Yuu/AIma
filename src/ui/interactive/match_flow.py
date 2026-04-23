@@ -69,7 +69,7 @@ def _render_config_panel(session: MatchSession) -> Panel:
     rows = [
         ("模式", "Dry-run" if session.config.dry_run else "LLM 对局"),
         ("seed", str(session.config.seed)),
-        ("目标局数", str(session.config.target_hands)),
+        ("目标", session.config.target_label),
         ("玩家", player_text),
         ("日志 stem", session.logs.stem),
     ]
@@ -289,7 +289,7 @@ class MatchSettlementPage(Page):
         next_rows = [
             ("模式", "Dry-run" if self.session.config.dry_run else "LLM 对局"),
             ("观战延迟", f"{self.session.config.watch_delay:.1f} 秒"),
-            ("目标局数", str(self.session.config.target_hands)),
+            ("目标", self.session.config.target_label),
             ("牌谱可回放", "是" if result.logs.replay_path.exists() else "否"),
             ("日志 stem", result.logs.stem),
         ]

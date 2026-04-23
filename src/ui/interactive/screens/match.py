@@ -24,7 +24,6 @@ from ui.interactive.screens.base import BaseScreen, OptionPickerScreen
 from ui.interactive.screens.panels import (
     render_form_summary,
     render_match_config_panel,
-    render_match_live_status_bar,
     render_match_log_panel,
     render_match_overview_panel,
     render_match_runtime_panel,
@@ -280,7 +279,6 @@ class LiveMatchScreen(BaseScreen):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="screen-body"):
-            yield Static(classes="pane", id="match-live-status")
             yield Static(classes="live-pane", id="match-live-panel")
         yield Static("", id="status-line")
         with Horizontal(classes="action-bar"):
@@ -301,9 +299,6 @@ class LiveMatchScreen(BaseScreen):
         self._refresh_live()
 
     def _refresh_live(self) -> None:
-        self.query_one("#match-live-status", Static).update(
-            render_match_live_status_bar(self.session)
-        )
         snapshot = self.session.snapshot
         if snapshot.panel is None:
             self.query_one("#match-live-panel", Static).update(
@@ -476,4 +471,3 @@ class MatchSettlementScreen(BaseScreen):
 
 def _runtime_options():
     return load_runtime_options(KERNEL_CONFIG_PATH)
-

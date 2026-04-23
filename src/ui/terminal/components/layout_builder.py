@@ -36,6 +36,14 @@ class LiveLayoutProfile:
     show_score_line: bool
 
 
+@dataclass(frozen=True, slots=True)
+class LiveSessionSummary:
+    """观战会话级摘要信息。"""
+
+    seed: int
+    target_label: str
+
+
 class LayoutBuilder:
     """构建响应式 live 观战布局。"""
 
@@ -53,6 +61,11 @@ class LayoutBuilder:
         self._hand_display = hand_display
         self._name_resolver = name_resolver
         self._token_budget_display = TokenBudgetDisplay()
+        self._session_summary: LiveSessionSummary | None = None
+
+    def set_session_summary(self, *, seed: int, target_label: str) -> None:
+        """设置右侧场况区展示的会话级信息。"""
+        self._session_summary = LiveSessionSummary(seed=seed, target_label=target_label)
 
     def build_panel(
         self,
@@ -85,7 +98,6 @@ class LayoutBuilder:
                 show_reason,
                 mode=profile.mode,
                 seat_contexts=seat_contexts,
-                stats_snapshot=self._stats_tracker.snapshot(),
             ),
             title="[bold green]手牌[/]",
             border_style="green",
@@ -288,4 +300,62 @@ class LayoutBuilder:
                     )
                 )
 
+        lines.extend(self._build_session_summary_lines())
+        lines.extend(self._build_score_and_win_lines(table, active_seat))
+        return lines
+
+    def _build_session_summary_lines(self) -> list[Text]:
+        if self._session_summary is None:
+            return []
+
+        return [
+            Text(""),
+            Text("对局设置", style="bold bright_white"),
+            Text.assemble(
+                ("seed ", "dim"),
+                (str(self._session_summary.seed), "yellow"),
+            ),
+            Text.assemble(
+                ("目标 ", "dim"),
+                (self._session_summary.target_label, "yellow"),
+            ),
+        ]
+
+    def _build_score_and_win_lines(self, table, active_seat: int | None) -> list[Text]:
+        snapshot = self._stats_tracker.snapshot()
+        lines: list[Text] = [
+            Text(""),
+            Text.assemble(
+                ("点数 / 和了统计", "bold bright_white"),
+                ("（已终局 ", "dim"),
+                (str(snapshot.rounds), "cyan"),
+                (" 局）", "dim"),
+            ),
+        ]
+
+        for seat, score in enumerate(table.scores):
+            name = self._name_resolver.get_name(seat, f"S{seat}")
+            name_style = "bold bright_cyan" if seat == active_seat else "bright_white"
+            score_style = "bold bright_yellow" if seat == active_seat else "yellow"
+            wins = snapshot.win_count(seat)
+            rate_label = (
+                f"{round(snapshot.win_rate(seat) * 100):d}%"
+                if snapshot.rounds > 0
+                else "--"
+            )
+            lines.extend(
+                [
+                    Text.assemble(
+                        (name, name_style),
+                        (" ", "dim"),
+                        (f"{score:,}点", score_style),
+                    ),
+                    Text.assemble(
+                        ("  和了 ", "dim"),
+                        (f"{wins}/{snapshot.rounds}局", "bold bright_cyan" if wins else "cyan"),
+                        (" · 和了率 ", "dim"),
+                        (rate_label, "yellow" if wins else "dim"),
+                    ),
+                ]
+            )
         return lines

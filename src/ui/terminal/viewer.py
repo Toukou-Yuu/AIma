@@ -28,6 +28,7 @@ from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
 
+from ui.match_labels import format_match_target_label
 from ui.terminal.components import (
     EventFormatter,
     HandDisplay,
@@ -123,6 +124,10 @@ class LiveMatchViewer:
         self._seat_prompt_diagnostics: dict[int, PromptDiagnostics] = {}
         self._active_context_seat: int | None = None
         self._event_history: deque = deque(maxlen=64)
+
+    def set_session_summary(self, *, seed: int, target_label: str) -> None:
+        """设置观战场况区使用的会话摘要。"""
+        self._layout_builder.set_session_summary(seed=seed, target_label=target_label)
 
     def set_player_names(self, names: dict[int, str]) -> None:
         """设置各席玩家名字（同步到所有组件）。
@@ -343,7 +348,7 @@ class LiveMatchViewer:
             self.console.print(f"[red]回放失败: {e}[/]")
 
     def describe_table(self, state: GameState) -> TableSummary:
-        """返回牌桌摘要，供 Textual live 状态条复用。"""
+        """返回牌桌摘要，供会话快照复用。"""
         line1, line2 = self._layout_builder.describe_table_lines(state, self._last_actor_seat)
         return TableSummary(summary_line=line1.plain, score_line=line2.plain)
 
@@ -356,12 +361,18 @@ class LiveMatchCallback:
         delay: float = 0.5,
         show_reason: bool = True,
         target_hands: int = 8,
+        seed: int | None = None,
     ) -> None:
         self.viewer = LiveMatchViewer(
             delay=delay,
             show_reason=show_reason,
             target_hands=target_hands,
         )
+        if seed is not None:
+            self.viewer.set_session_summary(
+                seed=seed,
+                target_label=format_match_target_label(target_hands),
+            )
         self.live: Live | None = None
         self._start_sequence: int = 0
         self._decision_start_time: float | None = None
