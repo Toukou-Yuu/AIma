@@ -10,8 +10,8 @@ from llm.agent.context_store import PersistentState, TurnContext
 from llm.agent.prompt_builder import (
     build_compressed_decision_prompt,
     build_decision_prompt,
-    build_delta_decision_prompt,
     build_system_prompt,
+    build_turn_state_message,
 )
 from llm.agent.session import LocalContextPolicy
 from llm.agent.token_budget import (
@@ -26,6 +26,7 @@ from llm.agent.token_budget import (
 if TYPE_CHECKING:
     from llm.agent.context import EpisodeContext
     from llm.agent.context_store import CompressionLevel
+    from llm.agent.message_ledger import LedgerMessage
     from llm.agent.profile import PlayerProfile
     from llm.protocol import ChatMessage
 
@@ -51,7 +52,6 @@ class PromptProjector:
         *,
         prompt_mode: ProjectionMode,
         context_scope: str,
-        use_delta: bool,
         history_budget: int,
         compression_level: "CompressionLevel",
         context_budget_tokens: int,
@@ -63,7 +63,6 @@ class PromptProjector:
         self.system_prompt_base = system_prompt_base
         self.prompt_mode = prompt_mode
         self.context_policy = LocalContextPolicy(scope=context_scope)
-        self.use_delta = use_delta
         self.history_budget = max(0, history_budget)
         self.compression_level = compression_level
         self.archive_budget = 0
@@ -85,7 +84,6 @@ class PromptProjector:
         *,
         persistent_state: PersistentState,
         episode_ctx: "EpisodeContext",
-        should_send_keyframe: bool = True,
     ) -> PromptProjection:
         """构建完整消息列表。"""
         from llm.protocol import ChatMessage
@@ -99,16 +97,25 @@ class PromptProjector:
         user_content = self._build_user_prompt(
             turn_context,
             episode_ctx=episode_ctx,
-            should_send_keyframe=should_send_keyframe,
         )
         window = self.context_policy.build_window()
+        history_messages = []
+        if window.include_public_history or window.include_self_history:
+            history_messages = episode_ctx.project_message_history(
+                history_budget=self.history_budget,
+                compression_level=self.compression_level,
+            )
+        archive_content = ""
+        if window.include_match_archive:
+            archive_content = episode_ctx.project_match_history(
+                archive_budget=self.archive_budget,
+                compression_level=self.compression_level,
+            )
         blocks = self._build_prompt_blocks(
             system_content=system_content,
+            archive_content=archive_content,
+            history_messages=history_messages,
             user_content=user_content,
-            episode_ctx=episode_ctx,
-            include_match_archive=window.include_match_archive,
-            include_public_history=window.include_public_history,
-            include_self_history=window.include_self_history,
         )
         plan = self._planner.plan(blocks)
         if plan.diagnostics is None:
@@ -128,58 +135,36 @@ class PromptProjector:
         turn_context: TurnContext,
         *,
         episode_ctx: "EpisodeContext",
-        should_send_keyframe: bool,
     ) -> str:
         """构建当前回合的 user prompt。"""
         observation = turn_context.observation
         legal_actions = turn_context.legal_actions
 
-        if self._should_use_delta(episode_ctx, should_send_keyframe):
-            from llm.observation_format import build_delta_observation
-
-            delta_obs = build_delta_observation(
-                observation,
-                episode_ctx.last_observation,
-                episode_ctx.last_hand,
-            )
-            return build_delta_decision_prompt(delta_obs, legal_actions)
-
         if self.prompt_mode == "json":
-            return build_compressed_decision_prompt(observation, legal_actions)
-        return build_decision_prompt(observation, legal_actions)
+            base_prompt = build_compressed_decision_prompt(observation, legal_actions)
+        else:
+            base_prompt = build_decision_prompt(observation, legal_actions)
 
-    def get_frame_type(
-        self,
-        episode_ctx: "EpisodeContext",
-        should_send_keyframe: bool,
-    ) -> str:
-        """返回当前投影帧类型。"""
-        if self._should_use_delta(episode_ctx, should_send_keyframe):
-            return "delta"
-        return "keyframe"
-
-    def _should_use_delta(
-        self,
-        episode_ctx: "EpisodeContext",
-        should_send_keyframe: bool,
-    ) -> bool:
-        """仅 JSON 模式允许 delta 帧。"""
-        return (
-            self.prompt_mode == "json"
-            and self.use_delta
-            and not should_send_keyframe
-            and episode_ctx.last_observation is not None
+        public_summary = ""
+        if self.context_policy.scope != "stateless":
+            public_summary = episode_ctx.build_recent_public_summary(
+                history_budget=max(1, min(self.history_budget, 6)),
+                compression_level="micro"
+                if self.compression_level in {"collapse", "autocompact"}
+                else self.compression_level,
+            )
+        return build_turn_state_message(
+            base_prompt=base_prompt,
+            public_summary=public_summary,
         )
 
     def _build_prompt_blocks(
         self,
         *,
         system_content: str,
+        archive_content: str,
+        history_messages: list["LedgerMessage"],
         user_content: str,
-        episode_ctx: "EpisodeContext",
-        include_match_archive: bool,
-        include_public_history: bool,
-        include_self_history: bool,
     ) -> list[PromptBlock]:
         blocks: list[PromptBlock] = [
             PromptBlock(
@@ -191,8 +176,8 @@ class PromptProjector:
             )
         ]
 
-        if include_match_archive:
-            archive_variants = self._build_archive_variants(episode_ctx)
+        if archive_content:
+            archive_variants = self._build_archive_variants(archive_content)
             if archive_variants:
                 blocks.append(
                     PromptBlock(
@@ -204,31 +189,17 @@ class PromptProjector:
                     )
                 )
 
-        if include_public_history:
-            public_variants = self._build_public_history_variants(episode_ctx)
-            if public_variants:
-                blocks.append(
-                    PromptBlock(
-                        block_id="public_history",
-                        role="user",
-                        priority=30,
-                        required=False,
-                        variants=public_variants,
-                    )
+        total_history = len(history_messages)
+        for index, message in enumerate(history_messages):
+            blocks.append(
+                PromptBlock(
+                    block_id=message.message_id,
+                    role=message.role,
+                    priority=total_history - index,
+                    required=False,
+                    variants=(PromptBlockVariant(message.compression_state, message.content),),
                 )
-
-        if include_self_history:
-            self_variants = self._build_self_history_variants(episode_ctx)
-            if self_variants:
-                blocks.append(
-                    PromptBlock(
-                        block_id="self_history",
-                        role="user",
-                        priority=60,
-                        required=False,
-                        variants=self_variants,
-                    )
-                )
+            )
 
         blocks.append(
             PromptBlock(
@@ -243,96 +214,14 @@ class PromptProjector:
 
     def _build_archive_variants(
         self,
-        episode_ctx: "EpisodeContext",
+        archive_content: str,
     ) -> tuple[PromptBlockVariant, ...]:
-        allowed = self._allowed_states()
-        variants: list[PromptBlockVariant] = []
-        for state in allowed:
-            compression = self._state_to_compression(state)
-            body = episode_ctx.project_match_history(
-                archive_budget=self.archive_budget,
-                compression_level=compression,
-            )
-            text = self._wrap_block("本场前情摘要", body)
-            if text:
-                variants.append(PromptBlockVariant(state, text))
-        return self._dedupe_variants(variants)
-
-    def _build_public_history_variants(
-        self,
-        episode_ctx: "EpisodeContext",
-    ) -> tuple[PromptBlockVariant, ...]:
-        allowed = self._allowed_states()
-        variants: list[PromptBlockVariant] = []
-        detailed = self.prompt_mode == "natural"
-        header = "本局公共事件"
-        for state in allowed:
-            compression = self._state_to_compression(state)
-            body = episode_ctx.project_public_history(
-                detailed=detailed,
-                history_budget=self.history_budget,
-                compression_level=compression,
-            )
-            text = self._wrap_block(header, body)
-            if text:
-                variants.append(PromptBlockVariant(state, text))
-        return self._dedupe_variants(variants)
-
-    def _build_self_history_variants(
-        self,
-        episode_ctx: "EpisodeContext",
-    ) -> tuple[PromptBlockVariant, ...]:
-        allowed = self._allowed_states()
-        variants: list[PromptBlockVariant] = []
-        detailed = self.prompt_mode == "natural"
-        header = "本局我的决策历史"
-        for state in allowed:
-            compression = self._state_to_compression(state)
-            body = episode_ctx.project_history(
-                detailed=detailed,
-                history_budget=self.history_budget,
-                compression_level=compression,
-            )
-            text = self._wrap_block(header, body)
-            if text:
-                variants.append(PromptBlockVariant(state, text))
-        return self._dedupe_variants(variants)
-
-    def _allowed_states(self) -> tuple[str, ...]:
-        order = ("full", "snip", "micro", "collapse", "autocompact")
-        cutoff = {
-            "none": 0,
-            "snip": 1,
-            "micro": 2,
-            "collapse": 3,
-            "autocompact": 4,
-        }[self.compression_level]
-        return order[: cutoff + 1]
-
-    def _state_to_compression(self, state: str) -> "CompressionLevel":
-        mapping = {
-            "full": "none",
-            "snip": "snip",
-            "micro": "micro",
-            "collapse": "collapse",
-            "autocompact": "autocompact",
-        }
-        return mapping[state]
+        text = self._wrap_block("本场前情摘要", archive_content)
+        if not text:
+            return ()
+        return (PromptBlockVariant("full", text),)
 
     def _wrap_block(self, header: str, body: str) -> str:
         if not body:
             return ""
         return f"{header}：\n{body}\n---"
-
-    def _dedupe_variants(
-        self,
-        variants: list[PromptBlockVariant],
-    ) -> tuple[PromptBlockVariant, ...]:
-        deduped: list[PromptBlockVariant] = []
-        seen_texts: set[str] = set()
-        for variant in variants:
-            if not variant.text or variant.text in seen_texts:
-                continue
-            seen_texts.add(variant.text)
-            deduped.append(variant)
-        return tuple(deduped)

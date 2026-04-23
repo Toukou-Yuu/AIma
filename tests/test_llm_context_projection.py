@@ -20,18 +20,22 @@ from kernel import (
     build_deck,
     initial_game_state,
     legal_actions,
+    observation,
     shuffle_deck,
 )
 from llm.agent.context import EpisodeContext
 from llm.agent.context_store import (
     ContextEvent,
     ContextStore,
+    PersistentState,
+    TurnContext,
 )
 from llm.agent.event_journal import MatchJournal
 from llm.agent.match_context import MatchContext
 from llm.agent.memory import PlayerMemory
 from llm.agent.profile import PlayerProfile
 from llm.agent.prompt import PromptProjector
+from llm.agent.stats import PlayerStats
 from llm.config import load_llm_runtime_config
 from llm.observation_format import (
     build_compressed_observation,
@@ -113,9 +117,10 @@ def test_default_context_scope_is_per_hand() -> None:
     decision = agent.decide(state, seat, episode_ctx=ctx, client=client, dry_run=False)
     agent.decide(state, seat, episode_ctx=ctx, client=client, dry_run=False)
 
-    second_messages = [msg.content for msg in client.messages[1]]
-    assert any("本局我的决策历史" in content for content in second_messages)
-    assert not any("本场前情摘要" in content for content in second_messages)
+    second_messages = client.messages[1]
+    assert [msg.role for msg in second_messages] == ["system", "user", "assistant", "user"]
+    assert "【当前决策】" in second_messages[-1].content
+    assert "本场前情摘要" not in "\n".join(msg.content for msg in second_messages)
     assert decision.prompt_diagnostics is not None
     assert decision.prompt_diagnostics.prompt_budget_tokens == (
         _RUNTIME.context_budget_tokens
@@ -140,9 +145,9 @@ def test_per_match_context_scope_reuses_local_match_archive() -> None:
     ctx2 = match_ctx.create_episode()
     agent.decide(state, seat, episode_ctx=ctx2, client=client, dry_run=False)
 
-    second_messages = [msg.content for msg in client.messages[1]]
-    assert any("本场前情摘要" in content for content in second_messages)
-    assert any("第1局" in content for content in second_messages)
+    second_messages = client.messages[1]
+    assert any("本场前情摘要" in msg.content for msg in second_messages)
+    assert any("第1局" in msg.content for msg in second_messages)
 
 
 def test_stateless_context_scope_omits_local_history() -> None:
@@ -155,10 +160,9 @@ def test_stateless_context_scope_omits_local_history() -> None:
     agent.decide(state, seat, episode_ctx=ctx, client=client, dry_run=False)
     agent.decide(state, seat, episode_ctx=ctx, client=client, dry_run=False)
 
-    second_messages = [msg.content for msg in client.messages[1]]
-    assert not any("本局我的决策历史" in content for content in second_messages)
-    assert not any("本局公共事件" in content for content in second_messages)
-    assert not any("本场前情摘要" in content for content in second_messages)
+    second_messages = client.messages[1]
+    assert [msg.role for msg in second_messages] == ["system", "user"]
+    assert not any("本场前情摘要" in msg.content for msg in second_messages)
 
 
 def test_per_hand_scope_can_include_public_event_history() -> None:
@@ -178,7 +182,7 @@ def test_per_hand_scope_can_include_public_event_history() -> None:
     agent.decide(state, seat, episode_ctx=ctx, client=client, dry_run=False)
 
     messages = [msg.content for msg in client.messages[0]]
-    assert any("本局公共事件" in content for content in messages)
+    assert any("公开事件摘要" in content for content in messages)
     assert any("第1局开始" in content for content in messages)
 
 
@@ -201,7 +205,7 @@ def test_prompt_projector_reads_latest_memory_snapshot() -> None:
     assert "整体风格: 偏向防守" in second_system
 
 
-def test_natural_mode_never_switches_to_delta_frame() -> None:
+def test_prompt_projector_uses_self_contained_turn_messages() -> None:
     profile = PlayerProfile(
         id="default",
         name="Default",
@@ -218,7 +222,6 @@ def test_natural_mode_never_switches_to_delta_frame() -> None:
         system_prompt_base="你是麻将牌手",
         prompt_mode="natural",
         context_scope=_RUNTIME.context_scope,
-        use_delta=True,
         history_budget=_RUNTIME.history_budget,
         compression_level=_RUNTIME.compression_level,
         context_budget_tokens=_RUNTIME.context_budget_tokens,
@@ -226,13 +229,16 @@ def test_natural_mode_never_switches_to_delta_frame() -> None:
         safety_margin_tokens=_RUNTIME.safety_margin_tokens,
     )
     state, seat, acts = _sample_state(seed=25)
-    obs = __import__("kernel").observation(state, seat, mode="human")
+    obs = observation(state, seat, mode="human")
     ctx = EpisodeContext(seat, match_id="matchE", hand_number=1)
-    ctx.last_observation = obs
-    ctx.last_hand = obs.hand.copy() if obs.hand else None
-    ctx.frame_count = 1
+    projection = projector.build_projection(
+        TurnContext(observation=obs, legal_actions=acts, turn_index=1),
+        persistent_state=PersistentState(PlayerMemory(), PlayerStats()),
+        episode_ctx=ctx,
+    )
 
-    assert projector.get_frame_type(ctx, should_send_keyframe=False) == "keyframe"
+    assert [msg.role for msg in projection.messages] == ["system", "user"]
+    assert "【当前决策】" in projection.messages[-1].content
 
 
 def test_context_store_collapse_keeps_recent_events() -> None:

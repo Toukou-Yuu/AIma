@@ -501,7 +501,7 @@ class TestTokenBudgetDisplay:
 
         assert "9/10 · 90% · drop · 丢弃 公共事件" in rendered
 
-    def test_inline_context_prioritizes_total_context_with_current_turn(self) -> None:
+    def test_inline_context_uses_full_request_token_count(self) -> None:
         from llm.agent.token_budget import BlockTokenUsage, PromptDiagnostics
         from ui.terminal.components.token_budget_display import TokenBudgetDisplay
 
@@ -537,7 +537,7 @@ class TestTokenBudgetDisplay:
         line = TokenBudgetDisplay().render_inline(diagnostics, active=True)
 
         assert "█████████░░░ 72% (4.8k / 6.7k)" in line.plain
-        assert "本轮请求 1.1k" in line.plain
+        assert "本轮请求 4.8k" in line.plain
         assert "status: collapse · 正常" in line.plain
 
 
@@ -1182,8 +1182,8 @@ class TestLiveMatchViewerIntegration:
 
         rendered = capture.get()
         assert "一姬[东]" in rendered
-        assert "上下文: █████████░░░ 72% (4.8k / 6.7k)" in rendered
-        assert "本轮请求 1.2k" in rendered
+        assert "有效上下文: █████████░░░ 72% (4.8k / 6.7k)" in rendered
+        assert "本轮请求 4.8k" in rendered
         assert "collapse · 正常" in rendered
 
     def test_event_history_persists_multiple_steps(self) -> None:

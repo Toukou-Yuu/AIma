@@ -164,7 +164,7 @@ class HandDisplay:
             reason_style = "italic bright_cyan" if is_active else "italic cyan"
             children.append(("理由: ", Text(self._clip_reason(reason), style=reason_style)))
         if context_text is not None:
-            children.append(("上下文: ", context_text))
+            children.append(("有效上下文: ", context_text))
 
         for idx, (label, content) in enumerate(children):
             lines.append(

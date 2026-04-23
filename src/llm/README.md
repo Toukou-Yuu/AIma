@@ -59,7 +59,6 @@ agent = PlayerAgent(
     context_budget_tokens=runtime.context_budget_tokens,
     reserved_output_tokens=runtime.reserved_output_tokens,
     safety_margin_tokens=runtime.safety_margin_tokens,
-    use_delta=(runtime.prompt_format == "json"),
 )
 decision = agent.decide(state, seat, episode_ctx=ctx, client=client, request_delay_seconds=runtime.request_delay)
 ```
@@ -80,10 +79,9 @@ mc.close_episode(ctx)      # 关闭本局，更新统计
 
 ```
 system = base_prompt + persona + memory + stats
-match = MatchJournal archived hands + self archive  # per_match
-public = MatchJournal.project_current_hand(...)     # per_hand/per_match
-self = ContextStore.project_history(...)            # per_hand/per_match
-user = natural/json keyframe or json delta
+messages = system + archived summary + prior user/assistant turns + current user turn
+public = MatchJournal.project_current_hand(...)     # turn-state 消息的公开事件摘要
+self = MessageLedger + ContextStore                 # 历史对话与压缩摘要素材
 planner = PromptBudgetPlanner(...)                  # 经验公式预算驱动压缩
 ```
 

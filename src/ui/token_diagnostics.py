@@ -8,11 +8,17 @@ _PROMPT_BLOCK_LABELS = {
     "public_history": "公共事件",
     "self_history": "我的历史",
     "current_turn": "当前决策",
+    "history_collapse_summary": "历史摘要",
+    "history_autocompact_summary": "高密度摘要",
 }
 
 
 def format_prompt_block_label(block_id: str) -> str:
     """Return a display label for an internal prompt block id."""
+    if block_id.startswith("turn_") and block_id.endswith("_user"):
+        return "历史用户消息"
+    if block_id.startswith("turn_") and block_id.endswith("_assistant"):
+        return "历史助手消息"
     return _PROMPT_BLOCK_LABELS.get(block_id, block_id)
 
 

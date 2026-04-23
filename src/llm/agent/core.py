@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from llm.agent.context_store import PersistentState, TurnContext
 from llm.agent.decision_parser import DecisionParser, DecisionParseResult
+from llm.agent.prompt_builder import build_assistant_turn_message
 
 if TYPE_CHECKING:
     from kernel.api.legal_actions import LegalAction
@@ -51,18 +52,15 @@ class AgentCore:
         self,
         profile: "PlayerProfile",
         prompt_mode: str,
-        use_delta: bool,
     ) -> None:
         """初始化核心决策组件.
 
         Args:
             profile: 玩家 profile（用于配置信息）
             prompt_mode: Prompt 投影模式
-            use_delta: 是否启用 delta 帧优化
         """
         self.profile = profile
         self.prompt_mode = prompt_mode
-        self.use_delta = use_delta
 
     def decide(
         self,
@@ -121,26 +119,19 @@ class AgentCore:
         # 4. 构建 observation
         obs = observation(state, seat, mode="human")
 
-        # 5. 判断帧类型
-        should_send_keyframe = episode_ctx.should_send_keyframe()
         turn_context = TurnContext(
             observation=obs,
             legal_actions=acts,
             turn_index=len(episode_ctx.decision_history) + 1,
         )
-        frame_type = prompt_projector.get_frame_type(episode_ctx, should_send_keyframe)
 
         # 6. 构建消息
         projection = prompt_projector.build_projection(
             turn_context,
             persistent_state=persistent_state,
             episode_ctx=episode_ctx,
-            should_send_keyframe=should_send_keyframe,
         )
         messages = projection.messages
-
-        # 7. 更新帧信息
-        episode_ctx.update_frame(obs)
 
         # 8. 调用 LLM
         if request_delay_seconds > 0:
@@ -151,11 +142,10 @@ class AgentCore:
         if session_audit:
             head = raw if len(raw) <= 600 else raw[:600] + "…"
             log.debug("llm raw_head seat=%s %r", seat, head)
-            log.debug("llm_frame seat=%s type=%s", seat, frame_type)
             log.debug(
                 "llm_history seat=%s history_msgs=%s",
                 seat,
-                len(episode_ctx.decision_history),
+                len(episode_ctx.message_ledger.messages),
             )
 
         # 11. DEBUG: 保存最后一次请求
@@ -184,6 +174,14 @@ class AgentCore:
             log.warning("parse or match failed, fallback first legal")
             if fallback is None:
                 fallback = DecisionParser.fallback_action(acts)
+            episode_ctx.append_user_message(
+                messages[-1].content,
+                turn_index=turn_context.turn_index,
+            )
+            episode_ctx.append_assistant_message(
+                build_assistant_turn_message(fallback, None),
+                turn_index=turn_context.turn_index,
+            )
             episode_ctx.record_decision(
                 Decision(fallback, None, []),
                 observation=obs,
@@ -203,6 +201,14 @@ class AgentCore:
             )
 
         # 16. 更新历史
+        episode_ctx.append_user_message(
+            messages[-1].content,
+            turn_index=turn_context.turn_index,
+        )
+        episode_ctx.append_assistant_message(
+            build_assistant_turn_message(la, why),
+            turn_index=turn_context.turn_index,
+        )
         episode_ctx.record_decision(
             Decision(la, why, []),
             observation=obs,

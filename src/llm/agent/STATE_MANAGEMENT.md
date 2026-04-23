@@ -131,7 +131,7 @@ class LocalContextPolicy:
 | `match_history_archive` | 创建本局时拍下的跨局摘要快照 |
 | `decision_history` | 自家决策历史 |
 | `match_journal` | 共享公共事件流视图 |
-| `last_observation` | 上一帧观测（用于变化帧） |
+| `message_ledger` | 本局 user/assistant 消息账本 |
 
 ### 4. Agent 内部状态（无临时状态）
 

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 from kernel.api.legal_actions import LegalAction
 from kernel.api.observation import Observation
 from llm.observation_format import build_user_prompt
+from llm.wire import legal_action_to_wire
 
 if TYPE_CHECKING:
     from llm.agent.memory import PlayerMemory
@@ -148,3 +149,30 @@ def build_delta_decision_prompt(
         "\n示例: {\"kind\":\"discard\",\"seat\":0,\"tile\":\"3m\",\"why\":\"现物安全\"}"
     )
     return json.dumps(body, ensure_ascii=False, indent=2) + format_hint
+
+
+def build_turn_state_message(
+    *,
+    base_prompt: str,
+    public_summary: str = "",
+) -> str:
+    """Build the user turn-state message appended to the local ledger."""
+    sections: list[str] = []
+    if public_summary:
+        sections.append("【公开事件摘要】")
+        sections.append(public_summary)
+    sections.append("【当前决策】")
+    sections.append(base_prompt)
+    return "\n\n".join(sections)
+
+
+def build_assistant_turn_message(
+    action,
+    why: str | None,
+) -> str:
+    """Build the canonical assistant reply stored in the local ledger."""
+    payload: dict[str, Any] = {
+        "action": legal_action_to_wire(action),
+        "why": why or "",
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)

@@ -108,9 +108,6 @@ class TokenBudgetDisplay:
         return f"[{bar}]" if framed else bar
 
     def _current_turn_tokens(self, diagnostics: PromptDiagnostics) -> int:
-        for block in diagnostics.selected_blocks:
-            if block.block_id == "current_turn":
-                return block.estimated_tokens
         return diagnostics.estimated_tokens
 
     def _usage_style(self, ratio: float) -> str:

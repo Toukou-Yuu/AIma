@@ -21,11 +21,11 @@ _COMPRESSION_ORDER: dict[CompressionState, int] = {
 }
 
 
-def _role_from_wire(value: object) -> Literal["system", "user"]:
+def _role_from_wire(value: object) -> Literal["system", "user", "assistant"]:
     role = str(value)
-    if role not in ("system", "user"):
+    if role not in ("system", "user", "assistant"):
         raise ValueError(f"invalid prompt block role: {role!r}")
-    return cast(Literal["system", "user"], role)
+    return cast(Literal["system", "user", "assistant"], role)
 
 
 def _compression_state_from_wire(value: object) -> CompressionState:
@@ -92,7 +92,7 @@ class PromptBlock:
     """A prompt block with ordered compression variants."""
 
     block_id: str
-    role: Literal["system", "user"]
+    role: Literal["system", "user", "assistant"]
     priority: int
     required: bool
     variants: tuple[PromptBlockVariant, ...]
@@ -107,7 +107,7 @@ class SelectedPromptBlock:
     """Selected prompt block variant after budget planning."""
 
     block_id: str
-    role: Literal["system", "user"]
+    role: Literal["system", "user", "assistant"]
     priority: int
     required: bool
     state: CompressionState
@@ -120,7 +120,7 @@ class BlockTokenUsage:
     """Token usage of one selected prompt block."""
 
     block_id: str
-    role: Literal["system", "user"]
+    role: Literal["system", "user", "assistant"]
     priority: int
     required: bool
     state: CompressionState
@@ -163,6 +163,9 @@ class PromptDiagnostics:
     trimmed_blocks: tuple[str, ...]
     max_compression_state: CompressionState
     over_budget: bool
+    latest_user_tokens: int = 0
+    history_message_count: int = 0
+    collapsed_message_count: int = 0
 
     @property
     def usage_ratio(self) -> float:
@@ -181,6 +184,9 @@ class PromptDiagnostics:
             "safety_margin_tokens": self.safety_margin_tokens,
             "max_compression_state": self.max_compression_state,
             "over_budget": self.over_budget,
+            "latest_user_tokens": self.latest_user_tokens,
+            "history_message_count": self.history_message_count,
+            "collapsed_message_count": self.collapsed_message_count,
             "trimmed_blocks": list(self.trimmed_blocks),
             "selected_blocks": [block.to_wire() for block in self.selected_blocks],
         }
@@ -206,6 +212,9 @@ class PromptDiagnostics:
                 data["max_compression_state"]
             ),
             over_budget=bool(data["over_budget"]),
+            latest_user_tokens=int(data.get("latest_user_tokens", 0)),
+            history_message_count=int(data.get("history_message_count", 0)),
+            collapsed_message_count=int(data.get("collapsed_message_count", 0)),
         )
 
 
@@ -360,6 +369,22 @@ class PromptBudgetPlanner:
             if selected_states
             else "full"
         )
+        latest_user_tokens = next(
+            (
+                block.estimated_tokens
+                for block in reversed(selected)
+                if block.block_id == "current_turn" or block.role == "user"
+            ),
+            0,
+        )
+        history_message_count = sum(
+            1
+            for block in selected
+            if block.block_id not in {"system", "match_archive", "current_turn"}
+        )
+        collapsed_message_count = sum(
+            1 for block in selected if "summary" in block.block_id
+        )
         diagnostics = PromptDiagnostics(
             estimated_tokens=total,
             prompt_budget_tokens=self._config.prompt_budget_tokens,
@@ -370,6 +395,9 @@ class PromptBudgetPlanner:
             trimmed_blocks=tuple(dropped),
             max_compression_state=max_state,
             over_budget=total > self._config.prompt_budget_tokens,
+            latest_user_tokens=latest_user_tokens,
+            history_message_count=history_message_count,
+            collapsed_message_count=collapsed_message_count,
         )
         return PromptPlan(
             blocks=tuple(selected),

@@ -5,9 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from llm.agent.core import AgentCore, Decision
 from llm.agent.context_store import PersistentState
-from llm.agent.decision_parser import DecisionParser
+from llm.agent.core import AgentCore, Decision
 from llm.agent.persistence import PersistenceManager
 from llm.agent.prompt import PromptProjector
 from llm.agent.session import ContextScope
@@ -16,7 +15,9 @@ if TYPE_CHECKING:
     from kernel.engine.state import GameState
     from llm.agent.context import EpisodeContext
     from llm.agent.context_store import CompressionLevel
-    from llm.agent.stats import MatchStats
+    from llm.agent.memory import PlayerMemory
+    from llm.agent.profile import PlayerProfile
+    from llm.agent.stats import PlayerStats
     from llm.protocol import CompletionClient
 
 log = logging.getLogger(__name__)
@@ -55,7 +56,6 @@ class PlayerAgent:
         context_budget_tokens: int,
         reserved_output_tokens: int,
         safety_margin_tokens: int,
-        use_delta: bool,
         system_prompt: str | None = None,
     ) -> None:
         """初始化 Agent.
@@ -73,7 +73,6 @@ class PlayerAgent:
             context_budget_tokens: Prompt 输入预算
             reserved_output_tokens: 预留输出预算
             safety_margin_tokens: 安全冗余预算
-            use_delta: 是否启用状态差异法
         """
         self.player_id = player_id
         self.history_budget = max(0, history_budget)
@@ -84,15 +83,9 @@ class PlayerAgent:
         self.context_budget_tokens = context_budget_tokens
         self.reserved_output_tokens = reserved_output_tokens
         self.safety_margin_tokens = safety_margin_tokens
-        self.use_delta = use_delta
 
         # 1. 创建持久化管理器
         self._persistence = PersistenceManager(player_id)
-
-        # 2. 加载长期状态（优先使用传入的）
-        from llm.agent.memory import PlayerMemory
-        from llm.agent.profile import PlayerProfile
-        from llm.agent.stats import PlayerStats
 
         self.profile = profile if profile is not None else self._persistence.load_profile()
         self.memory = memory if memory is not None else self._persistence.load_memory()
@@ -104,7 +97,6 @@ class PlayerAgent:
             system_prompt_base=system_prompt,
             prompt_mode=prompt_mode,
             context_scope=context_scope,
-            use_delta=use_delta,
             history_budget=self.history_budget,
             compression_level=compression_level,
             context_budget_tokens=context_budget_tokens,
@@ -113,7 +105,7 @@ class PlayerAgent:
         )
 
         # 4. 创建核心决策组件
-        self._core = AgentCore(self.profile, prompt_mode=prompt_mode, use_delta=use_delta)
+        self._core = AgentCore(self.profile, prompt_mode=prompt_mode)
 
     def decide(
         self,

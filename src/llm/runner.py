@@ -383,7 +383,6 @@ def run_llm_match(
                 context_budget_tokens=context_budget_tokens,
                 reserved_output_tokens=reserved_output_tokens,
                 safety_margin_tokens=safety_margin_tokens,
-                use_delta=(prompt_format == "json"),
             )
         # 未指定的座位使用默认
         for s in range(4):
@@ -397,7 +396,6 @@ def run_llm_match(
                     context_budget_tokens=context_budget_tokens,
                     reserved_output_tokens=reserved_output_tokens,
                     safety_margin_tokens=safety_margin_tokens,
-                    use_delta=(prompt_format == "json"),
                 )
     else:
         # 全部使用默认
@@ -406,13 +404,12 @@ def run_llm_match(
                 history_budget=effective_history_budget,
                 system_prompt=system_prompt,
                 prompt_mode=prompt_format,
-                compression_level=compression_level,
-                context_scope=effective_context_scope,
-                context_budget_tokens=context_budget_tokens,
-                reserved_output_tokens=reserved_output_tokens,
-                safety_margin_tokens=safety_margin_tokens,
-                use_delta=(prompt_format == "json"),
-            ) for s in range(4)
+                    compression_level=compression_level,
+                    context_scope=effective_context_scope,
+                    context_budget_tokens=context_budget_tokens,
+                    reserved_output_tokens=reserved_output_tokens,
+                    safety_margin_tokens=safety_margin_tokens,
+                ) for s in range(4)
         }
     # MatchContext：跨局状态管理（Context Object 模式）
     # 需要传递 player_id 以支持对话日志记录
@@ -681,10 +678,6 @@ def run_llm_match(
             # 记录立直到 EpisodeContext
             if act.kind == ActionKind.DISCARD and act.declare_riichi:
                 episode_ctx.record_riichi()
-                # 为其他玩家触发关键帧：任何玩家立直时，其他玩家需要知道
-                for other_seat in range(4):
-                    if other_seat != seat and other_seat in seat_contexts:
-                        seat_contexts[other_seat].record_riichi_trigger()
             turn_draw_tile: Tile | None = None
             discard_seat_for_log: int | None = None
             discarded_tile_for_log: Tile | None = None

@@ -7,7 +7,6 @@ from pathlib import Path
 from llm.agent import PlayerAgent
 from llm.config import LLMRuntimeConfig, load_llm_runtime_config
 
-
 _TEST_RUNTIME_PATH = Path("tests/fixtures/llm_runtime.yaml")
 
 
@@ -35,5 +34,4 @@ def build_test_agent(
         context_budget_tokens=runtime.context_budget_tokens,
         reserved_output_tokens=runtime.reserved_output_tokens,
         safety_margin_tokens=runtime.safety_margin_tokens,
-        use_delta=(effective_prompt_mode == "json"),
     )

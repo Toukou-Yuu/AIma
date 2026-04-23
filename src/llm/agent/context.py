@@ -7,14 +7,12 @@ from typing import TYPE_CHECKING
 
 from llm.agent.context_store import ContextEvent, ContextStore
 from llm.agent.memory import EpisodeStats
+from llm.agent.message_ledger import LedgerMessage, MessageLedger
 from llm.agent.stats import MatchStats
 
 if TYPE_CHECKING:
-    from collections import Counter
-
     from kernel.api.legal_actions import LegalAction
     from kernel.api.observation import Observation
-    from kernel.tiles.model import Tile
     from llm.agent import Decision
     from llm.agent.context_store import CompressionLevel
     from llm.agent.conversation_logger import ConversationLogger
@@ -39,12 +37,7 @@ class EpisodeContext:
     match_journal: MatchJournal | None = field(default=None, repr=False)
     decision_history: list[Decision] = field(default_factory=list)
     context_store: ContextStore = field(default_factory=ContextStore, repr=False)
-
-    # Phase 2: 状态差异法 - 保存上一帧信息
-    last_observation: Observation | None = field(default=None, repr=False)
-    last_hand: Counter[Tile] | None = field(default=None, repr=False)
-    frame_count: int = field(default=0)
-    new_riichi_triggered: bool = field(default=False)  # 有人立直后发送关键帧
+    message_ledger: MessageLedger = field(default_factory=MessageLedger, repr=False)
 
     # 对话记录器（可选，用于调试）
     conversation_logger: ConversationLogger | None = field(default=None, repr=False)
@@ -54,46 +47,67 @@ class EpisodeContext:
         if self.episode_stats.seat != self.seat:
             self.episode_stats.seat = self.seat
 
-    def should_send_keyframe(self) -> bool:
-        """判断是否应发送关键帧（完整状态）.
+    def append_user_message(self, content: str, *, turn_index: int) -> LedgerMessage:
+        """Append one user turn-state message."""
+        return self.message_ledger.append(
+            role="user",
+            content=content,
+            turn_index=turn_index,
+            hand_number=self.hand_number,
+            kind="turn_state",
+        )
 
-        关键帧触发条件：
-        1. 局开始时（frame_count == 0）
-        2. 每10回合定期同步
-        3. 有人立直后（new_riichi_triggered）
+    def append_assistant_message(self, content: str, *, turn_index: int) -> LedgerMessage:
+        """Append one assistant decision-reply message."""
+        return self.message_ledger.append(
+            role="assistant",
+            content=content,
+            turn_index=turn_index,
+            hand_number=self.hand_number,
+            kind="decision_reply",
+        )
 
-        Returns:
-            True: 应发送关键帧（完整状态）
-            False: 可发送变化帧（增量更新）
-        """
-        # 局开始时必须关键帧
-        if self.frame_count == 0:
-            return True
+    def project_message_history(
+        self,
+        *,
+        history_budget: int,
+        compression_level: CompressionLevel,
+    ) -> list[LedgerMessage]:
+        """Project prior user/assistant turns for the next request."""
+        if history_budget <= 0 or not self.message_ledger.messages:
+            return []
 
-        # 有人立直后发送关键帧
-        if self.new_riichi_triggered:
-            self.new_riichi_triggered = False  # 重置标记
-            return True
+        turn_indexes = self.message_ledger.turn_indexes()
+        if not turn_indexes:
+            return []
 
-        # 每10回合定期同步
-        if self.frame_count % 10 == 0:
-            return True
+        if compression_level == "none":
+            keep_turns = set(turn_indexes)
+            return self.message_ledger.messages_for_turns(keep_turns)
 
-        return False
+        if compression_level in {"snip", "micro"}:
+            keep_turns = set(turn_indexes[-history_budget:])
+            keep = self.message_ledger.messages_for_turns(keep_turns)
+            if compression_level == "micro":
+                return [self._clip_ledger_message(message) for message in keep]
+            return keep
 
-    def record_riichi_trigger(self) -> None:
-        """记录有人立直，触发下一帧为关键帧."""
-        self.new_riichi_triggered = True
+        if len(turn_indexes) <= history_budget:
+            return self.message_ledger.messages_for_turns(set(turn_indexes))
 
-    def update_frame(self, observation: Observation) -> None:
-        """更新帧信息.
+        if compression_level == "collapse":
+            tail_turns = max(1, history_budget // 2 or 1)
+        else:
+            tail_turns = 1 if history_budget <= 2 else 2
 
-        Args:
-            observation: 当前观测
-        """
-        self.last_observation = observation
-        self.last_hand = observation.hand.copy() if observation.hand else None
-        self.frame_count += 1
+        recent_turns = set(turn_indexes[-tail_turns:])
+        recent_messages = self.message_ledger.messages_for_turns(recent_turns)
+        summary = self._build_history_summary_message(
+            summary_kind="autocompact" if compression_level == "autocompact" else "collapse",
+        )
+        if summary is None:
+            return recent_messages
+        return [summary, *recent_messages]
 
     def record_win(self, win_tile: str) -> None:
         """记录和了."""
@@ -214,6 +228,22 @@ class EpisodeContext:
             lines.extend(archived)
         return "\n".join(lines)
 
+    def build_recent_public_summary(
+        self,
+        *,
+        history_budget: int,
+        compression_level: CompressionLevel,
+    ) -> str:
+        """Return recent public events as prompt material."""
+        if self.match_journal is None:
+            return ""
+        return self.match_journal.project_current_hand(
+            viewer_seat=self.seat,
+            detailed=False,
+            history_budget=history_budget,
+            compression_level=compression_level,
+        )
+
     def build_hand_summary(self) -> str:
         """生成本局归档摘要，供后续对局注入。"""
         summary_parts = [f"第{self.hand_number}局（自家）"]
@@ -278,7 +308,6 @@ class EpisodeContext:
         if kind == ActionKind.OPEN_MELD and action.meld:
             m = action.meld
             tiles = "/".join(t.to_code() for t in m.tiles) if m.tiles else "?"
-            called = m.called_tile.to_code() if m.called_tile else "?"
             kind_map = {"chi": "吃", "pon": "碰", "daiminkan": "杠"}
             cn = kind_map.get(m.kind.value, m.kind.value)
             return f"{cn}{tiles}"
@@ -356,6 +385,56 @@ class EpisodeContext:
             return "摸牌"
 
         return kind.value
+
+    def _build_history_summary_message(
+        self,
+        *,
+        summary_kind: str,
+    ) -> LedgerMessage | None:
+        public_summary = self.build_recent_public_summary(
+            history_budget=4,
+            compression_level="autocompact" if summary_kind == "autocompact" else "collapse",
+        )
+        self_summary = self.context_store.project_history(
+            detailed=False,
+            history_budget=4,
+            compression_level="autocompact" if summary_kind == "autocompact" else "collapse",
+        ).text
+
+        lines: list[str] = []
+        if public_summary:
+            lines.append("较早公开事件摘要:")
+            lines.append(public_summary)
+        if self_summary:
+            lines.append("较早自家决策摘要:")
+            lines.append(self_summary)
+        if not lines:
+            return None
+
+        return LedgerMessage(
+            message_id=f"history_{summary_kind}_summary",
+            role="user",
+            content="\n".join(lines),
+            turn_index=0,
+            hand_number=self.hand_number,
+            kind="summary",
+            compression_state="autocompact" if summary_kind == "autocompact" else "collapse",
+        )
+
+    def _clip_ledger_message(self, message: LedgerMessage) -> LedgerMessage:
+        limit = 320 if message.role == "user" else 160
+        content = message.content
+        if len(content) <= limit:
+            return message
+        return LedgerMessage(
+            message_id=message.message_id,
+            role=message.role,
+            content=content[: max(0, limit - 1)] + "…",
+            turn_index=message.turn_index,
+            hand_number=message.hand_number,
+            kind=message.kind,
+            compression_state="micro",
+        )
 
     def end_episode(self, points: int) -> None:
         """结束本局，更新统计."""
