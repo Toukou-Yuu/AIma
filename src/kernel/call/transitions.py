@@ -5,11 +5,11 @@ from __future__ import annotations
 from collections import Counter
 from typing import TYPE_CHECKING
 
+from kernel.call.ron_rules import require_can_declare_ron
 from kernel.hand.melds import Meld, MeldKind, triplet_key, validate_meld_shape
 from kernel.hand.multiset import remove_tiles
 from kernel.kan.rinshan import apply_after_kan_rinshan_draw
 from kernel.play.model import CallResolution, TurnPhase, shimocha_seat
-from kernel.scoring.furiten import is_furiten_for_tile
 from kernel.tiles.model import Tile
 
 if TYPE_CHECKING:
@@ -181,38 +181,9 @@ def apply_ron(
     宣告荣和。``can_ron(concealed, melds, win_tile) -> bool`` 可注入；默认七对子。
     荣和收集结束时若有和牌者，置 ``call_state.finished``，由引擎转 ``HAND_OVER``。
     """
-    from collections.abc import Callable
-
-    from kernel.call.win import can_ron_default
-
-    if board.turn_phase != TurnPhase.CALL_RESPONSE:
-        msg = "RON requires CALL_RESPONSE"
-        raise ValueError(msg)
+    require_can_declare_ron(board, seat, can_ron=can_ron)
     cs = board.call_state
     assert cs is not None
-    if cs.stage != "ron":
-        msg = "RON only in ron stage"
-        raise ValueError(msg)
-    op = frozenset(((cs.discard_seat + i) % 4) for i in (1, 2, 3))
-    if seat not in op:
-        msg = "RON seat must be opponent of discarder"
-        raise ValueError(msg)
-    if seat in cs.ron_claimants:
-        msg = "already declared ron"
-        raise ValueError(msg)
-    if seat in cs.ron_passed_seats:
-        msg = "同巡振听"
-        raise ValueError(msg)
-    if seat not in cs.ron_remaining:
-        msg = "seat cannot declare RON now"
-        raise ValueError(msg)
-    checker: Callable[..., bool] = can_ron if can_ron is not None else can_ron_default
-    if not checker(board.hands[seat], board.melds[seat], cs.claimed_tile):
-        msg = "illegal ron shape"
-        raise ValueError(msg)
-    if is_furiten_for_tile(board, seat, cs.claimed_tile):
-        msg = "furiten: cannot ron"
-        raise ValueError(msg)
     rem = frozenset(cs.ron_remaining - {seat})
     cl = frozenset(cs.ron_claimants | {seat})
     done_ron = not rem

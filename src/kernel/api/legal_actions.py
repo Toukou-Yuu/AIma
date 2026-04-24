@@ -13,14 +13,13 @@ from kernel.api.meld_candidates import (
     enumerate_call_response_open_melds,
     enumerate_shankuminkan_melds,
 )
-from kernel.call.win import can_ron_default, can_ron_seven_pairs
+from kernel.call.ron_rules import can_declare_ron
 from kernel.config import DEFAULT_CONFIG
 from kernel.deal.model import BoardState, Meld
 from kernel.engine.actions import ActionKind
 from kernel.engine.state import GameState
 from kernel.play.model import TurnPhase
 from kernel.riichi.tenpai import is_tenpai_default
-from kernel.scoring.furiten import is_furiten_for_tile
 from kernel.scoring.yaku import non_dora_yaku_han_and_labels
 from kernel.tiles.model import Tile
 
@@ -171,16 +170,10 @@ def _legal_actions_call_response(
     # 检查是否可以 RON
     if cs.stage == "ron":
         if seat in cs.ron_remaining:
-            # 检查是否可以荣和
-            concealed = board.hands[seat]
-            melds = board.melds[seat]
             win_tile = cs.claimed_tile
 
-            # 标准形或七对子，且须至少一番役（ドラ不可单算）
-            can_ron_shape = can_ron_default(concealed, melds, win_tile) or can_ron_seven_pairs(
-                concealed, melds, win_tile
-            )
-            if can_ron_shape and not is_furiten_for_tile(board, seat, win_tile):
+            # BoardState 级门禁与 apply_ron 共用；役番检查依赖 GameState.table，留在此层。
+            if can_declare_ron(board, seat).allowed:
                 if _legal_ron_non_dora_han(state, seat, win_tile) >= 1:
                     actions.append(
                         LegalAction(
