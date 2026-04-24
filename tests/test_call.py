@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 
 import pytest
 
@@ -20,6 +21,7 @@ from kernel import (
     initial_table_snapshot,
     shuffle_deck,
 )
+from kernel.api.legal_actions import legal_actions
 from kernel.call.transitions import apply_pass_call, apply_ron
 from kernel.call.win import can_ron_seven_pairs
 from kernel.deal.model import BoardState
@@ -117,6 +119,28 @@ def test_ron_allowed_when_not_passed_same_tile() -> None:
     b2 = apply_ron(b, 1)
     assert b2.call_state is not None
     assert 1 in b2.call_state.ron_claimants
+
+
+def test_legal_actions_hide_ron_when_furiten() -> None:
+    b = _board_seven_pairs_ron_window()
+    assert b.call_state is not None
+    win_tile = b.call_state.claimed_tile
+    furiten_board = replace(
+        b,
+        live_draw_index=b.live_draw_index + 1,
+        river=(RiverEntry(1, win_tile), *b.river),
+        call_state=replace(b.call_state, river_index=1),
+    )
+    state = GameState(
+        phase=GamePhase.IN_ROUND,
+        table=initial_table_snapshot(),
+        board=furiten_board,
+    )
+
+    actions = legal_actions(state, 1)
+
+    assert ActionKind.PASS_CALL in {action.kind for action in actions}
+    assert ActionKind.RON not in {action.kind for action in actions}
 
 
 def test_same_turn_furiten_after_pass_then_ron() -> None:

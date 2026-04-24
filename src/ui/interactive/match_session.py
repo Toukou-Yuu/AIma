@@ -24,6 +24,7 @@ from llm.config import (
 )
 from llm.protocol import build_seat_clients
 from llm.runner import RunResult, run_llm_match
+from ui.interactive.stop_reasons import is_error_stop_reason
 from ui.interactive.utils import load_profile_data
 from ui.match_labels import format_match_target_label
 from ui.terminal import LiveMatchViewer
@@ -106,7 +107,9 @@ class MatchSessionResult:
     @property
     def succeeded(self) -> bool:
         """是否正常完成。"""
-        return self.run_result is not None and self.error_message is None
+        if self.run_result is None or self.error_message is not None:
+            return False
+        return not is_error_stop_reason(self.run_result.stopped_reason)
 
 
 class _FlushingFileHandler(logging.FileHandler):

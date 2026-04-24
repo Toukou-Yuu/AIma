@@ -9,40 +9,16 @@ from pathlib import Path
 from typing import Any
 
 from llm.config import load_kernel_config
+from ui.interactive.stop_reasons import (
+    is_error_stop_reason,
+    is_normal_stop_reason,
+    is_truncated_stop_reason,
+)
 from ui.interactive.utils import KERNEL_CONFIG_PATH, load_profile_data
 from ui.services import llm_connection
 
 SEAT_LABELS = ("东家", "南家", "西家", "北家")
 _PLACEHOLDER_KEYS = {"", "your-api-key", "your-api-key-here"}
-_NORMAL_STOP_PREFIXES = ("hands_completed:", "negative_score:")
-_ERROR_STOP_PREFIXES = (
-    "begin_round_failed:",
-    "illegal_action:",
-    "noop_wall_failed:",
-    "parse_error",
-    "step_failed:",
-)
-_TRUNCATED_STOP_PREFIXES = ("max_player_steps",)
-
-
-def _starts_with_any(value: str, prefixes: tuple[str, ...]) -> bool:
-    """判断结束原因是否匹配任一已知前缀。"""
-    return any(value.startswith(prefix) for prefix in prefixes)
-
-
-def _is_normal_stop_reason(reason: str) -> bool:
-    """配置驱动的正常停止原因。"""
-    return reason == "match_end" or _starts_with_any(reason, _NORMAL_STOP_PREFIXES)
-
-
-def _is_error_stop_reason(reason: str) -> bool:
-    """异常停止原因。"""
-    return _starts_with_any(reason, _ERROR_STOP_PREFIXES)
-
-
-def _is_truncated_stop_reason(reason: str) -> bool:
-    """截断停止原因。"""
-    return _starts_with_any(reason, _TRUNCATED_STOP_PREFIXES)
 
 
 def _label_with_reason_detail(label: str, reason: str, prefix: str) -> str:
@@ -138,14 +114,14 @@ class ReplaySummary:
     def status_label(self) -> str:
         """面向 UI 的结束状态，只表达完成度，不混入结束原因。"""
         reason = self.stopped_reason or ""
-        if _is_error_stop_reason(reason):
+        if is_error_stop_reason(reason):
             return "异常"
-        if _is_truncated_stop_reason(reason):
+        if is_truncated_stop_reason(reason):
             return "已截断"
         if (
             self.ranking_by_seat
             or self.final_phase == "match_end"
-            or _is_normal_stop_reason(reason)
+            or is_normal_stop_reason(reason)
         ):
             return "已完成"
         return "未完成"

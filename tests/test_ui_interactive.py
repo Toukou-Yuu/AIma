@@ -257,6 +257,33 @@ def test_replay_summary_separates_status_from_stop_reason(tmp_path: Path) -> Non
     assert failed.reason_label == "执行失败: seat0 缺少 LLM client"
 
 
+def test_match_session_result_marks_step_failed_as_failure(tmp_path: Path) -> None:
+    """实时对局结果不能把 step_failed 视为正常完成。"""
+    from kernel import initial_game_state
+    from llm.runner import RunResult
+    from ui.interactive.match_session import MatchLogBundle, MatchSessionResult
+
+    run_result = RunResult(
+        final_state=initial_game_state(),
+        kernel_steps=1,
+        player_steps=1,
+        stopped_reason="step_failed:furiten: cannot ron",
+    )
+    result = MatchSessionResult(
+        run_result=run_result,
+        logs=MatchLogBundle(
+            stem="sample",
+            replay_path=tmp_path / "sample.json",
+            debug_path=tmp_path / "sample.log",
+            simple_path=tmp_path / "sample.txt",
+        ),
+        player_names={},
+        duration_seconds=0.0,
+    )
+
+    assert result.succeeded is False
+
+
 def test_match_target_label_uses_match_type_names() -> None:
     """观战目标使用局制语义标签，而不是裸局数。"""
     from ui.match_labels import format_match_target_label

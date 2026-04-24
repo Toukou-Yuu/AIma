@@ -20,6 +20,7 @@ from kernel.engine.actions import ActionKind
 from kernel.engine.state import GameState
 from kernel.play.model import TurnPhase
 from kernel.riichi.tenpai import is_tenpai_default
+from kernel.scoring.furiten import is_furiten_for_tile
 from kernel.scoring.yaku import non_dora_yaku_han_and_labels
 from kernel.tiles.model import Tile
 
@@ -176,9 +177,10 @@ def _legal_actions_call_response(
             win_tile = cs.claimed_tile
 
             # 标准形或七对子，且须至少一番役（ドラ不可单算）
-            if can_ron_default(concealed, melds, win_tile) or can_ron_seven_pairs(
+            can_ron_shape = can_ron_default(concealed, melds, win_tile) or can_ron_seven_pairs(
                 concealed, melds, win_tile
-            ):
+            )
+            if can_ron_shape and not is_furiten_for_tile(board, seat, win_tile):
                 if _legal_ron_non_dora_han(state, seat, win_tile) >= 1:
                     actions.append(
                         LegalAction(
