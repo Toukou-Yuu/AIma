@@ -44,10 +44,8 @@ llm:
   # 历史预算
   history_budget: 10
 
-  # Prompt 输入预算
-  context_budget_tokens: 8192
-  reserved_output_tokens: 1024
-  safety_margin_tokens: 512
+  # 上下文压缩触发阈值：prompt tokens + max_tokens 超过 max_context 的该比例时开始压缩
+  context_compression_threshold: 0.95
 
   # 每次请求间隔（秒）
   request_delay: 0.5
@@ -72,6 +70,7 @@ llm:
       base_url: "https://api.openai.com/v1"
       model: "gpt-4o-mini"
       timeout_sec: 120
+      max_context: 128000
       max_tokens: 1024
 
   # 四席到 profile 的绑定

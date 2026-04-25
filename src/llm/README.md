@@ -50,15 +50,16 @@ src/llm/
 
 ```python
 runtime = load_llm_runtime_config(config_path="configs/aima_kernel.yaml")
+seat_cfg = load_llm_config(config_path="configs/aima_kernel.yaml", seat=0)
 agent = PlayerAgent(
     player_id="kavi",
     history_budget=runtime.history_budget,
     prompt_mode=runtime.prompt_format,
     compression_level=runtime.compression_level,
     context_scope=runtime.context_scope,
-    context_budget_tokens=runtime.context_budget_tokens,
-    reserved_output_tokens=runtime.reserved_output_tokens,
-    safety_margin_tokens=runtime.safety_margin_tokens,
+    max_context_tokens=seat_cfg.max_context,
+    max_output_tokens=seat_cfg.max_tokens,
+    context_compression_threshold=runtime.context_compression_threshold,
 )
 decision = agent.decide(state, seat, episode_ctx=ctx, client=client, request_delay_seconds=runtime.request_delay)
 ```
@@ -97,9 +98,7 @@ llm:
   context_scope: per_hand  # AIma 本地上下文边界
   compression_level: collapse
   history_budget: 10
-  context_budget_tokens: 8192
-  reserved_output_tokens: 1024
-  safety_margin_tokens: 512
+  context_compression_threshold: 0.95
   profiles:
     default:
       provider: openai
@@ -107,6 +106,7 @@ llm:
       base_url: "https://api.openai.com/v1"
       model: "gpt-4o-mini"
       timeout_sec: 120
+      max_context: 128000
       max_tokens: 1024
   seats:
     seat0:

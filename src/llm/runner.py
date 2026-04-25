@@ -37,7 +37,7 @@ from llm.agent.context import EpisodeContext
 from llm.agent.event_journal import MatchJournal
 from llm.agent.match_context import MatchContext
 from llm.agent.token_budget import PromptDiagnostics
-from llm.config import MatchEndCondition
+from llm.config import LLMClientConfig, MatchEndCondition
 from llm.protocol import CompletionClient
 from llm.table_snapshot_text import action_wire_to_cn, write_snapshot_block
 from llm.turns import pending_actor_seats
@@ -314,11 +314,10 @@ def run_llm_match(
     history_budget: int,
     context_scope: str,
     compression_level: str,
-    context_budget_tokens: int,
-    reserved_output_tokens: int,
-    safety_margin_tokens: int,
+    context_compression_threshold: float,
     prompt_format: str,  # natural 或 json
     enable_conversation_logging: bool,
+    seat_llm_configs: dict[int, LLMClientConfig],
     seat_clients: dict[int, CompletionClient] | None = None,
     dry_run: bool = False,
     verbose: bool = False,
@@ -346,9 +345,7 @@ def run_llm_match(
     - ``history_budget``：历史预算。
     - ``context_scope``：AIma 本地上下文边界（``stateless``/``per_hand``/``per_match``）。
     - ``compression_level``：历史压缩级别。
-    - ``context_budget_tokens``：Prompt 输入预算。
-    - ``reserved_output_tokens``：预留输出预算。
-    - ``safety_margin_tokens``：安全冗余预算。
+    - ``context_compression_threshold``：上下文压缩触发阈值。
     - ``simple_log_file``：若给定，按内核事件写简体中文可读对局（与 JSON 牌谱并行）。
     - ``request_delay_seconds``：每次调用 LLM 前休眠秒数；``dry_run`` 时不请求。
     - ``seat_clients``：真实对局时每个座位对应的 LLM 客户端。
@@ -367,50 +364,34 @@ def run_llm_match(
     effective_context_scope = context_scope
 
     # 每席 Agent 实例（支持 players 配置）
+    def make_agent(seat: int, player_id: str | None = None) -> PlayerAgent:
+        cfg = seat_llm_configs[seat]
+        return PlayerAgent(
+            player_id=player_id,
+            history_budget=effective_history_budget,
+            system_prompt=system_prompt,
+            prompt_mode=prompt_format,
+            compression_level=compression_level,
+            context_scope=effective_context_scope,
+            max_context_tokens=cfg.max_context,
+            max_output_tokens=cfg.max_tokens,
+            context_compression_threshold=context_compression_threshold,
+        )
+
     if players:
         # 按配置创建指定玩家
         seat_agents: dict[int, PlayerAgent] = {}
         for p in players:
             seat = p["seat"]
             player_id = p.get("id")
-            seat_agents[seat] = PlayerAgent(
-                player_id=player_id,
-                history_budget=effective_history_budget,
-                system_prompt=system_prompt,
-                prompt_mode=prompt_format,
-                compression_level=compression_level,
-                context_scope=effective_context_scope,
-                context_budget_tokens=context_budget_tokens,
-                reserved_output_tokens=reserved_output_tokens,
-                safety_margin_tokens=safety_margin_tokens,
-            )
+            seat_agents[seat] = make_agent(seat, player_id)
         # 未指定的座位使用默认
         for s in range(4):
             if s not in seat_agents:
-                seat_agents[s] = PlayerAgent(
-                    history_budget=effective_history_budget,
-                    system_prompt=system_prompt,
-                    prompt_mode=prompt_format,
-                    compression_level=compression_level,
-                    context_scope=effective_context_scope,
-                    context_budget_tokens=context_budget_tokens,
-                    reserved_output_tokens=reserved_output_tokens,
-                    safety_margin_tokens=safety_margin_tokens,
-                )
+                seat_agents[s] = make_agent(s)
     else:
         # 全部使用默认
-        seat_agents: dict[int, PlayerAgent] = {
-            s: PlayerAgent(
-                history_budget=effective_history_budget,
-                system_prompt=system_prompt,
-                prompt_mode=prompt_format,
-                    compression_level=compression_level,
-                    context_scope=effective_context_scope,
-                    context_budget_tokens=context_budget_tokens,
-                    reserved_output_tokens=reserved_output_tokens,
-                    safety_margin_tokens=safety_margin_tokens,
-                ) for s in range(4)
-        }
+        seat_agents: dict[int, PlayerAgent] = {s: make_agent(s) for s in range(4)}
     # MatchContext：跨局状态管理（Context Object 模式）
     # 需要传递 player_id 以支持对话日志记录
     player_id_map: dict[int, str | None] = {}

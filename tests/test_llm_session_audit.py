@@ -8,7 +8,7 @@ import pytest
 
 from llm.config import MatchEndCondition
 from llm.runner import run_llm_match
-from tests.llm_test_utils import load_test_runtime_config
+from tests.llm_test_utils import load_test_runtime_config, load_test_seat_llm_configs
 
 
 @pytest.fixture
@@ -30,9 +30,8 @@ def test_session_audit_logs_apply_lines(caplog_for_runner: pytest.LogCaptureFixt
         history_budget=runtime.history_budget,
         context_scope=runtime.context_scope,
         compression_level=runtime.compression_level,
-        context_budget_tokens=runtime.context_budget_tokens,
-        reserved_output_tokens=runtime.reserved_output_tokens,
-        safety_margin_tokens=runtime.safety_margin_tokens,
+        context_compression_threshold=runtime.context_compression_threshold,
+        seat_llm_configs=load_test_seat_llm_configs(),
         prompt_format=runtime.prompt_format,
         enable_conversation_logging=runtime.conversation_logging_enabled,
     )

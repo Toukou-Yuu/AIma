@@ -25,9 +25,7 @@ class LLMRuntimeConfig:
     context_scope: Literal["stateless", "per_hand", "per_match"]
     compression_level: Literal["none", "snip", "micro", "collapse", "autocompact"]
     history_budget: int
-    context_budget_tokens: int
-    reserved_output_tokens: int
-    safety_margin_tokens: int
+    context_compression_threshold: float
     request_delay: float
     conversation_logging_enabled: bool
 
@@ -41,15 +39,19 @@ class LLMClientConfig:
     api_key: str
     model: str
     timeout_sec: float
+    max_context: int
     max_tokens: int
     system_prompt: str
     prompt_format: Literal["natural", "json"]
     context_scope: Literal["stateless", "per_hand", "per_match"]
     compression_level: Literal["none", "snip", "micro", "collapse", "autocompact"]
     history_budget: int
-    context_budget_tokens: int
-    reserved_output_tokens: int
-    safety_margin_tokens: int
+    context_compression_threshold: float
+
+    @property
+    def has_api_key(self) -> bool:
+        """Whether this profile has a usable API key."""
+        return not _is_missing_api_key(self.api_key)
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +64,7 @@ class LLMProfileConfig:
     api_key: str
     model: str
     timeout_sec: float
+    max_context: int
     max_tokens: int
 
 
@@ -230,14 +233,16 @@ def load_llm_runtime_config(
         ("none", "snip", "micro", "collapse", "autocompact"),
     )
 
+    threshold = float(_get_required(llm_cfg, "context_compression_threshold"))
+    if not 0 < threshold <= 1:
+        raise ValueError("context_compression_threshold must be in (0, 1]")
+
     return LLMRuntimeConfig(
         prompt_format=prompt_format,
         context_scope=context_scope,
         compression_level=compression_level,
         history_budget=int(_get_required(llm_cfg, "history_budget")),
-        context_budget_tokens=int(_get_required(llm_cfg, "context_budget_tokens")),
-        reserved_output_tokens=int(_get_required(llm_cfg, "reserved_output_tokens")),
-        safety_margin_tokens=int(_get_required(llm_cfg, "safety_margin_tokens")),
+        context_compression_threshold=threshold,
         request_delay=float(_get_required(llm_cfg, "request_delay")),
         conversation_logging_enabled=bool(_get_required(llm_cfg, "conversation_logging.enabled")),
     )
@@ -263,6 +268,17 @@ def _parse_profile(name: str, data: Any) -> LLMProfileConfig:
         str(_get_required(data, "provider")),
         ("openai", "anthropic"),
     )
+    max_context = int(_get_required(data, "max_context"))
+    max_tokens = int(_get_required(data, "max_tokens"))
+    if max_context <= 0:
+        raise ValueError(f"llm.profiles.{name}.max_context must be positive")
+    if max_tokens <= 0:
+        raise ValueError(f"llm.profiles.{name}.max_tokens must be positive")
+    if max_tokens >= max_context:
+        raise ValueError(
+            f"llm.profiles.{name}.max_tokens must be smaller than max_context"
+        )
+
     return LLMProfileConfig(
         name=name,
         provider=provider,
@@ -270,7 +286,8 @@ def _parse_profile(name: str, data: Any) -> LLMProfileConfig:
         api_key=_resolve_env_value(str(_get_required(data, "api_key"))),
         model=str(_get_required(data, "model")),
         timeout_sec=float(_get_required(data, "timeout_sec")),
-        max_tokens=int(_get_required(data, "max_tokens")),
+        max_context=max_context,
+        max_tokens=max_tokens,
     )
 
 
@@ -320,24 +337,27 @@ def _client_config_from_profile(
     profile: LLMProfileConfig,
     runtime_cfg: LLMRuntimeConfig,
     system_prompt: str,
-) -> LLMClientConfig | None:
-    if _is_missing_api_key(profile.api_key):
-        return None
+) -> LLMClientConfig:
+    prompt_budget = int(profile.max_context * runtime_cfg.context_compression_threshold)
+    if profile.max_tokens >= prompt_budget:
+        raise ValueError(
+            f"llm.profiles.{profile.name}.max_tokens must be smaller than "
+            "max_context * context_compression_threshold"
+        )
     return LLMClientConfig(
         provider=profile.provider,
         base_url=profile.base_url,
         api_key=profile.api_key,
         model=profile.model,
         timeout_sec=profile.timeout_sec,
+        max_context=profile.max_context,
         max_tokens=profile.max_tokens,
         system_prompt=system_prompt,
         prompt_format=runtime_cfg.prompt_format,
         context_scope=runtime_cfg.context_scope,
         compression_level=runtime_cfg.compression_level,
         history_budget=runtime_cfg.history_budget,
-        context_budget_tokens=runtime_cfg.context_budget_tokens,
-        reserved_output_tokens=runtime_cfg.reserved_output_tokens,
-        safety_margin_tokens=runtime_cfg.safety_margin_tokens,
+        context_compression_threshold=runtime_cfg.context_compression_threshold,
     )
 
 
@@ -345,7 +365,7 @@ def load_seat_llm_configs(
     *,
     config_path: Path | str = _BASE_KERNEL_PATH,
     override_cfg: dict[str, Any] | None = None,
-) -> dict[int, LLMClientConfig | None]:
+) -> dict[int, LLMClientConfig]:
     """读取四个座位的 LLM 客户端配置。"""
     llm_cfg = _effective_llm_config(config_path=config_path, override_cfg=override_cfg)
     runtime_cfg = load_llm_runtime_config(config_path=config_path, override_cfg=override_cfg)
@@ -368,7 +388,7 @@ def load_llm_config(
     config_path: Path | str = _BASE_KERNEL_PATH,
     seat: int | None = None,
     override_cfg: dict[str, Any] | None = None,
-) -> LLMClientConfig | None:
+) -> LLMClientConfig:
     """读取指定座位的 LLM 客户端配置。"""
     if seat is None:
         raise ValueError("load_llm_config 需要显式传入 seat")

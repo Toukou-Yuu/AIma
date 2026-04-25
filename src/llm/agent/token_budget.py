@@ -156,9 +156,9 @@ class PromptDiagnostics:
 
     estimated_tokens: int
     prompt_budget_tokens: int
-    context_budget_tokens: int
-    reserved_output_tokens: int
-    safety_margin_tokens: int
+    max_context_tokens: int
+    max_output_tokens: int
+    context_compression_threshold: float
     selected_blocks: tuple[BlockTokenUsage, ...]
     trimmed_blocks: tuple[str, ...]
     max_compression_state: CompressionState
@@ -179,9 +179,9 @@ class PromptDiagnostics:
         return {
             "estimated_tokens": self.estimated_tokens,
             "prompt_budget_tokens": self.prompt_budget_tokens,
-            "context_budget_tokens": self.context_budget_tokens,
-            "reserved_output_tokens": self.reserved_output_tokens,
-            "safety_margin_tokens": self.safety_margin_tokens,
+            "max_context_tokens": self.max_context_tokens,
+            "max_output_tokens": self.max_output_tokens,
+            "context_compression_threshold": self.context_compression_threshold,
             "max_compression_state": self.max_compression_state,
             "over_budget": self.over_budget,
             "latest_user_tokens": self.latest_user_tokens,
@@ -203,9 +203,9 @@ class PromptDiagnostics:
         return PromptDiagnostics(
             estimated_tokens=int(data["estimated_tokens"]),
             prompt_budget_tokens=int(data["prompt_budget_tokens"]),
-            context_budget_tokens=int(data["context_budget_tokens"]),
-            reserved_output_tokens=int(data["reserved_output_tokens"]),
-            safety_margin_tokens=int(data["safety_margin_tokens"]),
+            max_context_tokens=int(data["max_context_tokens"]),
+            max_output_tokens=int(data["max_output_tokens"]),
+            context_compression_threshold=float(data["context_compression_threshold"]),
             selected_blocks=selected_blocks,
             trimmed_blocks=tuple(str(item) for item in data.get("trimmed_blocks", [])),
             max_compression_state=_compression_state_from_wire(
@@ -235,16 +235,27 @@ class PromptDiagnosticsSummary:
 class PromptBudgetConfig:
     """Prompt budgeting configuration."""
 
-    context_budget_tokens: int
-    reserved_output_tokens: int
-    safety_margin_tokens: int
+    max_context_tokens: int
+    max_output_tokens: int
+    context_compression_threshold: float
+
+    def __post_init__(self) -> None:
+        if self.max_context_tokens <= 0:
+            raise ValueError("max_context_tokens must be positive")
+        if self.max_output_tokens <= 0:
+            raise ValueError("max_output_tokens must be positive")
+        if not 0 < self.context_compression_threshold <= 1:
+            raise ValueError("context_compression_threshold must be in (0, 1]")
+        if self.prompt_budget_tokens <= 0:
+            raise ValueError("max_output_tokens leaves no prompt budget")
+
+    @property
+    def context_limit_tokens(self) -> int:
+        return max(0, math.floor(self.max_context_tokens * self.context_compression_threshold))
 
     @property
     def prompt_budget_tokens(self) -> int:
-        return max(
-            0,
-            self.context_budget_tokens - self.reserved_output_tokens - self.safety_margin_tokens,
-        )
+        return max(0, self.context_limit_tokens - self.max_output_tokens)
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +279,11 @@ class PromptBudgetPlanner:
     ) -> None:
         self._config = config
         self._estimator = estimator or TokenEstimateService()
+
+    @property
+    def config(self) -> PromptBudgetConfig:
+        """Return immutable budget config."""
+        return self._config
 
     def plan(self, blocks: list[PromptBlock]) -> PromptPlan:
         """Choose block variants that fit within the configured prompt budget."""
@@ -388,13 +404,13 @@ class PromptBudgetPlanner:
         diagnostics = PromptDiagnostics(
             estimated_tokens=total,
             prompt_budget_tokens=self._config.prompt_budget_tokens,
-            context_budget_tokens=self._config.context_budget_tokens,
-            reserved_output_tokens=self._config.reserved_output_tokens,
-            safety_margin_tokens=self._config.safety_margin_tokens,
+            max_context_tokens=self._config.max_context_tokens,
+            max_output_tokens=self._config.max_output_tokens,
+            context_compression_threshold=self._config.context_compression_threshold,
             selected_blocks=selected_usages,
             trimmed_blocks=tuple(dropped),
             max_compression_state=max_state,
-            over_budget=total > self._config.prompt_budget_tokens,
+            over_budget=total + self._config.max_output_tokens > self._config.context_limit_tokens,
             latest_user_tokens=latest_user_tokens,
             history_message_count=history_message_count,
             collapsed_message_count=collapsed_message_count,

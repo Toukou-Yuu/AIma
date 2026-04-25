@@ -376,16 +376,11 @@ class MatchSession:
         try:
             with _SessionLoggingContext(self.logs) as log_context:
                 seat_clients = None
-                seat_llm_configs = None
+                seat_llm_configs = load_seat_llm_configs(config_path=self.config.config_path)
                 if not self.config.dry_run:
-                    seat_llm_configs = load_seat_llm_configs(config_path=self.config.config_path)
                     seat_clients = build_seat_clients(seat_llm_configs)
                 system_prompt = next(
-                    (
-                        cfg.system_prompt
-                        for cfg in (seat_llm_configs or {}).values()
-                        if cfg is not None
-                    ),
+                    (cfg.system_prompt for cfg in seat_llm_configs.values()),
                     None,
                 )
 
@@ -404,9 +399,10 @@ class MatchSession:
                     history_budget=self.config.llm_runtime.history_budget,
                     context_scope=self.config.llm_runtime.context_scope,
                     compression_level=self.config.llm_runtime.compression_level,
-                    context_budget_tokens=self.config.llm_runtime.context_budget_tokens,
-                    reserved_output_tokens=self.config.llm_runtime.reserved_output_tokens,
-                    safety_margin_tokens=self.config.llm_runtime.safety_margin_tokens,
+                    context_compression_threshold=(
+                        self.config.llm_runtime.context_compression_threshold
+                    ),
+                    seat_llm_configs=seat_llm_configs,
                     players=self.config.players,
                     system_prompt=system_prompt,
                     prompt_format=self.config.llm_runtime.prompt_format,

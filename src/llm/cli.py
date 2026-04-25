@@ -176,9 +176,7 @@ def _merge_config(
         "history_budget": llm_cfg["history_budget"],
         "context_scope": llm_cfg["context_scope"],
         "compression_level": llm_cfg["compression_level"],
-        "context_budget_tokens": llm_cfg["context_budget_tokens"],
-        "reserved_output_tokens": llm_cfg["reserved_output_tokens"],
-        "safety_margin_tokens": llm_cfg["safety_margin_tokens"],
+        "context_compression_threshold": llm_cfg["context_compression_threshold"],
         "prompt_format": llm_cfg["prompt_format"],
         "session_audit": logging_cfg["session_audit"],
         "show_reason": watch_cfg["show_reason"],
@@ -278,9 +276,7 @@ def _cmd_watch_dry_run(
     history_budget: int,
     context_scope: str,
     compression_level: str,
-    context_budget_tokens: int,
-    reserved_output_tokens: int,
-    safety_margin_tokens: int,
+    context_compression_threshold: float,
     prompt_format: str,
     show_reason: bool,
     match_end: dict[str, Any] | None = None,
@@ -338,14 +334,13 @@ def _cmd_watch_dry_run(
                 player_names[seat] = "默认"
 
     seat_clients = None
-    seat_llm_configs = None
-    if not dry_run:
-        try:
-            seat_llm_configs = load_seat_llm_configs(config_path=kernel_config_path)
+    try:
+        seat_llm_configs = load_seat_llm_configs(config_path=kernel_config_path)
+        if not dry_run:
             seat_clients = build_seat_clients(seat_llm_configs)
-        except ValueError as e:
-            print(f"LLM 配置错误：{e}", file=sys.stderr)
-            return 2
+    except ValueError as e:
+        print(f"LLM 配置错误：{e}", file=sys.stderr)
+        return 2
 
     from llm.config import MatchEndCondition
 
@@ -381,12 +376,11 @@ def _cmd_watch_dry_run(
             history_budget=history_budget,
             context_scope=context_scope,
             compression_level=compression_level,
-            context_budget_tokens=context_budget_tokens,
-            reserved_output_tokens=reserved_output_tokens,
-            safety_margin_tokens=safety_margin_tokens,
+            context_compression_threshold=context_compression_threshold,
+            seat_llm_configs=seat_llm_configs,
             players=players,
             system_prompt=next(
-                (cfg.system_prompt for cfg in (seat_llm_configs or {}).values() if cfg is not None),
+                (cfg.system_prompt for cfg in seat_llm_configs.values()),
                 None,
             ),
             prompt_format=prompt_format,
@@ -590,9 +584,7 @@ def main(argv: list[str] | None = None) -> int:
                 history_budget=cfg.history_budget,
                 context_scope=cfg.context_scope,
                 compression_level=cfg.compression_level,
-                context_budget_tokens=cfg.context_budget_tokens,
-                reserved_output_tokens=cfg.reserved_output_tokens,
-                safety_margin_tokens=cfg.safety_margin_tokens,
+                context_compression_threshold=cfg.context_compression_threshold,
                 prompt_format=cfg.prompt_format,
                 show_reason=cfg.show_reason,
                 players=cfg.players,
@@ -632,16 +624,15 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     seat_clients = None
-    seat_llm_configs = None
-    if not cfg.dry_run:
-        try:
-            seat_llm_configs = load_seat_llm_configs(config_path=kernel_config_path)
+    try:
+        seat_llm_configs = load_seat_llm_configs(config_path=kernel_config_path)
+        if not cfg.dry_run:
             seat_clients = build_seat_clients(seat_llm_configs)
-        except ValueError as e:
-            print(f"LLM 配置错误：{e}", file=sys.stderr)
-            return 2
+    except ValueError as e:
+        print(f"LLM 配置错误：{e}", file=sys.stderr)
+        return 2
     system_prompt = next(
-        (cfg.system_prompt for cfg in (seat_llm_configs or {}).values() if cfg is not None),
+        (cfg.system_prompt for cfg in seat_llm_configs.values()),
         None,
     )
 
@@ -671,9 +662,8 @@ def main(argv: list[str] | None = None) -> int:
                 history_budget=cfg.history_budget,
                 context_scope=cfg.context_scope,
                 compression_level=cfg.compression_level,
-                context_budget_tokens=cfg.context_budget_tokens,
-                reserved_output_tokens=cfg.reserved_output_tokens,
-                safety_margin_tokens=cfg.safety_margin_tokens,
+                context_compression_threshold=cfg.context_compression_threshold,
+                seat_llm_configs=seat_llm_configs,
                 players=cfg.players,
                 system_prompt=system_prompt,
                 prompt_format=cfg.prompt_format,
@@ -692,9 +682,8 @@ def main(argv: list[str] | None = None) -> int:
             history_budget=cfg.history_budget,
             context_scope=cfg.context_scope,
             compression_level=cfg.compression_level,
-            context_budget_tokens=cfg.context_budget_tokens,
-            reserved_output_tokens=cfg.reserved_output_tokens,
-            safety_margin_tokens=cfg.safety_margin_tokens,
+            context_compression_threshold=cfg.context_compression_threshold,
+            seat_llm_configs=seat_llm_configs,
             players=cfg.players,
             system_prompt=system_prompt,
             prompt_format=cfg.prompt_format,

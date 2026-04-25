@@ -209,9 +209,9 @@ class LiveMatchViewer:
             self._seat_prompt_diagnostics[self._last_actor_seat] = prompt_diagnostics
             self._active_context_seat = self._last_actor_seat
 
-        # 更新决策理由和时间
-        if self._last_actor_seat is not None and reason:
-            self._seat_reasons[self._last_actor_seat] = reason
+        # 只有真实 LLM 请求才更新理由；缺失 why 时显式展示状态，避免误判为 UI 丢失。
+        if self._last_actor_seat is not None and prompt_diagnostics is not None:
+            self._seat_reasons[self._last_actor_seat] = reason.strip() or "未提供理由"
 
         # 使用组件更新统计
         self._stats_tracker.update_from_events(events)

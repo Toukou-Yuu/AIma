@@ -14,7 +14,7 @@ from kernel import (
 from llm.config import MatchEndCondition
 from llm.runner import run_llm_match
 from llm.turns import pending_actor_seats
-from tests.llm_test_utils import load_test_runtime_config
+from tests.llm_test_utils import load_test_runtime_config, load_test_seat_llm_configs
 
 
 class _RecordingClient:
@@ -48,9 +48,8 @@ def test_run_llm_match_dry_run_advances() -> None:
         history_budget=runtime.history_budget,
         context_scope=runtime.context_scope,
         compression_level=runtime.compression_level,
-        context_budget_tokens=runtime.context_budget_tokens,
-        reserved_output_tokens=runtime.reserved_output_tokens,
-        safety_margin_tokens=runtime.safety_margin_tokens,
+        context_compression_threshold=runtime.context_compression_threshold,
+        seat_llm_configs=load_test_seat_llm_configs(),
         prompt_format=runtime.prompt_format,
         enable_conversation_logging=runtime.conversation_logging_enabled,
     )
@@ -77,9 +76,8 @@ def test_run_llm_match_uses_seat_scoped_clients() -> None:
         history_budget=runtime.history_budget,
         context_scope=runtime.context_scope,
         compression_level=runtime.compression_level,
-        context_budget_tokens=runtime.context_budget_tokens,
-        reserved_output_tokens=runtime.reserved_output_tokens,
-        safety_margin_tokens=runtime.safety_margin_tokens,
+        context_compression_threshold=runtime.context_compression_threshold,
+        seat_llm_configs=load_test_seat_llm_configs(),
         prompt_format=runtime.prompt_format,
         enable_conversation_logging=False,
         system_prompt="你是麻将牌手",
@@ -105,9 +103,8 @@ def test_run_llm_match_requires_current_seat_client() -> None:
         history_budget=runtime.history_budget,
         context_scope=runtime.context_scope,
         compression_level=runtime.compression_level,
-        context_budget_tokens=runtime.context_budget_tokens,
-        reserved_output_tokens=runtime.reserved_output_tokens,
-        safety_margin_tokens=runtime.safety_margin_tokens,
+        context_compression_threshold=runtime.context_compression_threshold,
+        seat_llm_configs=load_test_seat_llm_configs(),
         prompt_format=runtime.prompt_format,
         enable_conversation_logging=False,
         system_prompt="你是麻将牌手",

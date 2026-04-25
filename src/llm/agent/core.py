@@ -130,6 +130,7 @@ class AgentCore:
             turn_context,
             persistent_state=persistent_state,
             episode_ctx=episode_ctx,
+            compaction_client=client,
         )
         messages = projection.messages
 

@@ -30,10 +30,8 @@ llm:
   # 历史预算：控制发送给模型的历史窗口大小
   history_budget: 10
 
-  # Prompt 预算：使用经验公式估算 token 并驱动压缩边界
-  context_budget_tokens: 8192
-  reserved_output_tokens: 1024
-  safety_margin_tokens: 512
+  # 上下文压缩触发阈值：prompt tokens + max_tokens 超过 max_context 的该比例时开始压缩
+  context_compression_threshold: 0.95
 
   # 请求间隔（秒）
   request_delay: 0.5
@@ -50,6 +48,7 @@ llm:
       # model: "deepseek-chat"
       # model: "claude-3-5-sonnet-20241022"
       timeout_sec: 120.0
+      max_context: 128000
       max_tokens: 1024
 
     # local_qwen:
@@ -58,6 +57,7 @@ llm:
     #   api_key: "EMPTY"
     #   model: "Qwen3.5-9B.Q4_K_M"
     #   timeout_sec: 120.0
+    #   max_context: 8192
     #   max_tokens: 1024
 
     # deepseek:
@@ -66,6 +66,7 @@ llm:
     #   api_key: "${DEEPSEEK_API_KEY}"
     #   model: "deepseek-chat"
     #   timeout_sec: 120.0
+    #   max_context: 64000
     #   max_tokens: 1024
 
   # 系统提示词（通用规则，具体格式示例由 user prompt 提供）

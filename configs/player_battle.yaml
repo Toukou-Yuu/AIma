@@ -23,7 +23,7 @@ match:
 # 如不需要覆盖，可删除整个 llm 节或注释其中部分项
 llm:
   # timeout_sec: 300      # 对局特定超时（秒），覆盖内核配置
-  # max_tokens: 2048      # 对局特定最大 token，覆盖内核配置
+  # max_tokens: 2048      # 对局特定最大输出 token，覆盖内核配置
   request_delay: 0.5      # 请求间隔（秒）
   # history_budget: 10       # 覆盖历史预算
   # context_scope: per_match # 覆盖上下文边界

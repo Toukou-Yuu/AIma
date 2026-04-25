@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from llm.agent.context_compactor import ContextCompactor
 from llm.agent.context_store import PersistentState, TurnContext
 from llm.agent.prompt_builder import (
     build_compressed_decision_prompt,
@@ -20,6 +21,7 @@ from llm.agent.token_budget import (
     PromptBudgetConfig,
     PromptBudgetPlanner,
     PromptDiagnostics,
+    PromptPlan,
     TokenEstimateService,
 )
 
@@ -28,7 +30,7 @@ if TYPE_CHECKING:
     from llm.agent.context_store import CompressionLevel
     from llm.agent.message_ledger import LedgerMessage
     from llm.agent.profile import PlayerProfile
-    from llm.protocol import ChatMessage
+    from llm.protocol import ChatMessage, CompletionClient
 
 ProjectionMode = Literal["natural", "json"]
 
@@ -54,9 +56,9 @@ class PromptProjector:
         context_scope: str,
         history_budget: int,
         compression_level: "CompressionLevel",
-        context_budget_tokens: int,
-        reserved_output_tokens: int,
-        safety_margin_tokens: int,
+        max_context_tokens: int,
+        max_output_tokens: int,
+        context_compression_threshold: float,
         system_prompt_base: str | None = None,
     ) -> None:
         self.profile = profile
@@ -71,12 +73,13 @@ class PromptProjector:
         self._estimator = TokenEstimateService()
         self._planner = PromptBudgetPlanner(
             PromptBudgetConfig(
-                context_budget_tokens=context_budget_tokens,
-                reserved_output_tokens=reserved_output_tokens,
-                safety_margin_tokens=safety_margin_tokens,
+                max_context_tokens=max_context_tokens,
+                max_output_tokens=max_output_tokens,
+                context_compression_threshold=context_compression_threshold,
             ),
             estimator=self._estimator,
         )
+        self._compactor = ContextCompactor()
 
     def build_projection(
         self,
@@ -84,6 +87,7 @@ class PromptProjector:
         *,
         persistent_state: PersistentState,
         episode_ctx: "EpisodeContext",
+        compaction_client: "CompletionClient | None" = None,
     ) -> PromptProjection:
         """构建完整消息列表。"""
         from llm.protocol import ChatMessage
@@ -120,6 +124,21 @@ class PromptProjector:
         plan = self._planner.plan(blocks)
         if plan.diagnostics is None:
             raise RuntimeError("prompt budget planner did not produce diagnostics")
+        if self._should_semantic_compact(plan, compaction_client):
+            compacted_history = self._build_semantic_compacted_history(
+                episode_ctx,
+                compaction_client=compaction_client,
+            )
+            if compacted_history:
+                blocks = self._build_prompt_blocks(
+                    system_content=system_content,
+                    archive_content=archive_content,
+                    history_messages=compacted_history,
+                    user_content=user_content,
+                )
+                plan = self._planner.plan(blocks)
+                if plan.diagnostics is None:
+                    raise RuntimeError("prompt budget planner did not produce diagnostics")
         if plan.estimated_tokens > plan.prompt_budget_tokens:
             log.warning(
                 "prompt over budget after compression seat=%s estimated=%s budget=%s",
@@ -129,6 +148,46 @@ class PromptProjector:
             )
         messages = [ChatMessage(role=block.role, content=block.text) for block in plan.blocks]
         return PromptProjection(messages=messages, diagnostics=plan.diagnostics)
+
+    def _should_semantic_compact(
+        self,
+        plan: PromptPlan,
+        compaction_client: "CompletionClient | None",
+    ) -> bool:
+        if self.compression_level != "autocompact":
+            return False
+        if compaction_client is None or plan.diagnostics is None:
+            return False
+        if plan.diagnostics.over_budget:
+            return True
+        return any(block_id.startswith("turn_") for block_id in plan.diagnostics.trimmed_blocks)
+
+    def _build_semantic_compacted_history(
+        self,
+        episode_ctx: "EpisodeContext",
+        *,
+        compaction_client: "CompletionClient | None",
+    ) -> list["LedgerMessage"]:
+        if compaction_client is None:
+            return []
+        turn_indexes = episode_ctx.message_ledger.turn_indexes()
+        if len(turn_indexes) <= 2:
+            return []
+
+        recent_turns = set(turn_indexes[-2:])
+        older_turns = set(turn_indexes[:-2])
+        older_messages = episode_ctx.message_ledger.messages_for_turns(older_turns)
+        recent_messages = episode_ctx.message_ledger.messages_for_turns(recent_turns)
+        target_tokens = max(128, self._planner.config.prompt_budget_tokens // 5)
+        summary = self._compactor.compact(
+            client=compaction_client,
+            messages=older_messages,
+            hand_number=episode_ctx.hand_number,
+            target_tokens=target_tokens,
+        )
+        if summary is None:
+            return []
+        return [summary, *recent_messages]
 
     def _build_user_prompt(
         self,

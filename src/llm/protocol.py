@@ -51,10 +51,10 @@ def build_client(cfg: LLMClientConfig) -> CompletionClient:
     return AnthropicMessagesClient(cfg)
 
 
-def build_seat_clients(configs: dict[int, LLMClientConfig | None]) -> dict[int, CompletionClient]:
+def build_seat_clients(configs: dict[int, LLMClientConfig]) -> dict[int, CompletionClient]:
     """根据四席配置构造四席 LLM 客户端。"""
-    missing = sorted(seat for seat, cfg in configs.items() if cfg is None)
+    missing = sorted(seat for seat, cfg in configs.items() if not cfg.has_api_key)
     if missing:
         joined = ", ".join(f"seat{seat}" for seat in missing)
         raise ValueError(f"以下座位缺少有效 API Key: {joined}")
-    return {seat: build_client(cfg) for seat, cfg in configs.items() if cfg is not None}
+    return {seat: build_client(cfg) for seat, cfg in configs.items()}

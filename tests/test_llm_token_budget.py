@@ -29,9 +29,9 @@ def test_prompt_budget_planner_compresses_lower_priority_block_first() -> None:
     estimator = TokenEstimateService(ascii_weight=1.0, cjk_weight=1.0, other_weight=1.0)
     planner = PromptBudgetPlanner(
         PromptBudgetConfig(
-            context_budget_tokens=21,
-            reserved_output_tokens=3,
-            safety_margin_tokens=2,
+            max_context_tokens=19,
+            max_output_tokens=3,
+            context_compression_threshold=1.0,
         ),
         estimator=estimator,
     )
@@ -82,7 +82,7 @@ def test_prompt_budget_planner_compresses_lower_priority_block_first() -> None:
     assert plan.diagnostics is not None
     assert plan.diagnostics.estimated_tokens == 16
     assert plan.diagnostics.prompt_budget_tokens == 16
-    assert plan.diagnostics.context_budget_tokens == 21
+    assert plan.diagnostics.max_context_tokens == 19
     assert plan.diagnostics.max_compression_state == "snip"
     assert plan.diagnostics.trimmed_blocks == ()
     assert plan.diagnostics.over_budget is False
@@ -93,9 +93,9 @@ def test_prompt_budget_planner_records_dropped_optional_blocks() -> None:
     estimator = TokenEstimateService(ascii_weight=1.0, cjk_weight=1.0, other_weight=1.0)
     planner = PromptBudgetPlanner(
         PromptBudgetConfig(
-            context_budget_tokens=10,
-            reserved_output_tokens=0,
-            safety_margin_tokens=0,
+            max_context_tokens=10,
+            max_output_tokens=1,
+            context_compression_threshold=1.0,
         ),
         estimator=estimator,
     )
@@ -144,9 +144,9 @@ def test_prompt_diagnostics_summary_aggregates_token_pressure() -> None:
     first = PromptDiagnostics(
         estimated_tokens=100,
         prompt_budget_tokens=200,
-        context_budget_tokens=300,
-        reserved_output_tokens=50,
-        safety_margin_tokens=50,
+        max_context_tokens=300,
+        max_output_tokens=50,
+        context_compression_threshold=1.0,
         selected_blocks=selected,
         trimmed_blocks=(),
         max_compression_state="full",
@@ -155,9 +155,9 @@ def test_prompt_diagnostics_summary_aggregates_token_pressure() -> None:
     second = PromptDiagnostics(
         estimated_tokens=220,
         prompt_budget_tokens=200,
-        context_budget_tokens=300,
-        reserved_output_tokens=50,
-        safety_margin_tokens=50,
+        max_context_tokens=300,
+        max_output_tokens=50,
+        context_compression_threshold=1.0,
         selected_blocks=selected,
         trimmed_blocks=("public_history",),
         max_compression_state="drop",

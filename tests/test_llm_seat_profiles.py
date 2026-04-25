@@ -14,9 +14,7 @@ def _write_config(path: Path, *, api_key: str = "sk-test") -> None:
                 "  context_scope: per_hand",
                 "  compression_level: collapse",
                 "  history_budget: 10",
-                "  context_budget_tokens: 8192",
-                "  reserved_output_tokens: 1024",
-                "  safety_margin_tokens: 512",
+                "  context_compression_threshold: 0.95",
                 "  request_delay: 0.5",
                 "  conversation_logging:",
                 "    enabled: false",
@@ -28,6 +26,7 @@ def _write_config(path: Path, *, api_key: str = "sk-test") -> None:
                 f"      api_key: {api_key}",
                 "      model: qwen-local",
                 "      timeout_sec: 60",
+                "      max_context: 8192",
                 "      max_tokens: 512",
                 "    cloud:",
                 "      provider: openai",
@@ -35,6 +34,7 @@ def _write_config(path: Path, *, api_key: str = "sk-test") -> None:
                 "      api_key: ${AIMA_TEST_API_KEY}",
                 "      model: deepseek-chat",
                 "      timeout_sec: 120",
+                "      max_context: 64000",
                 "      max_tokens: 1024",
                 "  seats:",
                 "    seat0:",
@@ -69,8 +69,10 @@ def test_load_seat_llm_configs_binds_profiles(tmp_path: Path, monkeypatch) -> No
     assert configs[0] is not None
     assert configs[0].base_url == "http://localhost:8080/v1"
     assert configs[0].model == "qwen-local"
+    assert configs[0].max_context == 8192
     assert configs[1] is not None
     assert configs[1].api_key == "sk-env"
+    assert configs[1].max_context == 64000
     assert configs[2] is not None
     assert configs[2].model == "qwen-local"
 
@@ -89,7 +91,7 @@ def test_load_seat_llm_configs_rejects_missing_profile(tmp_path: Path) -> None:
         load_seat_llm_configs(config_path=config_path)
 
 
-def test_load_seat_llm_configs_marks_placeholder_key_missing(tmp_path: Path) -> None:
+def test_load_seat_llm_configs_preserves_placeholder_profile_budget(tmp_path: Path) -> None:
     from llm.config import load_seat_llm_configs
 
     config_path = tmp_path / "kernel.yaml"
@@ -97,8 +99,9 @@ def test_load_seat_llm_configs_marks_placeholder_key_missing(tmp_path: Path) -> 
 
     configs = load_seat_llm_configs(config_path=config_path)
 
-    assert configs[0] is None
-    assert configs[2] is None
+    assert configs[0].has_api_key is False
+    assert configs[0].max_context == 8192
+    assert configs[2].has_api_key is False
 
 
 def test_build_seat_clients_rejects_missing_client_config(tmp_path: Path) -> None:

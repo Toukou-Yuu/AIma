@@ -53,9 +53,9 @@ class PlayerAgent:
         prompt_mode: str,
         compression_level: "CompressionLevel",
         context_scope: ContextScope,
-        context_budget_tokens: int,
-        reserved_output_tokens: int,
-        safety_margin_tokens: int,
+        max_context_tokens: int,
+        max_output_tokens: int,
+        context_compression_threshold: float,
         system_prompt: str | None = None,
     ) -> None:
         """初始化 Agent.
@@ -70,9 +70,9 @@ class PlayerAgent:
             prompt_mode: Prompt 投影模式（natural/json）
             compression_level: 历史压缩级别
             context_scope: 本地上下文边界
-            context_budget_tokens: Prompt 输入预算
-            reserved_output_tokens: 预留输出预算
-            safety_margin_tokens: 安全冗余预算
+            max_context_tokens: 模型完整上下文窗口
+            max_output_tokens: 模型最大输出 token
+            context_compression_threshold: 上下文压缩触发阈值
         """
         self.player_id = player_id
         self.history_budget = max(0, history_budget)
@@ -80,9 +80,9 @@ class PlayerAgent:
         self.prompt_mode = prompt_mode
         self.compression_level = compression_level
         self.context_scope = context_scope
-        self.context_budget_tokens = context_budget_tokens
-        self.reserved_output_tokens = reserved_output_tokens
-        self.safety_margin_tokens = safety_margin_tokens
+        self.max_context_tokens = max_context_tokens
+        self.max_output_tokens = max_output_tokens
+        self.context_compression_threshold = context_compression_threshold
 
         # 1. 创建持久化管理器
         self._persistence = PersistenceManager(player_id)
@@ -99,9 +99,9 @@ class PlayerAgent:
             context_scope=context_scope,
             history_budget=self.history_budget,
             compression_level=compression_level,
-            context_budget_tokens=context_budget_tokens,
-            reserved_output_tokens=reserved_output_tokens,
-            safety_margin_tokens=safety_margin_tokens,
+            max_context_tokens=max_context_tokens,
+            max_output_tokens=max_output_tokens,
+            context_compression_threshold=context_compression_threshold,
         )
 
         # 4. 创建核心决策组件

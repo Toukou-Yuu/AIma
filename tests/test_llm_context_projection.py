@@ -122,11 +122,9 @@ def test_default_context_scope_is_per_hand() -> None:
     assert "【当前决策】" in second_messages[-1].content
     assert "本场前情摘要" not in "\n".join(msg.content for msg in second_messages)
     assert decision.prompt_diagnostics is not None
-    assert decision.prompt_diagnostics.prompt_budget_tokens == (
-        _RUNTIME.context_budget_tokens
-        - _RUNTIME.reserved_output_tokens
-        - _RUNTIME.safety_margin_tokens
-    )
+    assert decision.prompt_diagnostics.prompt_budget_tokens == int(
+        8192 * _RUNTIME.context_compression_threshold
+    ) - 1024
     assert decision.prompt_diagnostics.estimated_tokens > 0
 
 
@@ -224,9 +222,9 @@ def test_prompt_projector_uses_self_contained_turn_messages() -> None:
         context_scope=_RUNTIME.context_scope,
         history_budget=_RUNTIME.history_budget,
         compression_level=_RUNTIME.compression_level,
-        context_budget_tokens=_RUNTIME.context_budget_tokens,
-        reserved_output_tokens=_RUNTIME.reserved_output_tokens,
-        safety_margin_tokens=_RUNTIME.safety_margin_tokens,
+        max_context_tokens=8192,
+        max_output_tokens=1024,
+        context_compression_threshold=_RUNTIME.context_compression_threshold,
     )
     state, seat, acts = _sample_state(seed=25)
     obs = observation(state, seat, mode="human")
@@ -239,6 +237,53 @@ def test_prompt_projector_uses_self_contained_turn_messages() -> None:
 
     assert [msg.role for msg in projection.messages] == ["system", "user"]
     assert "【当前决策】" in projection.messages[-1].content
+
+
+def test_prompt_projector_autocompact_uses_semantic_summary_view() -> None:
+    profile = PlayerProfile(
+        id="default",
+        name="Default",
+        model="gpt-4o-mini",
+        provider="openai",
+        temperature=0.7,
+        max_tokens=1024,
+        timeout_sec=120.0,
+        persona_prompt="",
+        strategy_prompt="",
+    )
+    projector = PromptProjector(
+        profile,
+        system_prompt_base="你是麻将牌手",
+        prompt_mode="natural",
+        context_scope="per_hand",
+        history_budget=8,
+        compression_level="autocompact",
+        max_context_tokens=3500,
+        max_output_tokens=200,
+        context_compression_threshold=1.0,
+    )
+    state, seat, acts = _sample_state(seed=27)
+    obs = observation(state, seat, mode="human")
+    ctx = EpisodeContext(seat, match_id="match-compact", hand_number=1)
+    for turn in range(1, 3):
+        ctx.append_user_message("较早牌桌信息 " + ("A" * 5000), turn_index=turn)
+        ctx.append_assistant_message("较早决策理由 " + ("B" * 5000), turn_index=turn)
+    for turn in range(3, 5):
+        ctx.append_user_message("最近牌桌信息", turn_index=turn)
+        ctx.append_assistant_message("最近决策理由", turn_index=turn)
+    client = _TrackingClient("早期历史摘要")
+
+    projection = projector.build_projection(
+        TurnContext(observation=obs, legal_actions=acts, turn_index=5),
+        persistent_state=PersistentState(PlayerMemory(), PlayerStats()),
+        episode_ctx=ctx,
+        compaction_client=client,
+    )
+
+    assert len(client.messages) == 1
+    assert any("语义压缩摘要" in msg.content for msg in projection.messages)
+    assert len(ctx.message_ledger.messages) == 8
+    assert projection.diagnostics.max_compression_state == "autocompact"
 
 
 def test_context_store_collapse_keeps_recent_events() -> None:

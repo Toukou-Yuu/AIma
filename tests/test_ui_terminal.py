@@ -455,9 +455,9 @@ class TestTokenBudgetDisplay:
         diagnostics = PromptDiagnostics(
             estimated_tokens=4800,
             prompt_budget_tokens=6656,
-            context_budget_tokens=8192,
-            reserved_output_tokens=1024,
-            safety_margin_tokens=512,
+            max_context_tokens=8192,
+            max_output_tokens=1024,
+            context_compression_threshold=0.9375,
             selected_blocks=(
                 BlockTokenUsage(
                     block_id="current_turn",
@@ -487,9 +487,9 @@ class TestTokenBudgetDisplay:
         diagnostics = PromptDiagnostics(
             estimated_tokens=9,
             prompt_budget_tokens=10,
-            context_budget_tokens=10,
-            reserved_output_tokens=0,
-            safety_margin_tokens=0,
+            max_context_tokens=11,
+            max_output_tokens=1,
+            context_compression_threshold=1.0,
             selected_blocks=(),
             trimmed_blocks=("public_history",),
             max_compression_state="drop",
@@ -508,9 +508,9 @@ class TestTokenBudgetDisplay:
         diagnostics = PromptDiagnostics(
             estimated_tokens=4800,
             prompt_budget_tokens=6656,
-            context_budget_tokens=8192,
-            reserved_output_tokens=1024,
-            safety_margin_tokens=512,
+            max_context_tokens=8192,
+            max_output_tokens=1024,
+            context_compression_threshold=0.9375,
             selected_blocks=(
                 BlockTokenUsage(
                     block_id="public_history",
@@ -1119,6 +1119,32 @@ class TestLiveMatchViewerIntegration:
 
         assert isinstance(viewer.step(state, (), "家0 discard"), Panel)
 
+    def test_step_marks_missing_llm_reason_explicitly(self) -> None:
+        """真实 LLM 请求缺少 why 时，理由区显示明确占位。"""
+        from kernel import Action, ActionKind, apply, build_deck, initial_game_state, shuffle_deck
+        from llm.agent.token_budget import PromptDiagnostics
+        from ui.terminal.viewer import LiveMatchViewer
+
+        state = initial_game_state()
+        deck = tuple(shuffle_deck(build_deck(), seed=42))
+        state = apply(state, Action(ActionKind.BEGIN_ROUND, wall=deck)).new_state
+        diagnostics = PromptDiagnostics(
+            estimated_tokens=900,
+            prompt_budget_tokens=1000,
+            max_context_tokens=1200,
+            max_output_tokens=200,
+            context_compression_threshold=1.0,
+            selected_blocks=(),
+            trimmed_blocks=(),
+            max_compression_state="full",
+            over_budget=False,
+        )
+        viewer = LiveMatchViewer(show_reason=True)
+
+        viewer.step(state, (), "家0 打牌 1m", "", prompt_diagnostics=diagnostics)
+
+        assert viewer._seat_reasons[0] == "未提供理由"
+
     def test_update_stats_counts_wins(self) -> None:
         """统计更新正确计算和了次数。"""
         from kernel.event_log import HandOverEvent
@@ -1154,9 +1180,9 @@ class TestLiveMatchViewerIntegration:
         diagnostics = PromptDiagnostics(
             estimated_tokens=4800,
             prompt_budget_tokens=6656,
-            context_budget_tokens=8192,
-            reserved_output_tokens=1024,
-            safety_margin_tokens=512,
+            max_context_tokens=8192,
+            max_output_tokens=1024,
+            context_compression_threshold=0.9375,
             selected_blocks=(
                 BlockTokenUsage(
                     block_id="current_turn",
