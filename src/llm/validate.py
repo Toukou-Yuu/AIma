@@ -156,18 +156,30 @@ def find_matching_legal_action(
 ) -> LegalAction | None:
     """若 ``choice`` 与某一合法动作 wire 表示一致则返回该动作.
 
-    支持两种格式：
+    支持三种格式：
     1. 旧格式: {"kind": "discard", "seat": 0, "tile": "3m", "why": "..."}
-    2. 新格式: {"action": "打三万", "why": "..."}
+    2. 新格式（字符串）: {"action": "打三万", "why": "..."}
+    3. 嵌套格式: {"action": {"kind": "discard", ...}, "why": "..."}
     """
     # 尝试新格式（action 字段）
-    action_str = choice.get("action")
-    if action_str and isinstance(action_str, str):
-        la = parse_cn_action(action_str, legal)
+    action_val = choice.get("action")
+
+    # 嵌套格式: action 是一个 dict
+    if isinstance(action_val, dict):
+        norm = normalize_choice(action_val)
+        for la in legal:
+            w = legal_action_to_wire(la)
+            if w == norm:
+                return la
+        return None
+
+    # 新格式（字符串）: action 是中文动作描述
+    if action_val and isinstance(action_val, str):
+        la = parse_cn_action(action_val, legal)
         if la:
             return la
 
-    # 尝试旧格式（kind 字段）
+    # 旧格式（kind 字段）
     norm = normalize_choice(choice)
     for la in legal:
         w = legal_action_to_wire(la)

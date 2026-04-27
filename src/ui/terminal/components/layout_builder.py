@@ -78,6 +78,7 @@ class LayoutBuilder:
         viewport_width: int = 140,
         viewport_height: int = 40,
         seat_prompt_diagnostics: dict[int, "PromptDiagnostics"] | None = None,
+        seat_cumulative_tokens: dict[int, int] | None = None,
         active_context_seat: int | None = None,
         event_history: tuple | None = None,
     ) -> Panel:
@@ -85,6 +86,7 @@ class LayoutBuilder:
         profile = self._select_profile(viewport_width, viewport_height)
         seat_contexts = self._build_seat_context_lines(
             seat_prompt_diagnostics or {},
+            seat_cumulative_tokens or {},
             active_context_seat=active_context_seat,
             profile=profile,
         )
@@ -225,6 +227,7 @@ class LayoutBuilder:
     def _build_seat_context_lines(
         self,
         diagnostics_by_seat: dict[int, "PromptDiagnostics"],
+        cumulative_tokens_by_seat: dict[int, int],
         *,
         active_context_seat: int | None,
         profile: LiveLayoutProfile,
@@ -235,8 +238,10 @@ class LayoutBuilder:
             diagnostics = diagnostics_by_seat.get(seat)
             if diagnostics is None and not include_empty:
                 continue
+            cumulative = cumulative_tokens_by_seat.get(seat, 0)
             lines[seat] = self._token_budget_display.render_inline(
                 diagnostics,
+                cumulative_tokens=cumulative,
                 active=diagnostics is not None and seat == active_context_seat,
             )
         return lines

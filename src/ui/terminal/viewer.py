@@ -122,6 +122,7 @@ class LiveMatchViewer:
         self._seat_names: dict[int, str] = {}
         self._table_summary = TableSummary("", "")
         self._seat_prompt_diagnostics: dict[int, PromptDiagnostics] = {}
+        self._seat_cumulative_tokens: dict[int, int] = {0: 0, 1: 0, 2: 0, 3: 0}
         self._active_context_seat: int | None = None
         self._event_history: deque = deque(maxlen=64)
 
@@ -208,6 +209,8 @@ class LiveMatchViewer:
         if self._last_actor_seat is not None and prompt_diagnostics is not None:
             self._seat_prompt_diagnostics[self._last_actor_seat] = prompt_diagnostics
             self._active_context_seat = self._last_actor_seat
+            # 累计 tokens 更新
+            self._seat_cumulative_tokens[self._last_actor_seat] += prompt_diagnostics.estimated_tokens
 
         # 只有真实 LLM 请求才更新理由；缺失 why 时显式展示状态，避免误判为 UI 丢失。
         if self._last_actor_seat is not None and prompt_diagnostics is not None:
@@ -234,6 +237,7 @@ class LiveMatchViewer:
             viewport_width=viewport_width,
             viewport_height=viewport_height,
             seat_prompt_diagnostics=self._seat_prompt_diagnostics,
+            seat_cumulative_tokens=self._seat_cumulative_tokens,
             active_context_seat=self._active_context_seat,
             event_history=tuple(self._event_history),
         )
