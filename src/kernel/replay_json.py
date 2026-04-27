@@ -323,6 +323,7 @@ def match_log_document(
     events_wire: tuple[dict[str, Any], ...],
     reasons: tuple[str | None, ...] | None = None,
     token_diagnostics: tuple[dict[str, Any] | None, ...] | None = None,
+    players: tuple[dict[str, Any], ...] | None = None,
 ) -> dict[str, Any]:
     """组装 CLI/文件用的顶层牌谱 dict。"""
     doc = {
@@ -338,4 +339,6 @@ def match_log_document(
         doc["reasons"] = [r for r in reasons]
     if token_diagnostics and any(item is not None for item in token_diagnostics):
         doc["token_diagnostics"] = [item for item in token_diagnostics]
+    if players:
+        doc["players"] = [p for p in players]
     return doc

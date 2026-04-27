@@ -264,6 +264,27 @@ def _cmd_watch_replay(
         return 2
 
     viewer = LiveMatchViewer(delay=delay, show_reason=False)
+
+    # 从牌谱文件解析 players 并设置名称（向后兼容）
+    try:
+        import json
+        from pathlib import Path
+        replay_path = Path(path)
+        if replay_path.exists():
+            data = json.loads(replay_path.read_text(encoding="utf-8"))
+            players_raw = data.get("players", [])
+            if isinstance(players_raw, list) and players_raw:
+                player_names = {
+                    p["seat"]: p.get("name", p.get("id", f"S{p['seat']}"))
+                    for p in players_raw
+                    if isinstance(p, dict) and "seat" in p
+                }
+                if player_names:
+                    viewer.set_player_names(player_names)
+    except Exception:
+        # 解析失败时不影响回放，跳过名称设置
+        pass
+
     viewer.run_from_replay_file(path, delay=delay)
     return 0
 

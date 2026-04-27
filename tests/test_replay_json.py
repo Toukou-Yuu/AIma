@@ -18,6 +18,7 @@ from kernel.replay_json import (
     actions_from_match_log,
     game_event_from_wire,
     game_event_to_wire,
+    match_log_document,
 )
 from llm.config import MatchEndCondition
 from llm.runner import run_llm_match
@@ -128,3 +129,80 @@ def test_run_llm_match_log_replays_same_phase() -> None:
     actions = actions_from_match_log(doc)
     final, _ = replay_from_actions(actions)
     assert final.phase == rr.final_state.phase
+
+
+def test_match_log_document_with_players() -> None:
+    """match_log_document() 输出包含 players 字段。"""
+    players_wire = (
+        {"id": "ichihime", "seat": 0, "name": "一姬"},
+        {"id": "yui", "seat": 1, "name": "八木唯"},
+    )
+    doc = match_log_document(
+        seed=42,
+        stopped_reason="match_end",
+        steps=100,
+        final_phase="match_end",
+        actions_wire=(),
+        events_wire=(),
+        players=players_wire,
+    )
+    assert "players" in doc
+    assert len(doc["players"]) == 2
+    assert doc["players"][0]["id"] == "ichihime"
+    assert doc["players"][1]["name"] == "八木唯"
+
+
+def test_match_log_document_without_players() -> None:
+    """players 为空时不输出字段。"""
+    doc = match_log_document(
+        seed=42,
+        stopped_reason="match_end",
+        steps=100,
+        final_phase="match_end",
+        actions_wire=(),
+        events_wire=(),
+        players=(),
+    )
+    assert "players" not in doc
+
+
+def test_match_log_document_players_none() -> None:
+    """players=None 时不输出字段。"""
+    doc = match_log_document(
+        seed=42,
+        stopped_reason="match_end",
+        steps=100,
+        final_phase="match_end",
+        actions_wire=(),
+        events_wire=(),
+        players=None,
+    )
+    assert "players" not in doc
+
+
+def test_actions_from_match_log_ignores_players() -> None:
+    """players 字段不影响 actions 解析。"""
+    doc = {
+        "format_version": 2,
+        "seed": 42,
+        "actions": [{"kind": "call_pass_drain"}],
+        "players": [
+            {"id": "ichihime", "seat": 0, "name": "一姬"},
+            {"id": "yui", "seat": 1, "name": "八木唯"},
+        ],
+    }
+    actions = actions_from_match_log(doc)
+    assert len(actions) == 1
+    assert actions[0].kind == ActionKind.CALL_PASS_DRAIN
+
+
+def test_actions_from_match_log_old_format_without_players() -> None:
+    """旧牌谱（无 players 字段）仍可正确解析。"""
+    doc_old = {
+        "format_version": 2,
+        "seed": 42,
+        "actions": [{"kind": "call_pass_drain"}],
+    }
+    actions = actions_from_match_log(doc_old)
+    assert len(actions) == 1
+    assert actions[0].kind == ActionKind.CALL_PASS_DRAIN

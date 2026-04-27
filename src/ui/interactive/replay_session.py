@@ -77,6 +77,15 @@ class ReplaySession:
             show_reason=False,
             target_hands=max(1, self.summary.action_count),
         )
+        # 从 summary.players 构建名称映射并设置
+        if self.summary.players:
+            player_names = {
+                p["seat"]: p.get("name", p.get("id", f"S{p['seat']}"))
+                for p in self.summary.players
+                if "seat" in p
+            }
+            if player_names:
+                self._viewer.set_player_names(player_names)
         self._lock = threading.Lock()
         self._done = threading.Event()
         self._pause = threading.Event()

@@ -104,6 +104,7 @@ class ReplaySummary:
     step_count: int
     ranking_by_seat: tuple[int, int, int, int] | None
     final_scores: tuple[int, int, int, int] | None
+    players: tuple[dict[str, Any], ...] = ()
 
     @property
     def time_label(self) -> str:
@@ -463,6 +464,7 @@ def load_replay_summary(path: Path) -> ReplaySummary:
             step_count=0,
             ranking_by_seat=None,
             final_scores=None,
+            players=(),
         )
 
     events = data.get("events", [])
@@ -483,6 +485,16 @@ def load_replay_summary(path: Path) -> ReplaySummary:
     except (TypeError, ValueError):
         step_count = 0
 
+    # 解析 players 字段，向后兼容：缺失或格式不对时返回空 tuple
+    players_raw = data.get("players", [])
+    players_tuple: tuple[dict[str, Any], ...] = ()
+    if isinstance(players_raw, list):
+        players_tuple = tuple(
+            {k: v for k, v in p.items() if k in ("id", "seat", "name")}
+            for p in players_raw
+            if isinstance(p, dict)
+        )
+
     return ReplaySummary(
         path=path,
         stem=path.stem,
@@ -494,6 +506,7 @@ def load_replay_summary(path: Path) -> ReplaySummary:
         step_count=step_count,
         ranking_by_seat=ranking,
         final_scores=final_scores,
+        players=players_tuple,
     )
 
 

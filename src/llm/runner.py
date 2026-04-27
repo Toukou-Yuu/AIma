@@ -287,6 +287,7 @@ class RunResult:
     events_wire: tuple[dict[str, Any], ...] = ()
     reasons: tuple[str | None, ...] = ()  # 每个动作的决策理由
     token_diagnostics: tuple[PromptDiagnostics | None, ...] = ()
+    players: tuple[dict[str, Any], ...] = ()  # 对局玩家信息
 
     def as_match_log(self) -> dict[str, Any]:
         """可 ``json.dump`` 的牌谱顶层结构。"""
@@ -303,6 +304,7 @@ class RunResult:
             events_wire=self.events_wire,
             reasons=self.reasons,
             token_diagnostics=token_diagnostics_wire,
+            players=self.players,
         )
 
 
@@ -392,6 +394,21 @@ def run_llm_match(
     else:
         # 全部使用默认
         seat_agents: dict[int, PlayerAgent] = {s: make_agent(s) for s in range(4)}
+    # 构建 players_wire：包含 id, seat, name
+    players_wire: tuple[dict[str, Any], ...] = ()
+    if players:
+        # 延迟导入避免循环依赖
+        from ui.interactive.utils import load_profile_data
+
+        wire_list = []
+        for p in players:
+            player_id = p.get("id", "default")
+            seat = p["seat"]
+            profile = load_profile_data(player_id) if player_id != "default" else None
+            name = str(profile.get("name", player_id)) if profile else player_id
+            wire_list.append({"id": player_id, "seat": seat, "name": name})
+        players_wire = tuple(wire_list)
+
     # MatchContext：跨局状态管理（Context Object 模式）
     # 需要传递 player_id 以支持对话日志记录
     player_id_map: dict[int, str | None] = {}
@@ -477,6 +494,7 @@ def run_llm_match(
             events_wire=(),
             reasons=(),
             token_diagnostics=(),
+            players=players_wire,
         )
 
     kernel_steps = 0
@@ -755,4 +773,5 @@ def run_llm_match(
         events_wire=tuple(events_acc),
         reasons=tuple(reasons_acc),
         token_diagnostics=tuple(token_diagnostics_acc),
+        players=players_wire,
     )
