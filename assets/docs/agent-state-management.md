@@ -2,7 +2,7 @@
 
 `PlayerAgent` 是无状态协调类，只保留长期状态（profile/memory/stats）。运行时状态由外部（runner）管理。
 
-组件目录结构见 `src/llm/README.md`。
+组件目录结构见 `llm-module.md`。
 
 ## 组件职责
 

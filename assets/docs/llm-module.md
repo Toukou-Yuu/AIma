@@ -11,7 +11,7 @@ src/llm/
 ├── runner.py             # 对局主循环（run_llm_match）
 ├── config.py             # 配置加载
 ├── protocol.py           # HTTP 客户端抽象（OpenAI/Anthropic）
-├── agent/                # Agent 系统（详见 STATE_MANAGEMENT.md）
+├── agent/                # Agent 系统（详见 agent-state-management.md）
 │   ├── __init__.py       # PlayerAgent（协调类）
 │   ├── core.py           # AgentCore（决策逻辑）
 │   ├── prompt.py         # PromptProjector（上下文投影）
@@ -24,8 +24,7 @@ src/llm/
 │   ├── context.py        # EpisodeContext（运行时上下文）
 │   ├── memory.py         # PlayerMemory + EpisodeSummarizer
 │   ├── stats.py          # PlayerStats + MatchStats
-│   ├── profile.py        # PlayerProfile
-│   └── STATE_MANAGEMENT.md # 状态管理架构文档
+│   └── profile.py        # PlayerProfile
 ├── observation_format.py # 观测格式化（自然语言）
 ├── validate.py           # 决策校验与匹配
 ├── parse.py              # JSON 解析
@@ -54,7 +53,7 @@ src/llm/
 | `EpisodeContext` | 运行时上下文（本局统计、决策历史） |
 | `PromptProjector` | 按"长期状态 + 本地上下文窗口 + 当前观测"投影 Prompt |
 
-状态管理的完整架构（状态分类、数据流、LocalContextPolicy 语义）见 `agent/STATE_MANAGEMENT.md`。
+状态管理的完整架构（状态分类、数据流、LocalContextPolicy 语义）见 `agent-state-management.md`。
 
 ## 配置
 
