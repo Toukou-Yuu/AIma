@@ -707,17 +707,17 @@ def _is_tenhou(board: BoardState, winner: int, is_tsumo: bool) -> bool:
     return len(board.river) == 0
 
 
-def _is_chihou(board: BoardState, winner: int, for_ron: bool) -> bool:
+def _is_chihou(board: BoardState, winner: int, is_tsumo: bool) -> bool:
     """
-    地和：子家第一巡荣和。
+    地和：子家第一巡自摸。
     役满。
     """
-    if not for_ron:
+    if not is_tsumo:
         return False
     if board.current_seat == 0:  # 亲家不算地和
         return False
-    # 第一巡：亲家刚打第一张牌
-    return len(board.river) == 1
+    # 第一巡：无人打牌
+    return len(board.river) == 0
 
 
 def _yakuhai_labels_for_triplets(
@@ -815,7 +815,7 @@ def non_dora_yaku_han_and_labels(
         return 13, ("小四喜",)
     if _is_tenhou(board, winner, is_tsumo=is_tsumo):
         return 13, ("天和",)
-    if _is_chihou(board, winner, for_ron=for_ron):
+    if _is_chihou(board, winner, is_tsumo=is_tsumo):
         return 13, ("地和",)
 
     han = 0
