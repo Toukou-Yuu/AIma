@@ -25,6 +25,7 @@ from kernel.event_log import (
     TsumoEvent,
     WinSettlementLine,
 )
+from kernel.config import DEFAULT_CONFIG, MahjongConfig
 from kernel.flow import FlowKind, FlowResult, check_flow_kind, settle_flow
 from kernel.flow.model import TenpaiResult
 from kernel.hand.multiset import remove_tile
@@ -364,7 +365,7 @@ def _apply_call_pass_drain(state: GameState) -> ApplyOutcome:
     )
 
 
-def apply(state: GameState, action: Action) -> ApplyOutcome:
+def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONFIG) -> ApplyOutcome:
     """
     唯一推荐的状态推进接口。
 
@@ -456,6 +457,33 @@ def apply(state: GameState, action: Action) -> ApplyOutcome:
                     raise IllegalActionError(str(e)) from e
                 cs = new_board.call_state
                 if cs is not None and cs.finished and cs.ron_claimants:
+                    # 三家和流局判定：一炮多响=false 且 3 家荣和时触发流局
+                    if not config.allow_multiple_ron and len(cs.ron_claimants) >= 3:
+                        flow_result = FlowResult(
+                            kind=FlowKind.THREE_RON,
+                            ron_claimants=cs.ron_claimants,
+                        )
+                        settled = board_after_ron_winners(new_board)
+                        eb = _create_event_builder(state)
+                        flow_event = eb.flow(
+                            kind=FlowKind.THREE_RON,
+                            detail=f"三家和流局：{cs.ron_claimants}",
+                        )
+                        hand_over_event = eb.hand_over(
+                            winners=(),
+                            payments={},
+                            win_lines={},
+                        )
+                        return ApplyOutcome(
+                            new_state=GameState(
+                                phase=GamePhase.FLOWN,
+                                table=state.table,
+                                board=settled,
+                                flow_result=flow_result,
+                                event_sequence=eb._sequence,
+                            ),
+                            events=(flow_event, hand_over_event),
+                        )
                     settled = board_after_ron_winners(new_board)
                     ura = ura_indicators_for_settlement(
                         new_board.dead_wall,
