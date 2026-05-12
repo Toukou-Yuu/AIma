@@ -34,7 +34,7 @@ def observation(
 
 - `seat`：必须为 `0..3`，否则 `ValueError`。
 - `mode`：
-  - `human`（正式对局推荐）：返回**该 seat 可见**的信息。当前实现中自家手牌完整；河、宝牌指示、场况、立直状态等公共信息一致。**注意**：若未来加入「他家手牌隐藏」的细化，仍以本函数实现为准。
+  - `human`（正式对局推荐）：返回**该 seat 可见**的信息。自家手牌完整；河、宝牌指示、场况、立直状态等公共信息一致。
   - `debug`：除人类信息外，还提供 `wall_remaining`、`dead_wall`（王牌相关拼接）等调试字段；**禁止**作为公平对局的选手通道。
 
 ### 2.1 `Observation` 字段说明
@@ -167,20 +167,11 @@ wall = tuple(shuffle_deck(build_deck(), seed=42))
 
 - **场况默认值**：`kernel.table.model.initial_table_snapshot()`（起点数、立直棒点数等可与 `kernel.config.DEFAULT_CONFIG` 对齐）。
 - **规则条文**：`mahjong_rules/Mahjong_Soul.md`（版本以文件为准）；与实现不一致时以 **`apply` 行为**为准。
-- **役种对照**：§12 与 `kernel.scoring.yaku.non_dora_yaku_han_and_labels`（及结算路径）对齐；§12.2 列为友人桌常见但**尚未实现**的番种。
+- **役种对照**：`mahjong_rules/Mahjong_Soul.md` §12 与 `kernel.scoring.yaku.non_dora_yaku_han_and_labels`（及结算路径）对齐；§12.2 列为友人桌常见但**尚未实现**的番种。
 
 ---
 
-## 9. AI 工程建议（简要）
-
-1. **正式对局**只使用 `observation(..., mode="human")`；`debug` 仅用于开发/观战。
-2. 模型输出先映射为结构化 `Action`，再 `apply`；**切勿**解析自然语言直接改状态。
-3. 鸣牌与杠以 `legal_actions` 枚举为准；扩展新动作类型时仍应经 `apply` 校验。
-4. 超时、重试、多 seat 并行**不属于**内核职责；在编排层实现并保证对 `apply` 的调用单线程顺序一致即可（同一 `state` 不并发 `apply`）。
-
----
-
-## 10. 相关类型速查（import）
+## 9. 相关类型速查（import）
 
 ```python
 from kernel.engine.state import GameState, initial_game_state

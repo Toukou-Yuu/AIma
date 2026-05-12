@@ -537,8 +537,8 @@ class TestTokenBudgetDisplay:
         line = TokenBudgetDisplay().render_inline(diagnostics, active=True)
 
         assert "█████████░░░ 72% (4.8k / 6.7k)" in line.plain
-        assert "本轮请求 4.8k" in line.plain
-        assert "status: collapse · 正常" in line.plain
+        assert "本轮 4.8k" in line.plain
+        assert "累计" in line.plain
 
 
 class TestParseHandTiles:
@@ -1208,9 +1208,9 @@ class TestLiveMatchViewerIntegration:
 
         rendered = capture.get()
         assert "一姬[东]" in rendered
-        assert "有效上下文: █████████░░░ 72% (4.8k / 6.7k)" in rendered
-        assert "本轮请求 4.8k" in rendered
-        assert "collapse · 正常" in rendered
+        assert "█████████░░░ 72% (4.8k / 6.7k)" in rendered
+        assert "本轮 4.8k" in rendered
+        assert "累计" in rendered
 
     def test_event_history_persists_multiple_steps(self) -> None:
         """事件面板显示历史事件，而不是只显示当前 step 事件。"""

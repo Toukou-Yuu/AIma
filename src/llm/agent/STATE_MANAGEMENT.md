@@ -1,108 +1,24 @@
-# Agent 状态管理流程
+# Agent 状态管理
 
-本文档描述 `src/llm/agent` 模块的状态管理架构和数据流。
+`PlayerAgent` 是无状态协调类，只保留长期状态（profile/memory/stats）。运行时状态由外部（runner）管理。
 
-## 核心设计原则
+组件目录结构见 `src/llm/README.md`。
 
-**Agent 是无状态的"纯函数"，只保留长期状态（profile/memory/stats）。**
-
-运行时状态（本局统计）存储在 `EpisodeContext` 中，跨局状态存储在 `MatchContext` 中，均由外部（runner）管理。
-
-## 职责分离架构（2026-04 重构）
-
-重构后采用组合模式，将 `PlayerAgent` 拆分为多个高内聚组件：
-
-```
-src/llm/agent/
-├── __init__.py        # PlayerAgent（协调类，无状态纯函数）
-├── core.py            # AgentCore（核心决策逻辑）
-├── session.py         # LocalContextPolicy + ConversationIdNamer
-├── prompt.py          # PromptProjector（块式上下文投影）
-├── context_store.py   # ContextStore（自家决策历史 + 压缩）
-├── event_journal.py   # MatchJournal（公共事件流）
-├── token_budget.py    # TokenEstimateService + PromptBudgetPlanner
-├── decision_parser.py # DecisionParser（决策解析）
-├── persistence.py     # PersistenceManager（持久化管理）
-├── match_context.py   # MatchContext（跨局状态管理）← Context Object 模式
-└── context.py         # EpisodeContext（运行时上下文）
-└── memory.py          # PlayerMemory + EpisodeSummarizer
-└── stats.py           # PlayerStats + StatsAggregator + MatchStats
-└── profile.py         # PlayerProfile
-└── llm_summarizer.py  # LLMSummarizer
-└── prompt_builder.py  # 基础 Prompt 函数（被 prompt.py 使用）
-```
-
-### 设计模式应用
-
-| 设计模式 | 应用场景 |
-|----------|----------|
-| **Context Object Pattern** | `MatchContext` 封装跨局状态 |
-| **Factory Pattern** | `MatchContext.create_episode()` 统一创建 `EpisodeContext` |
-| **Composition Pattern** | `PlayerAgent` 组合各组件 |
-
-### 组件职责
+## 组件职责
 
 | 组件 | 文件 | 职责 |
 |------|------|------|
-| `PlayerAgent` | `__init__.py` | 协调类，组合所有组件，提供公共接口（无状态） |
-| `AgentCore` | `core.py` | 核心决策逻辑，判断唯一动作、dry-run、LLM调用、解析响应 |
+| `PlayerAgent` | `__init__.py` | 协调类，组合所有组件，提供 `decide()` 接口 |
+| `AgentCore` | `core.py` | 核心决策逻辑：判断唯一动作、dry-run、LLM 调用、解析响应 |
 | `LocalContextPolicy` | `session.py` | AIma 本地上下文边界（stateless/per_hand/per_match） |
 | `PromptProjector` | `prompt.py` | Prompt 投影，整合 profile/memory/stats/公共事件/自家历史 |
 | `ContextStore` | `context_store.py` | 自家决策历史存储与渐进式压缩 |
 | `MatchJournal` | `event_journal.py` | 整桌公共事件流与跨局公共归档 |
 | `PromptBudgetPlanner` | `token_budget.py` | 经验公式 token 预算与压缩边界规划 |
-| `DecisionParser` | `decision_parser.py` | 决策解析，JSON解析、action匹配、fallback处理 |
-| `PersistenceManager` | `persistence.py` | 持久化管理，load/save profile/memory/stats |
+| `DecisionParser` | `decision_parser.py` | 决策解析：JSON 解析、action 匹配、fallback 处理 |
+| `PersistenceManager` | `persistence.py` | 持久化管理：load/save profile/memory/stats |
 | `MatchContext` | `match_context.py` | 跨局状态管理（Context Object），创建 EpisodeContext（Factory） |
-| `EpisodeContext` | `context.py` | 运行时上下文，本局统计、历史记录 |
-
-### 组件交互
-
-```python
-# PlayerAgent.__init__ 中的组合关系
-class PlayerAgent:
-    def __init__(...):
-        self._persistence = PersistenceManager(player_id)  # 持久化
-        self._prompt_projector = PromptProjector(...)      # Prompt 投影
-        self._core = AgentCore(...)                        # 决策核心
-        
-        # 加载长期状态
-        self.profile = self._persistence.load_profile()
-        self.memory = self._persistence.load_memory()
-        self.stats = self._persistence.load_stats()
-
-# PlayerAgent.decide 中的委托
-def decide(...):
-    return self._core.decide(
-        state, seat, episode_ctx,
-        prompt_projector=self._prompt_projector,
-        client=client, ...
-    )
-```
-
-## 本地上下文边界
-
-AIma 不再依赖任何服务端 `session_id` 能力。`LocalContextPolicy` 只决定本地要向模型注入哪些上下文层：
-
-```python
-class LocalContextPolicy:
-    def __init__(self, *, scope: ContextScope):
-        self.scope = scope
-
-    def build_window(self):
-        if self.scope == "stateless":
-            return PromptContextWindow()
-        return PromptContextWindow(
-            include_match_archive=self.scope == "per_match",
-            include_public_history=True,
-            include_self_history=True,
-        )
-```
-
-**效果**：
-- `stateless`：只发当前观测
-- `per_hand`：发本局历史 + 当前观测
-- `per_match`：发本场前情摘要 + 本局历史 + 当前观测
+| `EpisodeContext` | `context.py` | 运行时上下文：本局统计、决策历史、帧缓存 |
 
 ## 状态分类
 
@@ -111,10 +27,10 @@ class LocalContextPolicy:
 | 组件 | 文件 | 更新时机 |
 |------|------|---------|
 | `PlayerProfile` | `profile.json` | 手动配置 |
-| `PlayerMemory` | `memory.json` | **局结束** |
-| `PlayerStats` | `stats.json` | **比赛结束** |
+| `PlayerMemory` | `memory.json` | 局结束时 |
+| `PlayerStats` | `stats.json` | 比赛结束时 |
 
-### 2. 跨局状态（存储在 `MatchContext`）
+### 2. 跨局状态（`MatchContext`）
 
 | 属性 | 描述 |
 |------|------|
@@ -122,7 +38,7 @@ class LocalContextPolicy:
 | `_episodes` | 已完成局列表 |
 | `_hand_archives` | 已归档的局摘要（供 `per_match` 注入） |
 
-### 3. 运行时状态（存储在 `EpisodeContext`）
+### 3. 运行时状态（`EpisodeContext`）
 
 | 属性 | 描述 |
 |------|------|
@@ -133,147 +49,52 @@ class LocalContextPolicy:
 | `match_journal` | 共享公共事件流视图 |
 | `message_ledger` | 本局 user/assistant 消息账本 |
 
-### 4. Agent 内部状态（无临时状态）
+### 4. Agent 内部（无临时状态）
 
-| 属性 | 描述 |
-|------|------|
-| `profile` | 玩家配置 |
-| `memory` | 玩家记忆 |
-| `stats` | 玩家统计 |
+`profile`、`memory`、`stats` 三项在 `PlayerAgent.__init__` 中从磁盘加载，之后只读。
 
-**注意**：Agent 不再存储任何临时跨局状态，完全无状态。
+## 本地上下文边界（LocalContextPolicy）
+
+`LocalContextPolicy` 决定向模型注入哪些上下文层：
+
+- **`stateless`**：只发当前观测
+- **`per_hand`**：发本局历史 + 当前观测
+- **`per_match`**：发本场前情摘要 + 本局历史 + 当前观测
 
 ## 数据流
 
-### 局开始时（Context Object + Factory Pattern）
+### 局开始
 
-```python
-# runner.py - 初始化 MatchContext
-match_contexts: dict[int, MatchContext] = {
-    s: MatchContext(s) for s in range(4)
-}
+`runner.py` 为每个 seat 创建 `MatchContext`（`match_contexts[s] = MatchContext(s)`）。新局开始时调用 `match_contexts[s].create_episode()` 创建 `EpisodeContext`（Factory Pattern），继承累积的 `match_stats`。
 
-# runner.py - 创建 EpisodeContext（Factory 模式）
-seat_contexts[s] = match_contexts[s].create_episode()  # 返回副本，确保隔离
-```
+### 每步决策
 
-### 每步决策时
+`PlayerAgent.decide()` → `AgentCore.decide()`：
 
-```python
-# PlayerAgent.decide() -> AgentCore.decide()
-# 1. 获取合法动作
-acts = legal_actions(state, seat)
+1. `legal_actions(state, seat)` 获取合法动作
+2. 若唯一合法动作（`PASS_CALL` / `DRAW`），跳过 LLM 直接返回
+3. `PromptProjector.build_projection()` 构建消息 + token 预算诊断
+4. `client.complete(messages)` 调用 LLM
+5. `DecisionParser.parse_llm_response()` 解析响应
+6. `episode_ctx.record_decision()` 更新历史
 
-# 2. 判断是否需要 LLM
-if len(acts) == 1 and acts[0].kind in (PASS_CALL, DRAW):
-    return Decision(acts[0], None, history)  # 跳过 LLM
+### 局结束
 
-# 3. 构建消息与上下文 token 诊断（PromptProjector + PromptBudgetPlanner）
-projection = prompt_projector.build_projection(...)
-messages = projection.messages
+`runner._finalize_agents_episode()`：
 
-# 4. 调用 LLM（AIma 本地上下文已全部体现在 messages 中）
-raw = client.complete(messages)
+1. `seat_contexts[seat].end_episode(points)` 结算本局
+2. `match_contexts[seat].close_episode(ctx)` 显式关闭，更新 MatchContext 累积统计
+3. `agent.update_memory(ctx, client)` 更新长期记忆
 
-# 5. 解析响应（DecisionParser）
-la, why = DecisionParser.parse_llm_response(raw, acts)
+### 比赛结束
 
-# 6. 更新历史
-episode_ctx.record_decision(Decision(la, why, []))
-```
+`agent.update_stats(ctx, placement)` 更新长期统计到 `stats.json`。
 
-### 局结束时（显式关闭）
+## 测试
 
-```python
-# runner._finalize_agents_episode()
-seat_contexts[seat].end_episode(points)
-match_contexts[seat].close_episode(seat_contexts[seat])  # 显式关闭（更新 MatchContext）
-agent.update_memory(seat_contexts[seat], client)  # 更新长期记忆
-```
-
-### 比赛结束时
-
-```python
-# runner
-agent.update_stats(seat_contexts[seat], placement)  # 更新长期统计
-```
-
-### 新局开始时（继承跨局统计）
-
-```python
-# runner.py - 新局创建（Factory 模式）
-seat_contexts[s] = match_contexts[s].create_episode()  # 继承累积的 match_stats
-```
-
-## 重构收益
-
-### 代码质量
-
-- **单一职责**：每个组件职责清晰
-- **高内聚**：相关功能集中在同一组件，外部无法直接修改内部状态
-- **低耦合**：组件间通过接口交互，runner 与 Agent 无状态传递依赖
-- **可测试**：每个组件可独立测试
-- **设计模式**：Context Object + Factory Pattern 提供标准化扩展点
-
-### 文件行数
-
-| 文件 | 行数 | 职责 |
-|------|------|------|
-| `__init__.py` | ~100 | 协调（无状态） |
-| `core.py` | ~150 | 决策 |
-| `session.py` | ~50 | 会话 |
-| `prompt.py` | ~200 | Prompt |
-| `event_journal.py` | ~200 | 公共事件流 |
-| `token_budget.py` | ~180 | 预算规划 |
-| `decision_parser.py` | ~60 | 解析 |
-| `persistence.py` | ~120 | 持久化 |
-| `match_context.py` | ~80 | 跨局状态（Context Object） |
-
-### 测试覆盖
-
-- `test_llm_mock_client.py`: Agent 决策测试
-- `test_llm_skip_singleton_pass.py`: 单一动作跳过测试
-- `test_llm_session_audit.py`: Session audit 测试
-
-## 组件级测试示例
-
-```python
-# 测试 LocalContextPolicy
-def test_per_match_scope_injects_match_archive():
-    policy = LocalContextPolicy(scope="per_match")
-    window = policy.build_window()
-    assert window.include_match_archive is True
-    assert window.include_public_history is True
-
-# 测试 DecisionParser
-def test_decision_parser_fallback():
-    la, why = DecisionParser.parse_llm_response("invalid json", acts)
-    assert la is None
-    assert why is None
-
-# 测试 PersistenceManager
-def test_persistence_load_default():
-    pm = PersistenceManager(None)
-    profile = pm.load_profile()
-    assert profile.id == "default"
-
-# 测试 MatchContext（Context Object Pattern）
-def test_match_context_lifecycle():
-    mc = MatchContext(0)
-    
-    # Factory 模式创建
-    ctx1 = mc.create_episode()
-    assert ctx1.match_stats.wins == 0
-    
-    # 隔离性验证
-    ctx1.match_stats.wins = 1
-    assert mc.get_stats().wins == 0  # 副本隔离
-    
-    # 显式关闭
-    mc.close_episode(ctx1)
-    assert mc.get_stats().wins == 1
-    
-    # 继承累积统计
-    ctx2 = mc.create_episode()
-    assert ctx2.match_stats.wins == 1
-```
+相关测试文件：
+- `tests/test_llm_mock_client.py` — Agent 决策测试
+- `tests/test_llm_skip_singleton_pass.py` — 单一动作跳过测试
+- `tests/test_llm_session_audit.py` — Session audit 测试
+- `tests/test_llm_context_projection.py` — Context 投影测试
+- `tests/test_llm_token_budget.py` — Token 预算测试

@@ -8,7 +8,7 @@
 
 1. **唯一推进入口**：结构化事件。局面变更只应通过 `kernel.engine.apply.apply(state, action) -> ApplyOutcome` 完成，得到新的 `GameState` 与当步
 2. **内核不依赖上层**：`kernel` 禁止 import `llm` 或 UI；编排层（多 seat、HTTP、超时）放在内核之外。
-3. **合法动作由规则枚举**：对外提供 `kernel.api.legal_actions.legal_actions` 作为「当前席可执行动作」的参考实现；**模型输出必须再经 `apply` 校验**（`IllegalActionError` 表示拒绝）。
+3. **合法动作由规则枚举**：对外提供 `kernel.api.legal_actions.legal_actions` 作为「当前席可执行动作」的参考实现。
 4. **张数守恒**：标准四麻 136 张；`BoardState` 在构造时通过 `validate_board_state` 校验门内、副露、河、本墙与王牌存量之和。
 
 ---
@@ -138,32 +138,9 @@ stateDiagram-v2
 
 ---
 
-## 6. 子包职责（与源码目录对应）
+## 6. 子包职责
 
-
-| 路径             | 职责                                          |
-| -------------- | ------------------------------------------- |
-| `tiles/`       | 牌模型、`build_deck` / `shuffle_deck`（可复现种子）    |
-| `wall/`        | 牌山切分、王牌结构 `DeadWall`（岭上/表宝/里宝槽位）            |
-| `deal/`        | 配牌、`BoardState`（含本局各家舍牌序列；被吃/碰/大明杠鸣走的下标供流し満貫判定）与不变量校验 |
-| `play/`        | 摸打、河、`TurnPhase` 切换、舍牌后进入 `CALL_RESPONSE`   |
-| `call/`        | 鸣牌与荣和应答转移、一炮多响、同巡振听、抢杠与后续衔接                 |
-| `kan/`         | 暗杠、加杠、岭上摸、翻宝牌指示等                            |
-| `hand/`        | 手牌多重集合、`Meld` 形状与张数守恒校验                     |
-| `table/`       | `TableSnapshot`、局流 `advance_round`、是否终局、名次等 |
-| `riichi/`      | 听牌判定等纯函数；宣言约束由 `apply`+`play` 执行            |
-| `win_shape/`   | 标准形/平和等和了形相关纯判定                             |
-| `scoring/`     | 役、符、番、点数结算与场况更新（荣和/自摸）                      |
-| `flow/`        | 流局种类判定、听牌结算、流し満貫（幺九舍牌且未被鸣；点棒与满贯自摸同分摊）、`settle_flow` |
-| `match/`       | 比赛层辅助（与 `table.transitions` 协同）             |
-| `engine/`      | `GamePhase`、`GameState`、`Action`、`apply`    |
-| `event_log.py` | 结构化事件类型与 `EventLog` 容器                      |
-| `replay.py`    | 基于动作序列的回放与日志校验辅助                            |
-| `replay_json.py` | `Action` 与 JSON wire 互转（牌谱、CLI `--replay`） |
-| `api/`         | `legal_actions`、`observation`；`meld_candidates`（鸣牌/杠候选枚举） |
-
-
-更细的目录索引见 `src/kernel/docs/layout.md` 与各子包 `README.md`。
+各子包的一句话职责索引见 `kernel-layout.md`。
 
 ---
 
@@ -177,10 +154,4 @@ stateDiagram-v2
 
 ## 8. 与「外部 AI」的边界
 
-内核**不**负责 HTTP、多模型与提示词。AI 侧应：
-
-1. 用 `observation(state, seat, mode="human")` 取**人类可见**信息（正式对局）；`Observation.phase` 标明 `in_round` / `hand_over` / `match_end` 等阶段。
-2. 用 `legal_actions(state, seat)` 取候选；将选择映射为 `Action` 后调用 `apply`。
-3. 处理 `IllegalActionError`，不直接改 `GameState` 字段。
-
-面向调用方的字段级说明见同目录 `kernel-api-for-ai.md`。
+内核**不**负责 HTTP、多模型与提示词。面向调用方的字段级说明与集成指南见 `kernel-api-for-ai.md`。

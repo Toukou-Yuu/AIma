@@ -71,7 +71,7 @@ python start.py quick
 
 ## Prompt 格式
 
-采用**中文自然语言格式**，LLM 更易理解，节省约 70% token：
+采用**中文自然语言格式**，LLM 更易理解：
 
 ```
 【手牌】(13张)
@@ -142,7 +142,7 @@ configs/players/               # 角色配置
   conversations/               # LLM 对话日志（gitignore）
 
 src/
-  kernel/                      # 日麻规则内核（K0-K15 已完成）
+  kernel/                      # 日麻规则内核
   llm/                         # LLM 编排与 Agent 系统
     agent/                     # PlayerAgent + 状态管理组件
   ui/
