@@ -71,3 +71,38 @@ def test_decision_parser_legacy_api_hides_unmatched_why() -> None:
     assert detail.why == "非法动作"
     assert legacy_action is None
     assert legacy_why is None
+
+
+def test_find_matching_nested_action_format() -> None:
+    """LLM 可能返回 {"action": {...}, "why": "..."} 格式."""
+    discard = LegalAction(
+        kind=ActionKind.DISCARD,
+        seat=0,
+        tile=Tile(Suit.MAN, 8, False),
+        declare_riichi=False,
+    )
+    legal = (discard,)
+    # 嵌套格式: action 对象在 action 字段内
+    choice = {
+        "action": {"kind": "discard", "seat": 0, "tile": "8m"},
+        "why": "孤张8m进张最少，先打掉效率最低的字牌",
+    }
+    matched = find_matching_legal_action(legal, choice)
+    assert matched == discard
+
+
+def test_decision_parser_nested_action_with_why() -> None:
+    """嵌套 action 格式应能正确提取 why 字段."""
+    discard = LegalAction(
+        kind=ActionKind.DISCARD,
+        seat=0,
+        tile=Tile(Suit.MAN, 8, False),
+        declare_riichi=False,
+    )
+    raw = '{"action":{"kind":"discard","seat":0,"tile":"8m"},"why":"孤张8m进张最少"}'
+
+    result = DecisionParser.parse_llm_response_detail(raw, (discard,))
+
+    assert result.status == "matched"
+    assert result.action == discard
+    assert result.why == "孤张8m进张最少"

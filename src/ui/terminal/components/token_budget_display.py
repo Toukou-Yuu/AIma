@@ -61,9 +61,16 @@ class TokenBudgetDisplay:
         self,
         diagnostics: PromptDiagnostics | None,
         *,
+        cumulative_tokens: int = 0,
         active: bool = False,
     ) -> Text:
-        """Render one-line token pressure for per-seat hand trees."""
+        """Render one-line token pressure for per-seat hand trees.
+
+        Args:
+            diagnostics: 当前轮的 token 诊断信息
+            cumulative_tokens: 该玩家的累计请求 tokens（预估）
+            active: 是否为当前活跃玩家
+        """
         if diagnostics is None:
             return Text("暂无 LLM 请求", style="dim")
 
@@ -72,19 +79,19 @@ class TokenBudgetDisplay:
             if active
             else self._usage_style(diagnostics.usage_ratio)
         )
+        current_tokens = self._current_turn_tokens(diagnostics)
         return Text.assemble(
             (self._bar(diagnostics.usage_ratio, framed=False), style),
             (" ", "dim"),
             (self._format_percent(diagnostics.usage_ratio), style),
-            (" (", "dim"),
-            (self._format_usage(diagnostics), style),
-            (")", "dim"),
+            (" ", "dim"),
+            (f"({self._format_usage(diagnostics)})", style),
             (" || ", "dim"),
-            ("本轮请求 ", "dim"),
-            (self._format_token_count(self._current_turn_tokens(diagnostics)), style),
+            ("本轮 ", "dim"),
+            (self._format_token_count(current_tokens), style),
             (" || ", "dim"),
-            ("status: ", "dim"),
-            (f"{diagnostics.max_compression_state} · {self._status_text(diagnostics)}", style),
+            ("累计 ", "dim"),
+            (self._format_token_count(cumulative_tokens), style),
         )
 
     def _format_usage(self, diagnostics: PromptDiagnostics) -> str:
