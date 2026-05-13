@@ -291,3 +291,151 @@ def make_ron_board(
         all_discards_per_seat=tuple(new_disc),
         called_discard_indices=b0.called_discard_indices,
     )
+
+
+def shimocha_seat(discarder: int) -> int:
+    """下家座位。"""
+    return (discarder + 1) % 4
+
+
+def make_chi_pon_daiminkan_board(
+    *,
+    dealer: int = 0,
+    discarder: int = 0,
+    claimer: int = 1,
+    discard_tile: Tile,
+    claimer_extra_tiles: list[Tile],
+    stage: str = "pon_kan",
+) -> tuple[BoardState, Meld]:
+    """构造 CALL_RESPONSE 状态的 board 和对应的 meld。
+
+    discarder: 打牌者
+    claimer: 鸣牌者
+    discard_tile: 被打出的牌
+    claimer_extra_tiles: claimer 手中除 discard_tile 外需要的牌（chi=2张, pon=2张, daiminkan=3张）
+    stage: "chi" 或 "pon_kan"
+
+    返回: (board, meld) 其中 meld 是构造好的副露对象
+    """
+    b0 = board_sorted_deal(dealer=dealer)
+    pool = pool_not_in_wall(b0)
+
+    # claimer 手牌 = discard_tile（鸣牌用副本）+ claimer_extra_tiles + 补充到 13 张
+    claimer_hand = Counter()
+    claimer_hand[discard_tile] += 1  # 鸣牌用副本
+    pool[discard_tile] -= 1
+    if pool[discard_tile] == 0:
+        del pool[discard_tile]
+    for t in claimer_extra_tiles:
+        claimer_hand[t] += 1
+        pool[t] -= 1
+        if pool[t] == 0:
+            del pool[t]
+    while sum(claimer_hand.values()) < 13:
+        t = next(iter(pool.elements()))
+        claimer_hand[t] += 1
+        pool[t] -= 1
+        if pool[t] == 0:
+            del pool[t]
+
+    # discarder: 从 pool 取 14 张（含 discard_tile），打出 discard_tile 后剩 13 张
+    hand_discarder = take_n(pool, 14)
+    # 确保 hand_discarder 含 discard_tile
+    if hand_discarder[discard_tile] < 1:
+        # 用一张 filler 替换
+        filler = next(t for t in hand_discarder if t != discard_tile)
+        hand_discarder[filler] -= 1
+        if hand_discarder[filler] == 0:
+            del hand_discarder[filler]
+        hand_discarder[discard_tile] += 1
+    # 打出 discard_tile
+    hand_discarder[discard_tile] -= 1
+    if hand_discarder[discard_tile] == 0:
+        del hand_discarder[discard_tile]
+
+    # 其他座位
+    hands: list[Counter[Tile]] = []
+    for s in range(4):
+        if s == discarder:
+            hands.append(hand_discarder)
+        elif s == claimer:
+            hands.append(claimer_hand)
+        else:
+            hands.append(take_n(pool, 13))
+
+    # 构造 meld
+    n_extra = len(claimer_extra_tiles)
+    def _sort_tiles(tiles: tuple[Tile, ...]) -> tuple[Tile, ...]:
+        return tuple(sorted(tiles, key=lambda t: (t.suit.value, t.rank, t.is_red)))
+
+    if n_extra == 2 and stage == "chi":
+        meld_tiles = _sort_tiles((discard_tile,) + tuple(claimer_extra_tiles))
+        meld = Meld(kind=MeldKind.CHI, tiles=meld_tiles, called_tile=discard_tile)
+    elif n_extra == 2:
+        meld_tiles = _sort_tiles((discard_tile,) + tuple(claimer_extra_tiles))
+        meld = Meld(kind=MeldKind.PON, tiles=meld_tiles, called_tile=discard_tile)
+    elif n_extra == 3:
+        meld_tiles = _sort_tiles((discard_tile,) + tuple(claimer_extra_tiles))
+        meld = Meld(kind=MeldKind.DAIMINKAN, tiles=meld_tiles, called_tile=discard_tile)
+    else:
+        raise ValueError(f"unsupported extra_tiles count: {n_extra}")
+
+    # 构造 river 和 call_state
+    entry = RiverEntry(seat=discarder, tile=discard_tile, tsumogiri=False, riichi=False)
+    new_river = b0.river + (entry,)
+    new_disc = list(b0.all_discards_per_seat)
+    new_disc[discarder] = b0.all_discards_per_seat[discarder] + (discard_tile,)
+    river_index = len(new_river) - 1
+
+    o1 = (discarder + 1) % 4
+    o2 = (discarder + 2) % 4
+    o3 = (discarder + 3) % 4
+
+    if stage == "chi":
+        cs = CallResolution(
+            discard_seat=discarder,
+            claimed_tile=discard_tile,
+            river_index=river_index,
+            stage="chi",
+            ron_remaining=frozenset(),
+            ron_claimants=frozenset(),
+            pon_kan_order=(o1, o2, o3),
+            pon_kan_idx=3,
+            finished=False,
+        )
+    else:
+        pon_kan_idx = list((o1, o2, o3)).index(claimer)
+        cs = CallResolution(
+            discard_seat=discarder,
+            claimed_tile=discard_tile,
+            river_index=river_index,
+            stage="pon_kan",
+            ron_remaining=frozenset(),
+            ron_claimants=frozenset(),
+            pon_kan_order=(o1, o2, o3),
+            pon_kan_idx=pon_kan_idx,
+            finished=False,
+        )
+
+    board = BoardState(
+        hands=tuple(hands),
+        live_wall=b0.live_wall,
+        live_draw_index=b0.live_draw_index,
+        dead_wall=b0.dead_wall,
+        revealed_indicators=b0.revealed_indicators,
+        current_seat=claimer,
+        turn_phase=TurnPhase.CALL_RESPONSE,
+        river=new_river,
+        melds=b0.melds,
+        last_draw_tile=None,
+        last_draw_was_rinshan=False,
+        rinshan_draw_index=0,
+        call_state=cs,
+        riichi=(False, False, False, False),
+        ippatsu_eligible=frozenset(),
+        double_riichi=frozenset(),
+        all_discards_per_seat=tuple(new_disc),
+        called_discard_indices=b0.called_discard_indices,
+    )
+
+    return board, meld

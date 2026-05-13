@@ -1001,3 +1001,261 @@ class TestErrorGuards:
             pass
         else:
             raise AssertionError("expected error for DRAW in FLOWN")
+
+
+# --- OPEN_MELD 路径测试 ---
+
+class TestOpenMeld:
+    """engine 层 OPEN_MELD action（chi/pon/daiminkan）。"""
+
+    def test_pon_success(self) -> None:
+        """碰 → MUST_DISCARD。"""
+        from tests.engine_helpers import make_chi_pon_daiminkan_board
+        # seat0 打出 5m，seat1 有 5m×2 可以碰
+        b, meld = make_chi_pon_daiminkan_board(
+            dealer=0, discarder=0, claimer=1,
+            discard_tile=MAN5,
+            claimer_extra_tiles=[MAN5, MAN5],
+            stage="pon_kan",
+        )
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        result = apply(g, Action(ActionKind.OPEN_MELD, seat=1, meld=meld))
+        assert result.new_state.board.turn_phase == TurnPhase.MUST_DISCARD
+        assert result.new_state.board.current_seat == 1
+        # 应有副露
+        assert len(result.new_state.board.melds[1]) >= 1
+
+    def test_chi_success(self) -> None:
+        """吃 → MUST_DISCARD。"""
+        from tests.engine_helpers import make_chi_pon_daiminkan_board
+        # seat0 打出 4m，seat1 有 3m5m 可以吃
+        b, meld = make_chi_pon_daiminkan_board(
+            dealer=0, discarder=0, claimer=1,
+            discard_tile=MAN4,
+            claimer_extra_tiles=[MAN3, MAN5],
+            stage="chi",
+        )
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        result = apply(g, Action(ActionKind.OPEN_MELD, seat=1, meld=meld))
+        assert result.new_state.board.turn_phase == TurnPhase.MUST_DISCARD
+        assert result.new_state.board.current_seat == 1
+
+    def test_daiminkan_success(self) -> None:
+        """大明杠 → 岭上摸牌 → MUST_DISCARD。"""
+        from tests.engine_helpers import make_chi_pon_daiminkan_board
+        # seat0 打出 9m，seat1 有 9m×3 可以大明杠
+        b, meld = make_chi_pon_daiminkan_board(
+            dealer=0, discarder=0, claimer=1,
+            discard_tile=MAN9,
+            claimer_extra_tiles=[MAN9, MAN9, MAN9],
+            stage="pon_kan",
+        )
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        result = apply(g, Action(ActionKind.OPEN_MELD, seat=1, meld=meld))
+        # 大明杠后应岭上摸牌 → MUST_DISCARD
+        assert result.new_state.board.turn_phase == TurnPhase.MUST_DISCARD
+        # 应有杠副露
+        assert len(result.new_state.board.melds[1]) >= 1
+
+    def test_chi_wrong_stage(self) -> None:
+        """pon_kan 阶段吃应报错。"""
+        from tests.engine_helpers import make_chi_pon_daiminkan_board
+        b, meld = make_chi_pon_daiminkan_board(
+            dealer=0, discarder=0, claimer=1,
+            discard_tile=MAN4,
+            claimer_extra_tiles=[MAN3, MAN5],
+            stage="chi",
+        )
+        # 改 stage 为 pon_kan
+        from dataclasses import replace
+        cs = b.call_state
+        assert cs is not None
+        b = replace(b, call_state=replace(cs, stage="pon_kan"))
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.OPEN_MELD, seat=1, meld=meld))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for CHI in pon_kan stage")
+
+    def test_pon_wrong_turn(self) -> None:
+        """不是当前轮到的座位碰应报错。"""
+        from tests.engine_helpers import make_chi_pon_daiminkan_board
+        b, meld = make_chi_pon_daiminkan_board(
+            dealer=0, discarder=0, claimer=1,
+            discard_tile=MAN5,
+            claimer_extra_tiles=[MAN5, MAN5],
+            stage="pon_kan",
+        )
+        # 改 pon_kan_idx 让 seat2 先
+        from dataclasses import replace
+        cs = b.call_state
+        assert cs is not None
+        b = replace(b, call_state=replace(cs, pon_kan_idx=0))  # o1=1, idx=0 → seat1 先
+        # 让 seat2 尝试碰
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.OPEN_MELD, seat=2, meld=meld))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for PON wrong turn")
+
+    def test_pon_after_riichi(self) -> None:
+        """立直后碰应报错。"""
+        from tests.engine_helpers import make_chi_pon_daiminkan_board
+        from dataclasses import replace
+        b, meld = make_chi_pon_daiminkan_board(
+            dealer=0, discarder=0, claimer=1,
+            discard_tile=MAN5,
+            claimer_extra_tiles=[MAN5, MAN5],
+            stage="pon_kan",
+        )
+        riichi = list(b.riichi)
+        riichi[1] = True
+        b = replace(b, riichi=tuple(riichi))
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.OPEN_MELD, seat=1, meld=meld))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for PON after riichi")
+
+    def test_chi_not_shimocha(self) -> None:
+        """非下家吃应报错。"""
+        from tests.engine_helpers import make_chi_pon_daiminkan_board
+        b, meld = make_chi_pon_daiminkan_board(
+            dealer=0, discarder=0, claimer=1,
+            discard_tile=MAN4,
+            claimer_extra_tiles=[MAN3, MAN5],
+            stage="chi",
+        )
+        # 尝试 seat2（不是下家）吃
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.OPEN_MELD, seat=2, meld=meld))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for CHI by non-shimocha")
+
+    def test_meld_called_tile_mismatch(self) -> None:
+        """meld.called_tile 不匹配应报错。"""
+        from tests.engine_helpers import make_chi_pon_daiminkan_board
+        from dataclasses import replace
+        b, meld = make_chi_pon_daiminkan_board(
+            dealer=0, discarder=0, claimer=1,
+            discard_tile=MAN5,
+            claimer_extra_tiles=[MAN5, MAN5],
+            stage="pon_kan",
+        )
+        # 修改 meld 的 called_tile
+        wrong_meld = replace(meld, called_tile=MAN6)
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.OPEN_MELD, seat=1, meld=wrong_meld))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for meld.called_tile mismatch")
+
+
+# --- ANKAN 路径测试 ---
+
+class TestAnkan:
+    """engine 层 ANKAN action。"""
+
+    def test_ankan_wrong_turn_phase(self) -> None:
+        """非 MUST_DISCARD 阶段暗杠应报错。"""
+        g0 = initial_game_state()
+        wall = tuple(build_deck())
+        g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=wall)).new_state
+        ds = g1.board.current_seat
+        tile = next(iter(g1.board.hands[ds].elements()))
+        g2 = apply(g1, Action(ActionKind.DISCARD, seat=ds, tile=tile)).new_state
+        # 现在是 CALL_RESPONSE，暗杠应报错
+        ankan_meld = Meld(kind=MeldKind.ANKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=None)
+        try:
+            apply(g2, Action(ActionKind.ANKAN, seat=g2.board.current_seat, meld=ankan_meld))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for ANKAN in CALL_RESPONSE")
+
+    def test_ankan_wrong_seat(self) -> None:
+        """非当前席暗杠应报错。"""
+        g0 = initial_game_state()
+        wall = tuple(build_deck())
+        g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=wall)).new_state
+        ds = g1.board.current_seat
+        ankan_meld = Meld(kind=MeldKind.ANKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=None)
+        wrong_seat = (ds + 1) % 4
+        try:
+            apply(g1, Action(ActionKind.ANKAN, seat=wrong_seat, meld=ankan_meld))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for ANKAN wrong seat")
+
+    def test_ankan_no_meld(self) -> None:
+        """ANKAN 无 meld 应报错。"""
+        g0 = initial_game_state()
+        wall = tuple(build_deck())
+        g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=wall)).new_state
+        ds = g1.board.current_seat
+        try:
+            apply(g1, Action(ActionKind.ANKAN, seat=ds))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for ANKAN without meld")
+
+    def test_shankuminkan_wrong_turn_phase(self) -> None:
+        """非 MUST_DISCARD 阶段加杠应报错。"""
+        g0 = initial_game_state()
+        wall = tuple(build_deck())
+        g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=wall)).new_state
+        ds = g1.board.current_seat
+        tile = next(iter(g1.board.hands[ds].elements()))
+        g2 = apply(g1, Action(ActionKind.DISCARD, seat=ds, tile=tile)).new_state
+        shankan_meld = Meld(kind=MeldKind.SHANKUMINKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=MAN1)
+        try:
+            apply(g2, Action(ActionKind.SHANKUMINKAN, seat=g2.board.current_seat, meld=shankan_meld))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for SHANKUMINKAN in CALL_RESPONSE")
