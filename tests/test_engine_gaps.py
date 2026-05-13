@@ -14,10 +14,12 @@ from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState, initial_game_state
 from kernel.play.model import TurnPhase
 from kernel.play.transitions import apply_discard, apply_draw
+from kernel.table.model import initial_table_snapshot
 
 from tests.engine_helpers import (
     board_sorted_deal,
     make_board,
+    make_ron_board,
     pool_not_in_wall,
     take_n,
 )
@@ -236,3 +238,117 @@ class TestPlayLayerFlow:
         assert drawn is not None
         b = apply_discard(b, b.current_seat, drawn)
         assert b.turn_phase == TurnPhase.CALL_RESPONSE
+
+
+# --- RON → HAND_OVER 端到端测试 ---
+
+class TestRonHandOver:
+    """通过 engine 测试荣和结算 → HAND_OVER 转换。"""
+
+    def test_ron_single_claimant(self) -> None:
+        """单家荣和 → HAND_OVER。"""
+        # seat1 七对子听牌：6 对 + 7m 单张，听 7m
+        winner_hand = Counter({
+            MAN1: 2, MAN2: 2, MAN3: 2, MAN4: 2, MAN5: 2, MAN6: 2, MAN7: 1,
+        })
+        b = make_ron_board(
+            dealer=0, discarder=0, winner=1,
+            winner_hand=winner_hand, win_tile=MAN7,
+        )
+        # 验证 seat1 能荣和
+        assert can_ron_default(b.hands[1], b.melds[1], MAN7) is True
+
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        # seat2, seat3 先 PASS（清空 ron_remaining 中除 seat1 外的座位）
+        g = apply(g, Action(ActionKind.PASS_CALL, seat=2)).new_state
+        g = apply(g, Action(ActionKind.PASS_CALL, seat=3)).new_state
+        # seat1 荣和
+        result = apply(g, Action(ActionKind.RON, seat=1))
+        assert result.new_state.phase == GamePhase.HAND_OVER
+        assert result.new_state.ron_winners == frozenset({1})
+        assert len(result.events) >= 2
+
+    def test_ron_multi_claimant(self) -> None:
+        """多家荣和 → HAND_OVER。"""
+        # seat1 七对子听 7m
+        winner_hand = Counter({
+            MAN1: 2, MAN2: 2, MAN3: 2, MAN4: 2, MAN5: 2, MAN6: 2, MAN7: 1,
+        })
+        b = make_ron_board(
+            dealer=0, discarder=0, winner=1,
+            winner_hand=winner_hand, win_tile=MAN7,
+        )
+        # 让 seat2 也有七对子听 7m
+        hands = list(b.hands)
+        hands[2] = Counter({
+            PIN1: 2, PIN2: 2, PIN3: 2, PIN4: 2, PIN5: 2, PIN6: 2, MAN7: 1,
+        })
+        b = replace(b, hands=tuple(hands))
+
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        # seat1 先荣和
+        r1 = apply(g, Action(ActionKind.RON, seat=1))
+        # seat1 荣和后，call_state 应更新
+        assert r1.new_state.board.call_state is not None
+        assert 1 in r1.new_state.board.call_state.ron_claimants
+        # ron_remaining 应减少
+        assert 1 not in r1.new_state.board.call_state.ron_remaining
+
+    def test_ron_rejected_not_in_remaining(self) -> None:
+        """不在 ron_remaining 中的座位不能荣和。"""
+        winner_hand = Counter({
+            MAN1: 2, MAN2: 2, MAN3: 2, MAN4: 2, MAN5: 2, MAN6: 2, MAN7: 1,
+        })
+        b = make_ron_board(
+            dealer=0, discarder=0, winner=1,
+            winner_hand=winner_hand, win_tile=MAN7,
+        )
+        # 修改 call_state 让 seat2 不在 ron_remaining 中
+        cs = b.call_state
+        assert cs is not None
+        new_cs = replace(cs, ron_remaining=frozenset({1}))
+        b = replace(b, call_state=new_cs)
+
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.RON, seat=2))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for ron by non-remaining seat")
+
+    def test_ron_rejected_wrong_shape(self) -> None:
+        """手牌不是和牌形不能荣和。"""
+        # 用池中可用的牌构造 13 张散牌（sorted deal 池中无 SOU/字牌）
+        bad_hand = Counter({
+            MAN1: 1, MAN9: 1, PIN1: 1, PIN3: 1,
+            MAN2: 1, MAN4: 1, MAN6: 1, MAN8: 1,
+            PIN2: 1, PIN4: 1, MAN3: 1, MAN5: 1, MAN7: 1,
+        })
+        b = make_ron_board(
+            dealer=0, discarder=0, winner=1,
+            winner_hand=bad_hand, win_tile=MAN7,
+        )
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.RON, seat=1))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for invalid ron shape")

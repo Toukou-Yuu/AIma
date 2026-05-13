@@ -126,3 +126,100 @@ def make_board_with_discard(
 def make_meld(kind: MeldKind, tiles: tuple[Tile, ...], called_tile: Tile | None = None) -> Meld:
     """快捷构造 Meld。"""
     return Meld(kind=kind, tiles=tiles, called_tile=called_tile)
+
+
+def make_ron_board(
+    *,
+    dealer: int = 0,
+    discarder: int = 0,
+    winner: int = 1,
+    winner_hand: Counter[Tile],
+    win_tile: Tile,
+) -> BoardState:
+    """构造 CALL_RESPONSE 状态：discarder 打出 win_tile，winner 手牌可荣和。
+
+    winner_hand: winner 的 13 张手牌（可能含 win_tile，如七对子单张等待）。
+    win_tile: 被打出的和牌。
+    返回的 board turn_phase=CALL_RESPONSE, call_state.stage="ron", winner 在 ron_remaining 中。
+    """
+    assert winner != discarder, "winner 不能是 discarder"
+
+    b0 = board_sorted_deal(dealer=dealer)
+    pool = pool_not_in_wall(b0)
+
+    # 从 pool 移除 winner_hand 的牌
+    for t, n in winner_hand.items():
+        assert pool[t] >= n, f"pool 中 {t} 不足：需要 {n}，仅有 {pool[t]}"
+        pool[t] -= n
+        if pool[t] == 0:
+            del pool[t]
+
+    # discarder: 13 张（不含 win_tile）+ win_tile = 14 张
+    # 打出 win_tile 后手里剩 13 张
+    assert pool[win_tile] >= 1, f"pool 中无 {win_tile}"
+    pool[win_tile] -= 1  # 预留
+    if pool[win_tile] == 0:
+        del pool[win_tile]
+    hand_discarder = take_n(pool, 13)
+    hand_discarder[win_tile] += 1
+    # 打出 win_tile 到河里，手里减掉
+    hand_discarder[win_tile] -= 1
+    if hand_discarder[win_tile] == 0:
+        del hand_discarder[win_tile]
+
+    # 其他座位
+    hands: list[Counter[Tile]] = []
+    for s in range(4):
+        if s == discarder:
+            hands.append(hand_discarder)
+        elif s == winner:
+            hands.append(Counter(winner_hand))
+        else:
+            hands.append(take_n(pool, 13))
+
+    # 构造 river（discarder 打出 win_tile）
+    entry = RiverEntry(seat=discarder, tile=win_tile, tsumogiri=False, riichi=False)
+    new_river = b0.river + (entry,)
+    new_disc = list(b0.all_discards_per_seat)
+    new_disc[discarder] = b0.all_discards_per_seat[discarder] + (win_tile,)
+    river_index = len(new_river) - 1
+
+    # 构造 CallResolution: ron 阶段，winner 在 ron_remaining 中
+    o1 = (discarder + 1) % 4
+    o2 = (discarder + 2) % 4
+    o3 = (discarder + 3) % 4
+    ron_remaining = frozenset((o1, o2, o3))
+    assert winner in ron_remaining, f"winner {winner} 不是 discarder {discarder} 的对手"
+
+    cs = CallResolution(
+        discard_seat=discarder,
+        claimed_tile=win_tile,
+        river_index=river_index,
+        stage="ron",
+        ron_remaining=ron_remaining,
+        ron_claimants=frozenset(),
+        pon_kan_order=(o1, o2, o3),
+        pon_kan_idx=0,
+        finished=False,
+    )
+
+    return BoardState(
+        hands=tuple(hands),
+        live_wall=b0.live_wall,
+        live_draw_index=b0.live_draw_index,
+        dead_wall=b0.dead_wall,
+        revealed_indicators=b0.revealed_indicators,
+        current_seat=winner,
+        turn_phase=TurnPhase.CALL_RESPONSE,
+        river=new_river,
+        melds=b0.melds,
+        last_draw_tile=None,
+        last_draw_was_rinshan=False,
+        rinshan_draw_index=0,
+        call_state=cs,
+        riichi=(False, False, False, False),
+        ippatsu_eligible=frozenset(),
+        double_riichi=frozenset(),
+        all_discards_per_seat=tuple(new_disc),
+        called_discard_indices=b0.called_discard_indices,
+    )
