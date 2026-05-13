@@ -8,6 +8,7 @@ from kernel.config import MahjongConfig
 from kernel.deal.model import BoardState
 from kernel.flow.model import TenpaiResult
 from kernel.flow.settle import (
+    _is_yaochu_tile,
     check_flow_mangan,
     compute_tenpai_result,
     settle_flow_mangan,
@@ -228,3 +229,60 @@ class TestComputeTenpaiResult:
         result = compute_tenpai_result(board)
         assert isinstance(result.tenpai_seats, frozenset)
         assert len(result.tenpai_types) == 4
+
+
+# --- _is_yaochu_tile ---
+
+class TestIsYaochuTile:
+    def test_honor_tile(self) -> None:
+        assert _is_yaochu_tile(TON) is True
+        assert _is_yaochu_tile(HAKU) is True
+
+    def test_terminal(self) -> None:
+        assert _is_yaochu_tile(MAN1) is True
+        assert _is_yaochu_tile(MAN9) is True
+        assert _is_yaochu_tile(PIN1) is True
+        assert _is_yaochu_tile(SOU9) is True
+
+    def test_non_yaochu(self) -> None:
+        assert _is_yaochu_tile(Tile(Suit.MAN, 2)) is False
+        assert _is_yaochu_tile(Tile(Suit.PIN, 5)) is False
+        assert _is_yaochu_tile(Tile(Suit.SOU, 3)) is False
+
+
+# --- settle_flow_mangan 支付路径 ---
+
+class TestSettleFlowManganPayment:
+    def test_flow_mangan_payment(self) -> None:
+        """流局满贯实际支付路径（L144-167）。"""
+        from kernel import build_board_after_split, split_wall, build_deck
+        from kernel.riichi.tenpai import is_tenpai_default
+
+        w = tuple(build_deck())
+        board = build_board_after_split(split_wall(w), dealer_seat=0)
+        table = initial_table_snapshot()
+
+        # 找一个听牌的座位
+        tenpai_seat = None
+        for s in range(4):
+            if is_tenpai_default(board.hands[s], board.melds[s]):
+                tenpai_seat = s
+                break
+
+        if tenpai_seat is None:
+            # 没有天然听牌的座位，跳过
+            return
+
+        # 设置全幺九舍牌
+        discards = (MAN1, MAN9, PIN1, PIN9, SOU1, SOU9, TON, NAN, SHA, PEI, HAKU)
+        all_disc = list(board.all_discards_per_seat)
+        all_disc[tenpai_seat] = discards
+        board = replace(board, all_discards_per_seat=tuple(all_disc))
+
+        tr = _tenpai_result({tenpai_seat})
+        scores_before = table.scores
+        result = settle_flow_mangan(table, board, tr)
+        scores_after = result.scores
+
+        # 流局满贯者应该收到点数
+        assert scores_after[tenpai_seat] != scores_before[tenpai_seat]
