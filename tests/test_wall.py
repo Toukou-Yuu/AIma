@@ -7,6 +7,8 @@ from kernel import (
     LIVE_WALL_SIZE,
     RINSHAN_COUNT,
     WALL_SIZE,
+    Suit,
+    Tile,
     build_deck,
     shuffle_deck,
     split_wall,
@@ -37,6 +39,65 @@ def test_split_wall_concat_roundtrip() -> None:
 def test_split_wall_rejects_bad_length() -> None:
     try:
         split_wall(build_deck()[:135])
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_dead_wall_rejects_wrong_rinshan_length() -> None:
+    from kernel.wall.split import DeadWall
+    try:
+        DeadWall(
+            rinshan=(Tile(Suit.MAN, 1),) * 5,  # 应该是 4
+            ura_bases=(Tile(Suit.MAN, 2),) * 4,
+            indicators=(Tile(Suit.MAN, 3),) * 4,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_dead_wall_rejects_wrong_ura_length() -> None:
+    from kernel.wall.split import DeadWall
+    try:
+        DeadWall(
+            rinshan=(Tile(Suit.MAN, 1),) * 4,
+            ura_bases=(Tile(Suit.MAN, 2),) * 3,  # 应该是 4
+            indicators=(Tile(Suit.MAN, 3),) * 4,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_dead_wall_rejects_wrong_indicator_length() -> None:
+    from kernel.wall.split import DeadWall
+    try:
+        DeadWall(
+            rinshan=(Tile(Suit.MAN, 1),) * 4,
+            ura_bases=(Tile(Suit.MAN, 2),) * 4,
+            indicators=(Tile(Suit.MAN, 3),) * 5,  # 应该是 4
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_wall_split_rejects_wrong_live_length() -> None:
+    from kernel.wall.split import WallSplit, DeadWall
+    try:
+        WallSplit(
+            live=(Tile(Suit.MAN, 1),) * 71,  # 应该是 LIVE_WALL_SIZE
+            dead=DeadWall(
+                rinshan=(Tile(Suit.MAN, 1),) * 4,
+                ura_bases=(Tile(Suit.MAN, 2),) * 4,
+                indicators=(Tile(Suit.MAN, 3),) * 4,
+            ),
+        )
     except ValueError:
         pass
     else:

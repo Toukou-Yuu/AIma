@@ -569,32 +569,47 @@ class TestYakumanHan:
 class TestChiihou:
     """地和测试。"""
 
+    @staticmethod
+    def _make_chihou_board() -> BoardState:
+        """构造子家第一巡自摸的 board 状态。"""
+        from dataclasses import replace
+
+        from kernel.play.model import RiverEntry
+
+        board = _board_sorted_deal(dealer=0)
+        # 亲家舍一张
+        discard_tile = board.hands[0].most_common(1)[0][0]
+        dealer_hand = board.hands[0].copy()
+        dealer_hand[discard_tile] -= 1
+        if dealer_hand[discard_tile] == 0:
+            del dealer_hand[discard_tile]
+        # 子家摸一张（从 live_wall[0]）
+        draw_tile = board.live_wall[0]
+        seat1_hand = board.hands[1].copy()
+        seat1_hand[draw_tile] += 1
+        hands = (dealer_hand, seat1_hand, board.hands[2], board.hands[3])
+        return replace(
+            board,
+            hands=hands,
+            current_seat=1,
+            live_draw_index=1,
+            river=(RiverEntry(seat=0, tile=discard_tile),),
+            last_draw_tile=draw_tile,
+        )
+
     def test_chihou_tsumo_basic(self) -> None:
         """地和：子家第一巡自摸。"""
-        board = _board_sorted_deal(dealer=0)
-        # _board_sorted_deal 返回亲家视角（current_seat=0）
-        # 地和需要子家（current_seat != 0），直接测试会失败
-        # 改为使用 count_yaku_han 测试完整流程
-
         from kernel.scoring.yaku import _is_chihou
 
-        # 构造一个最小的 BoardState 用于测试
-        # 注意：_is_chihou 检查 board.current_seat，不是 winner
-        # 所以我们需要构造一个 current_seat=1 的 board
-        # 但 _board_sorted_deal 返回的是 current_seat=0
-        # 我们直接测试函数逻辑，不依赖 board 构造
-
-        # 测试逻辑：子家自摸，河中无牌
-        # 预期：返回 True
-        pass  # 暂时跳过，需要更复杂的 board 构造
+        chihou_board = self._make_chihou_board()
+        assert _is_chihou(chihou_board, winner=1, is_tsumo=True) is True
 
     def test_chihou_ron_rejected(self) -> None:
         """地和：子家第一巡荣和不算地和。"""
         from kernel.scoring.yaku import _is_chihou
 
-        # 测试逻辑：子家荣和
-        # 预期：返回 False
-        pass  # 暂时跳过
+        chihou_board = self._make_chihou_board()
+        assert _is_chihou(chihou_board, winner=1, is_tsumo=False) is False
 
     def test_chihou_dealer_rejected(self) -> None:
         """地和：亲家不算地和。"""
@@ -604,3 +619,29 @@ class TestChiihou:
 
         # 亲家（席次 0）自摸不算地和
         assert _is_chihou(board, winner=0, is_tsumo=True) is False
+
+
+class TestTenhou:
+    """天和测试。"""
+
+    def test_tenhou_tsumo_basic(self) -> None:
+        """天和：亲家配牌自摸。"""
+        from kernel.scoring.yaku import _is_tenhou
+
+        board = _board_sorted_deal(dealer=0)
+        # 配牌后 current_seat=0, river=()，亲家自摸
+        assert _is_tenhou(board, winner=0, is_tsumo=True) is True
+
+    def test_tenhou_ron_rejected(self) -> None:
+        """天和：亲家荣和不算天和。"""
+        from kernel.scoring.yaku import _is_tenhou
+
+        board = _board_sorted_deal(dealer=0)
+        assert _is_tenhou(board, winner=0, is_tsumo=False) is False
+
+    def test_tenhou_non_dealer_rejected(self) -> None:
+        """天和：子家不算天和。"""
+        from kernel.scoring.yaku import _is_tenhou
+
+        board = _board_sorted_deal(dealer=0)
+        assert _is_tenhou(board, winner=1, is_tsumo=True) is False

@@ -8,6 +8,11 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+coverage.json
 .venv/
 venv/
 env/

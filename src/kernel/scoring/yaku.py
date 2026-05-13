@@ -339,13 +339,13 @@ def _is_suuankou(
 ) -> bool:
     """
     四暗刻：门前清四组暗刻 + 对子。
-    荣和时不算四暗刻（荣和破坏门清），但四暗刻单骑除外。
+    荣和时不算四暗刻（荣和破坏门清）。
+    单骑等待由 ``_is_suuankou_tanki`` 单独处理。
     役满。
     """
     if melds:
         return False  # 有副露则不是四暗刻
 
-    # 统计暗刻数量
     anko_count = 0
     pair_count = 0
 
@@ -361,15 +361,8 @@ def _is_suuankou(
         elif count == 2:
             pair_count += 1
 
-    # 四暗刻：四暗刻 + 一对
-    # 四暗刻单骑：五组对子（听牌时为单骑）
     if anko_count == 4 and pair_count == 1:
         return True
-    # 四暗刻单骑：荣和时为五对子（实际是四暗刻 + 单骑待牌）
-    if for_ron and anko_count == 3 and pair_count == 2:
-        # 荣和的牌必须形成第四个刻子
-        if full[win_tile] == 3:
-            return True
     return False
 
 
@@ -701,6 +694,8 @@ def _is_tenhou(board: BoardState, winner: int, is_tsumo: bool) -> bool:
     """
     if not is_tsumo:
         return False
+    if winner != 0:  # 只有亲家（席次 0）能天和
+        return False
     if board.current_seat != 0:  # 亲家必须是席次 0
         return False
     # 第一巡：无人打牌
@@ -716,8 +711,8 @@ def _is_chihou(board: BoardState, winner: int, is_tsumo: bool) -> bool:
         return False
     if board.current_seat == 0:  # 亲家不算地和
         return False
-    # 第一巡：无人打牌
-    return len(board.river) == 0
+    # 第一巡：河里仅有亲家的一张舍牌
+    return len(board.river) == 1
 
 
 def _yakuhai_labels_for_triplets(
