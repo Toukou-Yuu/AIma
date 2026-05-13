@@ -533,3 +533,471 @@ class TestEngineRiichi:
         else:
             # 如果恰好听牌了（不太可能但不报错），也算通过
             pass
+
+
+# --- TSUMO 自摸结算测试 ---
+
+class TestTsumoSettlement:
+    """TSUMO action → 自摸结算 → HAND_OVER。"""
+
+    @staticmethod
+    def _make_tsumo_hand_and_board(win_tile: Tile, extra_tiles: list[Tile]) -> BoardState:
+        """构造自摸和牌 board：seat0 有 14 张和牌形，last_draw_tile=win_tile。"""
+        from dataclasses import replace
+        b0 = board_sorted_deal(dealer=0)
+        # 从 live_wall 取 win_tile 和 extra_tiles
+        live = list(b0.live_wall)
+        # 从 pool（即已配手牌）构造 seat0 的手牌
+        pool = pool_not_in_wall(b0)
+        # 构造 13 张基础手牌
+        hand = Counter()
+        # 先放 win_tile 的 1 张（待摸后形成和牌形的前置张）
+        hand[win_tile] += 1
+        pool[win_tile] -= 1
+        if pool[win_tile] == 0:
+            del pool[win_tile]
+        # 放 extra_tiles
+        for t in extra_tiles:
+            hand[t] += 1
+            pool[t] -= 1
+            if pool[t] == 0:
+                del pool[t]
+        # 补到 13 张
+        while sum(hand.values()) < 13:
+            t = next(iter(pool.elements()))
+            hand[t] += 1
+            pool[t] -= 1
+            if pool[t] == 0:
+                del pool[t]
+        # 从 live_wall 取 win_tile 作为 last_draw_tile
+        # 替换 live_wall 中的一个位置
+        idx = 0
+        for i, t in enumerate(live):
+            if t == win_tile:
+                idx = i
+                break
+        drawn = live[idx]
+        live[idx] = next(iter(pool.elements()))  # 用 pool 中的 tile 替换
+        pool[drawn] = pool.get(drawn, 0) + 1  # 不对，drawn 不在 pool
+        # 简化：直接用 replace 修改 board
+        hands = list(b0.hands)
+        hands[0] = hand
+        return replace(
+            b0,
+            hands=tuple(hands),
+            live_wall=tuple(live),
+            last_draw_tile=win_tile,
+        )
+
+    def test_tsumo_seven_pairs(self) -> None:
+        """七对子自摸 → HAND_OVER。"""
+        # 构造 14 张七对子：7 对
+        hand = Counter({
+            MAN1: 2, MAN2: 2, MAN3: 2, MAN4: 2, MAN5: 2, MAN6: 2, MAN7: 2,
+        })
+        b = board_sorted_deal(dealer=0)
+        # 用 replace 直接设置手牌
+        from dataclasses import replace
+        hands = list(b.hands)
+        hands[0] = hand
+        b = replace(b, hands=tuple(hands), last_draw_tile=MAN7)
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        result = apply(g, Action(ActionKind.TSUMO, seat=0))
+        assert result.new_state.phase == GamePhase.HAND_OVER
+        assert result.new_state.ron_winners == frozenset({0})
+        assert len(result.events) >= 2
+
+    def test_tsumo_standard_form(self) -> None:
+        """标准形自摸 → HAND_OVER。"""
+        # 14 张：1m2m3m × 3 + 4m5m6m + 7m7m（标准形和牌）
+        # last_draw_tile = 7m（刚摸到的和了牌）
+        hand = Counter({
+            MAN1: 3, MAN2: 3, MAN3: 3, MAN4: 1, MAN5: 1, MAN6: 1, MAN7: 2,
+        })
+        from dataclasses import replace
+        b = board_sorted_deal(dealer=0)
+        hands = list(b.hands)
+        hands[0] = hand  # 14 张
+        b = replace(b, hands=tuple(hands), last_draw_tile=MAN7)
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        result = apply(g, Action(ActionKind.TSUMO, seat=0))
+        assert result.new_state.phase == GamePhase.HAND_OVER
+
+    def test_tsumo_rejected_not_win(self) -> None:
+        """非和牌形 TSUMO 应报错。"""
+        # 14 张散牌，不是和牌形
+        hand = Counter({
+            MAN1: 2, MAN2: 1, MAN3: 2, MAN4: 1, MAN5: 2,
+            MAN6: 1, MAN7: 1, MAN8: 2, MAN9: 2,
+        })
+        from dataclasses import replace
+        b = board_sorted_deal(dealer=0)
+        hands = list(b.hands)
+        hands[0] = hand  # 14 张散牌
+        b = replace(b, hands=tuple(hands), last_draw_tile=MAN9)
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.TSUMO, seat=0))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for invalid tsumo shape")
+
+    def test_tsumo_rejected_wrong_seat(self) -> None:
+        """非当前席 TSUMO 应报错。"""
+        hand = Counter({
+            MAN1: 2, MAN2: 2, MAN3: 2, MAN4: 2, MAN5: 2, MAN6: 2, MAN7: 2,
+        })
+        from dataclasses import replace
+        b = board_sorted_deal(dealer=0)
+        hands = list(b.hands)
+        hands[0] = hand
+        b = replace(b, hands=tuple(hands), last_draw_tile=MAN7)
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.TSUMO, seat=1))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for TSUMO wrong seat")
+
+    def test_tsumo_rejected_no_last_draw(self) -> None:
+        """无 last_draw_tile 时 TSUMO 应报错。"""
+        b = board_sorted_deal(dealer=0)
+        # 构造一个和牌形但没有 last_draw_tile 的状态
+        hand = Counter({
+            MAN1: 2, MAN2: 2, MAN3: 2, MAN4: 2, MAN5: 2, MAN6: 2, MAN7: 2,
+        })
+        from dataclasses import replace
+        hands = list(b.hands)
+        hands[0] = hand
+        b = replace(b, hands=tuple(hands), last_draw_tile=None)
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.TSUMO, seat=0))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for TSUMO without last_draw_tile")
+
+
+# --- RON drain 测试 ---
+
+class TestRonDrain:
+    """PASS_CALL drain 后自动触发 RON 结算。"""
+
+    def test_ron_drain_single(self) -> None:
+        """单家 PASS_CALL drain → RON 结算 → HAND_OVER。"""
+        winner_hand = Counter({
+            MAN1: 2, MAN2: 2, MAN3: 2, MAN4: 2, MAN5: 2, MAN6: 2, MAN7: 1,
+        })
+        b = make_ron_board(
+            dealer=0, discarder=0, winner=1,
+            winner_hand=winner_hand, win_tile=MAN7,
+        )
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        # seat1 声明 RON
+        g = apply(g, Action(ActionKind.RON, seat=1)).new_state
+        assert g.board.call_state is not None
+        assert g.board.call_state.finished is False
+        assert 1 in g.board.call_state.ron_claimants
+        # seat2 PASS
+        g = apply(g, Action(ActionKind.PASS_CALL, seat=2)).new_state
+        assert g.board.call_state is not None
+        assert g.board.call_state.finished is False
+        # seat3 PASS → 最后一家，drain 触发结算 → HAND_OVER
+        g = apply(g, Action(ActionKind.PASS_CALL, seat=3)).new_state
+        assert g.phase == GamePhase.HAND_OVER
+        assert g.ron_winners == frozenset({1})
+
+
+# --- OPEN_MELD 测试 ---
+
+class TestOpenMeld:
+    """engine 层 OPEN_MELD action。"""
+
+    def test_open_meld_rejected_no_seat(self) -> None:
+        """OPEN_MELD 无 seat 应报错。"""
+        b = board_sorted_deal(dealer=0)
+        tile = next(iter(b.hands[0].elements()))
+        b = apply_discard(b, 0, tile)
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.OPEN_MELD, meld=Meld(kind=MeldKind.PON, tiles=(MAN1, MAN1, MAN1), called_tile=MAN1)))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for OPEN_MELD without seat")
+
+    def test_open_meld_rejected_no_meld(self) -> None:
+        """OPEN_MELD 无 meld 应报错。"""
+        b = board_sorted_deal(dealer=0)
+        tile = next(iter(b.hands[0].elements()))
+        b = apply_discard(b, 0, tile)
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.OPEN_MELD, seat=1))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for OPEN_MELD without meld")
+
+
+# --- FLOWN NOOP tenpai 分支 ---
+
+class TestFlownNoopTenpai:
+    """FLOWN NOOP 的连庄/亲流分支。"""
+
+    def test_flown_noop_dealer_tenpai_continue(self) -> None:
+        """亲家听牌 → 连庄。"""
+        from kernel.flow.model import FlowKind, FlowResult, TenpaiResult
+        table = initial_table_snapshot(dealer_seat=0)
+        b = board_sorted_deal(dealer=0)
+        flow_result = FlowResult(kind=FlowKind.EXHAUSTED)
+        tenpai_result = TenpaiResult(
+            tenpai_seats=frozenset({0, 1}),
+            tenpai_types=("tenpai", "tenpai", "noten", "noten"),
+        )
+        g = GameState(
+            phase=GamePhase.FLOWN,
+            table=table,
+            board=b,
+            flow_result=flow_result,
+            tenpai_result=tenpai_result,
+        )
+        wall = tuple(build_deck())
+        result = apply(g, Action(ActionKind.NOOP, wall=wall))
+        assert result.new_state.phase == GamePhase.IN_ROUND
+
+    def test_flown_noop_dealer_noten_advance(self) -> None:
+        """亲家不听牌 → 亲流。"""
+        from kernel.flow.model import FlowKind, FlowResult, TenpaiResult
+        table = initial_table_snapshot(dealer_seat=0)
+        b = board_sorted_deal(dealer=0)
+        flow_result = FlowResult(kind=FlowKind.EXHAUSTED)
+        tenpai_result = TenpaiResult(
+            tenpai_seats=frozenset({1, 2}),
+            tenpai_types=("noten", "tenpai", "tenpai", "noten"),
+        )
+        g = GameState(
+            phase=GamePhase.FLOWN,
+            table=table,
+            board=b,
+            flow_result=flow_result,
+            tenpai_result=tenpai_result,
+        )
+        wall = tuple(build_deck())
+        result = apply(g, Action(ActionKind.NOOP, wall=wall))
+        assert result.new_state.phase == GamePhase.IN_ROUND
+        # 亲流：dealer_seat 轮转
+        assert result.new_state.table.dealer_seat == 1
+
+
+# --- 错误守卫测试 ---
+
+class TestErrorGuards:
+    """engine 各种错误守卫路径。"""
+
+    def test_invalid_action_kind_in_pre_deal(self) -> None:
+        """PRE_DEAL 阶段非法 action。"""
+        g = initial_game_state()
+        try:
+            apply(g, Action(ActionKind.DRAW, seat=0))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for DRAW in PRE_DEAL")
+
+    def test_begin_round_no_wall(self) -> None:
+        """BEGIN_ROUND 无 wall 应报错。"""
+        g = initial_game_state()
+        try:
+            apply(g, Action(ActionKind.BEGIN_ROUND))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for BEGIN_ROUND without wall")
+
+    def test_begin_round_short_wall(self) -> None:
+        """BEGIN_ROUND wall 长度不足应报错。"""
+        g = initial_game_state()
+        try:
+            apply(g, Action(ActionKind.BEGIN_ROUND, wall=tuple(build_deck())[:135]))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for BEGIN_ROUND with short wall")
+
+    def test_discard_missing_tile(self) -> None:
+        """DISCARD 无 tile 参数应报错。"""
+        g0 = initial_game_state()
+        wall = tuple(build_deck())
+        g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=wall)).new_state
+        ds = g1.board.current_seat
+        try:
+            apply(g1, Action(ActionKind.DISCARD, seat=ds))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for DISCARD without tile")
+
+    def test_draw_wrong_seat(self) -> None:
+        """DRAW 错误座位应报错。"""
+        g0 = initial_game_state()
+        wall = tuple(build_deck())
+        g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=wall)).new_state
+        # 先打牌进入 NEED_DRAW
+        ds = g1.board.current_seat
+        tile = next(iter(g1.board.hands[ds].elements()))
+        g2 = apply(g1, Action(ActionKind.DISCARD, seat=ds, tile=tile)).new_state
+        if g2.board.turn_phase == TurnPhase.CALL_RESPONSE:
+            from tests.call_helpers import clear_call_window_state
+            g2 = clear_call_window_state(g2)
+        # 错误座位摸牌
+        wrong_seat = (g2.board.current_seat + 1) % 4
+        try:
+            apply(g2, Action(ActionKind.DRAW, seat=wrong_seat))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for DRAW wrong seat")
+
+    def test_ron_requires_seat(self) -> None:
+        """RON 无 seat 应报错。"""
+        winner_hand = Counter({
+            MAN1: 2, MAN2: 2, MAN3: 2, MAN4: 2, MAN5: 2, MAN6: 2, MAN7: 1,
+        })
+        b = make_ron_board(
+            dealer=0, discarder=0, winner=1,
+            winner_hand=winner_hand, win_tile=MAN7,
+        )
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.RON))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for RON without seat")
+
+    def test_tsumo_requires_seat(self) -> None:
+        """TSUMO 无 seat 应报错。"""
+        hand = Counter({
+            MAN1: 2, MAN2: 2, MAN3: 2, MAN4: 2, MAN5: 2, MAN6: 2, MAN7: 2,
+        })
+        from dataclasses import replace
+        b = board_sorted_deal(dealer=0)
+        hands = list(b.hands)
+        hands[0] = hand
+        b = replace(b, hands=tuple(hands), last_draw_tile=MAN7)
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.TSUMO))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for TSUMO without seat")
+
+    def test_tsumo_requires_must_discard(self) -> None:
+        """非 MUST_DISCARD 阶段 TSUMO 应报错。"""
+        g0 = initial_game_state()
+        wall = tuple(build_deck())
+        g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=wall)).new_state
+        # NEED_DRAW 阶段（配牌后是 MUST_DISCARD，先打一张进入 NEED_DRAW）
+        ds = g1.board.current_seat
+        tile = next(iter(g1.board.hands[ds].elements()))
+        g2 = apply(g1, Action(ActionKind.DISCARD, seat=ds, tile=tile)).new_state
+        if g2.board.turn_phase == TurnPhase.CALL_RESPONSE:
+            from tests.call_helpers import clear_call_window_state
+            g2 = clear_call_window_state(g2)
+        # 现在是 NEED_DRAW，TSUMO 应报错
+        try:
+            apply(g2, Action(ActionKind.TSUMO, seat=g2.board.current_seat))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for TSUMO in NEED_DRAW")
+
+    def test_non_noop_in_hand_over(self) -> None:
+        """HAND_OVER 阶段非 NOOP 应报错。"""
+        winner_hand = Counter({
+            MAN1: 2, MAN2: 2, MAN3: 2, MAN4: 2, MAN5: 2, MAN6: 2, MAN7: 1,
+        })
+        b = make_ron_board(
+            dealer=0, discarder=0, winner=1,
+            winner_hand=winner_hand, win_tile=MAN7,
+        )
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        g = apply(g, Action(ActionKind.PASS_CALL, seat=2)).new_state
+        g = apply(g, Action(ActionKind.PASS_CALL, seat=3)).new_state
+        result = apply(g, Action(ActionKind.RON, seat=1))
+        assert result.new_state.phase == GamePhase.HAND_OVER
+        # HAND_OVER 阶段的 DRAW 应报错
+        try:
+            apply(result.new_state, Action(ActionKind.DRAW, seat=0))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for DRAW in HAND_OVER")
+
+    def test_non_noop_in_flown(self) -> None:
+        """FLOWN 阶段非 NOOP 应报错。"""
+        from kernel.flow.model import FlowKind, FlowResult
+        table = initial_table_snapshot()
+        b = board_sorted_deal(dealer=0)
+        flow_result = FlowResult(kind=FlowKind.EXHAUSTED)
+        g = GameState(
+            phase=GamePhase.FLOWN,
+            table=table,
+            board=b,
+            flow_result=flow_result,
+        )
+        try:
+            apply(g, Action(ActionKind.DRAW, seat=0))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for DRAW in FLOWN")

@@ -128,6 +128,74 @@ def make_meld(kind: MeldKind, tiles: tuple[Tile, ...], called_tile: Tile | None 
     return Meld(kind=kind, tiles=tiles, called_tile=called_tile)
 
 
+def make_tsumo_board(
+    *,
+    dealer: int = 0,
+    target_seat: int = 0,
+    target_hand: Counter[Tile],
+    win_tile: Tile,
+) -> BoardState:
+    """构造自摸听牌状态：target_seat 有 13 张手牌 + 1 张 win_tile = 14 张和牌形。
+
+    target_hand: 13 张手牌（不含 win_tile）。
+    win_tile: 刚摸到的和了牌。
+    返回的 board turn_phase=MUST_DISCARD, last_draw_tile=win_tile。
+    """
+    b0 = board_sorted_deal(dealer=dealer)
+    pool = pool_not_in_wall(b0)
+
+    # 从 pool 移除 target_hand 的牌
+    for t, n in target_hand.items():
+        assert pool[t] >= n, f"pool 中 {t} 不足：需要 {n}，仅有 {pool[t]}"
+        pool[t] -= n
+        if pool[t] == 0:
+            del pool[t]
+
+    # win_tile 也需要在 pool 中（用来替换 live_wall 的第一张）
+    assert pool[win_tile] >= 1, f"pool 中无 {win_tile}"
+    pool[win_tile] -= 1
+    if pool[win_tile] == 0:
+        del pool[win_tile]
+
+    # 其他座位
+    hands: list[Counter[Tile]] = []
+    for s in range(4):
+        if s == target_seat:
+            h = Counter(target_hand)
+            h[win_tile] += 1  # 手牌含 win_tile（刚摸到）
+            hands.append(h)
+        else:
+            hands.append(take_n(pool, 13))
+
+    # 替换 live_wall[0] 为 win_tile（确保 apply_draw 摸到 win_tile）
+    # 原来的 live_wall[0] 放回 pool 以保持张数守恒
+    live = list(b0.live_wall)
+    original_tile = live[0]
+    pool[original_tile] = pool.get(original_tile, 0) + 1
+    live[0] = win_tile
+
+    return BoardState(
+        hands=tuple(hands),
+        live_wall=tuple(live),
+        live_draw_index=0,
+        dead_wall=b0.dead_wall,
+        revealed_indicators=b0.revealed_indicators,
+        current_seat=target_seat,
+        turn_phase=TurnPhase.MUST_DISCARD,
+        river=(),
+        melds=b0.melds,
+        last_draw_tile=win_tile,
+        last_draw_was_rinshan=False,
+        rinshan_draw_index=0,
+        call_state=None,
+        riichi=(False, False, False, False),
+        ippatsu_eligible=frozenset(),
+        double_riichi=frozenset(),
+        all_discards_per_seat=((), (), (), ()),
+        called_discard_indices=b0.called_discard_indices,
+    )
+
+
 def make_ron_board(
     *,
     dealer: int = 0,
