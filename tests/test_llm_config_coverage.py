@@ -246,6 +246,51 @@ class TestLoadMatchConfig:
         assert cfg.seed == 42
         assert cfg.match_end.type == "hands"
 
+    def test_with_match_config_path(self, tmp_path) -> None:
+        """match_config_path 非 None 时加载独立配置（L418-419）。"""
+        p = tmp_path / "config.yaml"
+        mp = tmp_path / "match.yaml"
+        _write_yaml(p, {"match": {"seed": 1, "match_end": {"type": "hands", "value": 4, "allow_negative": False}}})
+        _write_yaml(mp, {
+            "match": {
+                "seed": 99,
+                "match_end": {"type": "hands", "value": 12, "allow_negative": False},
+                "max_player_steps": 100,
+                "players": [{"name": "p1"}, {"name": "p2"}],
+            }
+        })
+        cfg = load_match_config(p, match_config_path=mp)
+        assert cfg.seed == 99
+        assert cfg.max_player_steps == 100
+        assert cfg.players is not None
+        assert len(cfg.players) == 2
+
+    def test_match_not_dict_raises(self, tmp_path) -> None:
+        """match 段非 dict → ValueError（L422-423）。"""
+        p = tmp_path / "config.yaml"
+        _write_yaml(p, {"match": "not a dict"})
+        try:
+            load_match_config(p)
+            raise AssertionError("expected ValueError for non-dict match")
+        except ValueError:
+            pass
+
+    def test_players_not_list_raises(self, tmp_path) -> None:
+        """players 非 list → ValueError（L426-427）。"""
+        p = tmp_path / "config.yaml"
+        _write_yaml(p, {
+            "match": {
+                "seed": 1,
+                "match_end": {"type": "hands", "value": 8, "allow_negative": False},
+                "players": "not a list",
+            }
+        })
+        try:
+            load_match_config(p)
+            raise AssertionError("expected ValueError for non-list players")
+        except ValueError:
+            pass
+
 
 # --- get_logging_config ---
 
@@ -266,3 +311,71 @@ class TestGetLoggingConfig:
         _write_yaml(p, {"logging": {"level": "DEBUG"}})
         result = get_logging_config(p)
         assert result["level"] == "DEBUG"
+
+
+# --- _client_config_from_profile ---
+
+class TestClientConfigFromProfile:
+    def test_max_tokens_too_large_raises(self) -> None:
+        """max_tokens >= prompt_budget → ValueError（L343）。"""
+        from llm.config import LLMProfileConfig, LLMRuntimeConfig, _client_config_from_profile
+        profile = LLMProfileConfig(
+            name="test", provider="openai", base_url="http://t", api_key="k",
+            model="m", timeout_sec=30, max_context=1000, max_tokens=900,
+        )
+        runtime = LLMRuntimeConfig(
+            prompt_format="natural", context_scope="per_hand",
+            compression_level="none", history_budget=2000,
+            context_compression_threshold=0.8, request_delay=0,
+            conversation_logging_enabled=False,
+        )
+        # max_context=1000 * threshold=0.8 = 800. max_tokens=900 >= 800 → error
+        try:
+            _client_config_from_profile(profile, runtime, "test prompt")
+            raise AssertionError("expected ValueError for oversized max_tokens")
+        except ValueError:
+            pass
+
+
+# --- load_seat_llm_configs ---
+
+class TestLoadSeatLlmConfigs:
+    def test_empty_system_prompt_raises(self, tmp_path) -> None:
+        """空 system_prompt → ValueError（L375）。"""
+        p = tmp_path / "config.yaml"
+        _write_yaml(p, {
+            "llm": {
+                "system_prompt": "  ",
+                "prompt_format": "natural",
+                "context_scope": "per_hand",
+                "compression_level": "none",
+                "history_budget": 2000,
+                "context_compression_threshold": 0.8,
+                "request_delay": 0,
+                "conversation_logging": {"enabled": False},
+                "profiles": {
+                    "p": {
+                        "provider": "openai", "base_url": "http://t", "api_key": "k",
+                        "model": "m", "timeout_sec": 30, "max_context": 4096, "max_tokens": 1024,
+                    }
+                },
+                "seats": {
+                    "seat0": {"profile": "p"}, "seat1": {"profile": "p"},
+                    "seat2": {"profile": "p"}, "seat3": {"profile": "p"},
+                },
+            }
+        })
+        try:
+            load_seat_llm_configs(config_path=p)
+            raise AssertionError("expected ValueError for blank system_prompt")
+        except ValueError:
+            pass
+
+
+# --- load_llm_config happy path ---
+
+class TestLoadLlmConfigHappyPath:
+    def test_loads_successfully(self) -> None:
+        """正常加载指定座位配置（L397）。"""
+        cfg = load_llm_config(seat=0)
+        assert cfg.provider in ("openai", "anthropic")

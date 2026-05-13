@@ -91,6 +91,21 @@ class TestCreateSummarizer:
         assert not isinstance(result, LLMSummarizer)
 
 
+# --- exception 回退路径 ---
+
+class TestPolishExceptionFallback:
+    def test_client_raises_returns_original(self) -> None:
+        """client 抛异常时回退到原 memory（L46-48）。"""
+        class BadClient:
+            def complete(self, messages, *, model=None):
+                raise RuntimeError("API error")
+
+        s = LLMSummarizer(client=BadClient())
+        mem = _memory()
+        result = s.polish(mem, _stats())
+        assert result is mem
+
+
 # --- 真实 DeepSeek API 调用 ---
 
 class TestPolishWithDeepSeek:

@@ -7,8 +7,18 @@ from llm.agent.prompt import PromptProjector
 
 def _make_projector(**attrs):
     """绕过构造函数创建 PromptProjector 实例。"""
+    from llm.agent.session import LocalContextPolicy
     p = object.__new__(PromptProjector)
-    for k, v in attrs.items():
+    # 设置默认属性
+    defaults = {
+        "compression_level": "none",
+        "prompt_mode": "natural",
+        "history_budget": 2000,
+        "archive_budget": 0,
+        "context_policy": LocalContextPolicy(scope="per_hand"),
+    }
+    defaults.update(attrs)
+    for k, v in defaults.items():
         object.__setattr__(p, k, v)
     return p
 
@@ -90,3 +100,36 @@ class TestBuildSemanticCompactedHistory:
         ctx = EpisodeContext(seat=0)
         result = p._build_semantic_compacted_history(ctx, compaction_client=None)
         assert result == []
+
+
+# --- _build_user_prompt json mode ---
+
+class TestBuildUserPromptJsonMode:
+    def test_json_mode(self) -> None:
+        """prompt_mode='json' 走 build_compressed_decision_prompt 分支（L203）。"""
+        from kernel.api.observation import Observation, RiverEntry
+        from kernel.engine.phase import GamePhase
+        from kernel.tiles.model import Suit, Tile
+        from collections import Counter
+        from llm.agent.context import EpisodeContext
+        from llm.agent.context_store import TurnContext
+        from kernel.api.legal_actions import LegalAction
+        from kernel.engine.actions import ActionKind
+
+        p = _make_projector(prompt_mode="json", context_scope="stateless")
+        obs = Observation(
+            seat=0, dealer_seat=0, phase=GamePhase.IN_ROUND,
+            hand=Counter({Tile(Suit.MAN, 1): 2}),
+            melds=(), all_melds=((), (), (), ()),
+            river=(), dora_indicators=(), ura_indicators=None,
+            riichi_state=(False, False, False, False),
+            scores=(25000, 25000, 25000, 25000), honba=0, kyoutaku=0,
+            turn_seat=0, last_discard=None, last_discard_seat=None,
+            wall_remaining=70, dead_wall=None, hands_by_seat=None,
+        )
+        la = LegalAction(kind=ActionKind.DISCARD, tile=Tile(Suit.MAN, 1), seat=0)
+        tc = TurnContext(observation=obs, legal_actions=(la,), turn_index=1)
+        ctx = EpisodeContext(seat=0)
+        result = p._build_user_prompt(tc, episode_ctx=ctx)
+        assert isinstance(result, str)
+        assert len(result) > 0
