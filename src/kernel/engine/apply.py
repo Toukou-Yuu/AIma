@@ -466,8 +466,8 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
                         settled = board_after_ron_winners(new_board)
                         eb = _create_event_builder(state)
                         flow_event = eb.flow(
-                            kind=FlowKind.THREE_RON,
-                            detail=f"三家和流局：{cs.ron_claimants}",
+                            flow_kind=FlowKind.THREE_RON,
+                            tenpai_seats=frozenset(),
                         )
                         hand_over_event = eb.hand_over(
                             winners=(),

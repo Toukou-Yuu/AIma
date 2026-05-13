@@ -1478,7 +1478,7 @@ class TestThreeRonFlow:
     """三家和流局。"""
 
     def test_three_ron_flow(self) -> None:
-        """三家荣和 → THREE_RON 流局（engine 有已知 bug：eb.flow 参数名错误）。"""
+        """三家荣和 → THREE_RON 流局。"""
         from kernel.config import MahjongConfig
         winner_hand = Counter({
             MAN1: 2, MAN2: 2, MAN3: 2, MAN4: 2, MAN5: 2, MAN6: 2, MAN7: 1,
@@ -1504,14 +1504,5 @@ class TestThreeRonFlow:
         cfg = MahjongConfig(allow_multiple_ron=False)
         g1 = apply(g, Action(ActionKind.RON, seat=1), config=cfg).new_state
         g2 = apply(g1, Action(ActionKind.RON, seat=2), config=cfg).new_state
-        # 第三家 RON 触发三家和流局，但 engine 有 bug（eb.flow 参数名错误）
-        # 预期 TypeError: _EventBuilder.flow() got an unexpected keyword argument 'kind'
-        try:
-            apply(g2, Action(ActionKind.RON, seat=3), config=cfg)
-        except TypeError:
-            pass  # 已知 engine bug
-        except Exception:
-            pass  # 其他错误也接受
-        else:
-            # 如果 engine 修复了，应该进入 FLOWN
-            pass
+        g3 = apply(g2, Action(ActionKind.RON, seat=3), config=cfg)
+        assert g3.new_state.phase == GamePhase.FLOWN
