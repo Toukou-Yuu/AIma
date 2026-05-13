@@ -1506,3 +1506,78 @@ class TestThreeRonFlow:
         g2 = apply(g1, Action(ActionKind.RON, seat=2), config=cfg).new_state
         g3 = apply(g2, Action(ActionKind.RON, seat=3), config=cfg)
         assert g3.new_state.phase == GamePhase.FLOWN
+
+
+# --- 更多错误守卫 ---
+
+class TestMoreErrorGuards:
+    """剩余错误守卫路径。"""
+
+    def test_ankan_requires_seat(self) -> None:
+        """ANKAN 无 seat 应报错。"""
+        g0 = initial_game_state()
+        wall = tuple(build_deck())
+        g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=wall)).new_state
+        meld = Meld(kind=MeldKind.ANKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=None)
+        try:
+            apply(g1, Action(ActionKind.ANKAN, meld=meld))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for ANKAN without seat")
+
+    def test_ankan_requires_meld(self) -> None:
+        """ANKAN 无 meld 应报错。"""
+        g0 = initial_game_state()
+        wall = tuple(build_deck())
+        g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=wall)).new_state
+        ds = g1.board.current_seat
+        try:
+            apply(g1, Action(ActionKind.ANKAN, seat=ds))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for ANKAN without meld")
+
+    def test_shankuminkan_requires_seat(self) -> None:
+        """SHANKUMINKAN 无 seat 应报错。"""
+        g0 = initial_game_state()
+        wall = tuple(build_deck())
+        g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=wall)).new_state
+        meld = Meld(kind=MeldKind.SHANKUMINKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=MAN1)
+        try:
+            apply(g1, Action(ActionKind.SHANKUMINKAN, meld=meld))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for SHANKUMINKAN without seat")
+
+    def test_shankuminkan_requires_meld(self) -> None:
+        """SHANKUMINKAN 无 meld 应报错。"""
+        g0 = initial_game_state()
+        wall = tuple(build_deck())
+        g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=wall)).new_state
+        ds = g1.board.current_seat
+        try:
+            apply(g1, Action(ActionKind.SHANKUMINKAN, seat=ds))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for SHANKUMINKAN without meld")
+
+    def test_call_pass_drain_requires_no_seat(self) -> None:
+        """CALL_PASS_DRAIN 有 seat 应报错。"""
+        b = board_sorted_deal(dealer=0)
+        tile = next(iter(b.hands[0].elements()))
+        b = apply_discard(b, 0, tile)
+        g = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=b,
+        )
+        try:
+            apply(g, Action(ActionKind.CALL_PASS_DRAIN, seat=0))
+        except Exception:
+            pass
+        else:
+            raise AssertionError("expected error for CALL_PASS_DRAIN with seat")
