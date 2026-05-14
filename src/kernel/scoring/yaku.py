@@ -199,14 +199,28 @@ def _remaining_after_open_melds(full: Counter[Tile], melds: tuple[Meld, ...]) ->
     return rem
 
 
-def _is_chanta(full: Counter[Tile], melds: tuple[Meld, ...], *, with_jun: bool) -> bool:
+def _is_chanta(
+    full: Counter[Tile],
+    concealed: Counter[Tile],
+    melds: tuple[Meld, ...],
+    win_tile: Tile,
+    *,
+    for_ron: bool,
+    with_jun: bool,
+) -> bool:
     """
-    混全带幺/纯全带幺：所有面子和雀头均须「带幺」。
+    混全带幺/纯全带幺：所有面子和雀头均须「带幺」（含门内分解）。
     with_jun=True: 纯全（手牌无字牌）；False: 混全（允许字牌）。
     """
+    from kernel.win_shape.decompose import (
+        enumerate_concealed_decompositions,
+        index_to_suit_rank,
+    )
+
     if with_jun and any(t.suit == Suit.HONOR for t in full.keys()):
         return False
 
+    # 副露检查
     for m in melds:
         if m.kind == MeldKind.CHI:
             ranks = [t.rank for t in m.tiles]
@@ -216,14 +230,34 @@ def _is_chanta(full: Counter[Tile], melds: tuple[Meld, ...], *, with_jun: bool) 
             if not all(_tile_is_yaochuu(t) for t in m.tiles):
                 return False
 
-    rem = _remaining_after_open_melds(full, melds)
-    for t, n in rem.items():
-        if t.suit != Suit.HONOR and 2 <= t.rank <= 8:
-            if n >= 3:
-                return False
-            if n == 2 and not _tile_is_yaochuu(t):
-                return False
-    return True
+    # 门内分解检查
+    decomps = enumerate_concealed_decompositions(
+        concealed, melds, win_tile, for_ron=for_ron,
+    )
+    if not decomps:
+        return False
+
+    for decomp in decomps:
+        all_ok = True
+        for kind, idx in decomp:
+            suit_val, rank = index_to_suit_rank(idx)
+            if kind == "chi":
+                # 顺子起始 rank 为 1 → 123（带幺），7 → 789（带幺），其他不带幺
+                if rank not in (1, 7):
+                    all_ok = False
+                    break
+            else:  # pon
+                # 刻子/雀头的牌须为幺九牌
+                if suit_val < 3:
+                    tile = Tile([Suit.MAN, Suit.PIN, Suit.SOU][suit_val], rank)
+                else:
+                    tile = Tile(Suit.HONOR, rank)
+                if not _tile_is_yaochuu(tile):
+                    all_ok = False
+                    break
+        if all_ok:
+            return True
+    return False
 
 
 def _count_ananko(concealed: Counter[Tile], melds: tuple[Meld, ...]) -> int:
@@ -267,39 +301,79 @@ def _is_toitoi(
     return pair_count == 1 and triplet_count == 4
 
 
-def _is_sanshoku_same_rank(melds: tuple[Meld, ...]) -> bool:
-    """三色同顺：三种花色都有相同 rank 的顺子。"""
-    # 收集所有顺子的 rank
+def _is_sanshoku_same_rank(
+    concealed: Counter[Tile],
+    melds: tuple[Meld, ...],
+    win_tile: Tile,
+    *,
+    for_ron: bool,
+) -> bool:
+    """三色同顺：三种花色都有相同 rank 的顺子（含门内分解）。"""
+    from kernel.win_shape.decompose import (
+        enumerate_concealed_decompositions,
+        index_to_suit_rank,
+    )
+
+    # 收集副露中的顺子
     chi_ranks: dict[int, set[Suit]] = {}
     for m in melds:
         if m.kind == MeldKind.CHI:
-            rank = m.tiles[0].rank  # 最小 rank
+            rank = m.tiles[0].rank
             suit = m.tiles[0].suit
-            if rank not in chi_ranks:
-                chi_ranks[rank] = set()
-            chi_ranks[rank].add(suit)
+            chi_ranks.setdefault(rank, set()).add(suit)
 
-    # 检查是否有某个 rank 包含三种花色
-    for rank, suits in chi_ranks.items():
-        if len(suits) == 3:
-            return True
+    # 枚举门内分解，合并检查
+    decomps = enumerate_concealed_decompositions(
+        concealed, melds, win_tile, for_ron=for_ron,
+    )
+    for decomp in decomps:
+        merged: dict[int, set[Suit]] = {r: set(s) for r, s in chi_ranks.items()}
+        for kind, idx in decomp:
+            if kind == "chi":
+                suit_val, rank = index_to_suit_rank(idx)
+                suit = [Suit.MAN, Suit.PIN, Suit.SOU][suit_val]
+                merged.setdefault(rank, set()).add(suit)
+        for suits in merged.values():
+            if len(suits) == 3:
+                return True
     return False
 
 
-def _is_ikkitsukan(melds: tuple[Meld, ...]) -> bool:
-    """一气通贯：同花色 123+456+789 三个顺子。"""
+def _is_ikkitsukan(
+    concealed: Counter[Tile],
+    melds: tuple[Meld, ...],
+    win_tile: Tile,
+    *,
+    for_ron: bool,
+) -> bool:
+    """一气通贯：同花色 123+456+789 三个顺子（含门内分解）。"""
+    from kernel.win_shape.decompose import (
+        enumerate_concealed_decompositions,
+        index_to_suit_rank,
+    )
+
+    # 收集副露顺子
     suit_sequences: dict[Suit, set[int]] = {}
     for m in melds:
         if m.kind == MeldKind.CHI:
             suit = m.tiles[0].suit
             rank = m.tiles[0].rank
-            if suit not in suit_sequences:
-                suit_sequences[suit] = set()
-            suit_sequences[suit].add(rank)
+            suit_sequences.setdefault(suit, set()).add(rank)
 
-    for suit, ranks in suit_sequences.items():
-        if {1, 4, 7}.issubset(ranks):
-            return True
+    # 枚举门内分解
+    decomps = enumerate_concealed_decompositions(
+        concealed, melds, win_tile, for_ron=for_ron,
+    )
+    for decomp in decomps:
+        merged: dict[Suit, set[int]] = {s: set(r) for s, r in suit_sequences.items()}
+        for kind, idx in decomp:
+            if kind == "chi":
+                suit_val, rank = index_to_suit_rank(idx)
+                suit = [Suit.MAN, Suit.PIN, Suit.SOU][suit_val]
+                merged.setdefault(suit, set()).add(rank)
+        for ranks in merged.values():
+            if {1, 4, 7}.issubset(ranks):
+                return True
     return False
 
 
@@ -912,21 +986,21 @@ def non_dora_yaku_han_and_labels(
         han += 2
         labels.append("对对和")
 
-    if _is_sanshoku_same_rank(melds):
+    if _is_sanshoku_same_rank(concealed, melds, win_tile, for_ron=for_ron):
         menzen = len(melds) == 0
         han += 3 if menzen else 2
         labels.append("三色同顺(门清)" if menzen else "三色同顺")
 
-    if _is_ikkitsukan(melds):
+    if _is_ikkitsukan(concealed, melds, win_tile, for_ron=for_ron):
         menzen = len(melds) == 0
         han += 3 if menzen else 2
         labels.append("一气通贯(门清)" if menzen else "一气通贯")
 
-    if _is_chanta(full, melds, with_jun=True):
+    if _is_chanta(full, concealed, melds, win_tile, for_ron=for_ron, with_jun=True):
         menzen = len(melds) == 0
         han += 4 if menzen else 3
         labels.append("纯全带幺九(门清)" if menzen else "纯全带幺九")
-    elif _is_chanta(full, melds, with_jun=False):
+    elif _is_chanta(full, concealed, melds, win_tile, for_ron=for_ron, with_jun=False):
         menzen = len(melds) == 0
         han += 2 if menzen else 1
         labels.append("混全带幺九(门清)" if menzen else "混全带幺九")

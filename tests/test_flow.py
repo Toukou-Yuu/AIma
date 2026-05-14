@@ -205,6 +205,19 @@ class TestFourKansFlow:
         assert is_four_kans_flow(3) is False
         assert is_four_kans_flow(0) is False
 
+    def test_one_player_four_kans_not_flow(self) -> None:
+        """同一玩家开 4 杠不流局（四杠子役满）。"""
+        # 一人四杠：(4,0,0,0) → 不流局
+        assert is_four_kans_flow((4, 0, 0, 0)) is False
+        assert is_four_kans_flow((0, 4, 0, 0)) is False
+        assert is_four_kans_flow((0, 0, 0, 4)) is False
+
+    def test_scattered_four_kans_is_flow(self) -> None:
+        """分散四杠（不同玩家合计 4 杠）判定为流局。"""
+        assert is_four_kans_flow((2, 1, 1, 0)) is True
+        assert is_four_kans_flow((1, 1, 1, 1)) is True
+        assert is_four_kans_flow((3, 1, 0, 0)) is True
+
 
 class TestFourRiichiFlow:
     """四家立直流局测试。"""
@@ -273,15 +286,24 @@ class TestCheckFlowKind:
         assert result.kind == FlowKind.FOUR_RIICHI
 
     def test_four_kans_detection(self) -> None:
-        """四杠检测。"""
+        """四杠散了检测（分散四杠）。"""
         board = _make_board_from_wall(_make_standard_wall())
         result = check_flow_kind(
             board,
-            kan_count=4,
+            kan_counts=(1, 1, 1, 1),
         )
 
         assert result is not None
         assert result.kind == FlowKind.FOUR_KANS
+
+    def test_four_kans_one_player_not_flow(self) -> None:
+        """一人四杠不触发流局。"""
+        board = _make_board_from_wall(_make_standard_wall())
+        result = check_flow_kind(
+            board,
+            kan_counts=(4, 0, 0, 0),
+        )
+        assert result is None
 
     def test_four_winds_detection(self) -> None:
         """四风连打检测。"""
@@ -410,7 +432,134 @@ class TestFlowIntegration:
         # TODO: 构造四个杠的场景
         pass
 
-    def test_pon_melds_not_counted_as_kans(self) -> None:
+    def test_haitei_draw_should_return_must_discard(self) -> None:
+        """海底：DRAW 后应返回 MUST_DISCARD（非 FLOWN），给玩家自摸机会。
+
+        通过 apply 推进对局到牌山最后一张。
+        """
+        from kernel.play.model import TurnPhase
+
+        wall = tuple(shuffle_deck(build_deck(), seed=0))
+        state = initial_game_state()
+        state = apply(state, Action(kind=ActionKind.BEGIN_ROUND, wall=wall)).new_state
+
+        for _ in range(300):
+            if state.phase != GamePhase.IN_ROUND:
+                break
+            board = state.board
+            if board is None:
+                break
+
+            if board.turn_phase == TurnPhase.NEED_DRAW:
+                remaining = len(board.live_wall) - board.live_draw_index
+                if remaining <= 1:
+                    result = apply(state, Action(kind=ActionKind.DRAW))
+                    rb = result.new_state.board
+                    assert result.new_state.phase == GamePhase.IN_ROUND, \
+                        f"海底摸牌后应为 IN_ROUND，实际 {result.new_state.phase}"
+                    assert rb is not None
+                    assert rb.turn_phase == TurnPhase.MUST_DISCARD, \
+                        f"海底摸牌后应为 MUST_DISCARD，实际 {rb.turn_phase}"
+                    # 打出一张牌 → 应触发荒牌
+                    tile = next(iter(rb.hands[rb.current_seat].elements()))
+                    result2 = apply(result.new_state, Action(
+                        kind=ActionKind.DISCARD, seat=rb.current_seat, tile=tile,
+                    ))
+                    assert result2.new_state.phase == GamePhase.FLOWN
+                    return
+                state = apply(state, Action(kind=ActionKind.DRAW)).new_state
+            elif board.turn_phase == TurnPhase.MUST_DISCARD:
+                tile = next(iter(board.hands[board.current_seat].elements()))
+                state = apply(state, Action(
+                    kind=ActionKind.DISCARD, seat=board.current_seat, tile=tile,
+                )).new_state
+            elif board.turn_phase == TurnPhase.CALL_RESPONSE:
+                from kernel.call.transitions import apply_pass_call
+                cs = board.call_state
+                if cs is not None:
+                    if cs.stage == "ron":
+                        # ron 阶段：所有 ron_remaining 的座位都需要 pass
+                        for s in cs.ron_remaining:
+                            try:
+                                state = apply(state, Action(
+                                    kind=ActionKind.PASS_CALL, seat=s,
+                                )).new_state
+                            except (IllegalActionError, ValueError):
+                                pass
+                            board = state.board
+                            if board is None or state.phase != GamePhase.IN_ROUND:
+                                break
+                        if board is None or state.phase != GamePhase.IN_ROUND:
+                            break
+                        cs = board.call_state
+                        if cs is not None and cs.stage == "pon_kan":
+                            for s in cs.pon_kan_order:
+                                try:
+                                    state = apply(state, Action(
+                                        kind=ActionKind.PASS_CALL, seat=s,
+                                    )).new_state
+                                except (IllegalActionError, ValueError):
+                                    pass
+                                board = state.board
+                                if board is None or state.phase != GamePhase.IN_ROUND:
+                                    break
+                                cs2 = board.call_state
+                                if cs2 is None:
+                                    break
+                        if board is None or state.phase != GamePhase.IN_ROUND:
+                            break
+                        cs = board.call_state
+                        if cs is not None and cs.stage == "chi":
+                            from kernel.play.model import shimocha_seat
+                            chi_seat = shimocha_seat(cs.discard_seat)
+                            try:
+                                state = apply(state, Action(
+                                    kind=ActionKind.PASS_CALL, seat=chi_seat,
+                                )).new_state
+                            except (IllegalActionError, ValueError):
+                                pass
+                    elif cs.stage == "pon_kan":
+                        for s in cs.pon_kan_order:
+                            try:
+                                state = apply(state, Action(
+                                    kind=ActionKind.PASS_CALL, seat=s,
+                                )).new_state
+                            except (IllegalActionError, ValueError):
+                                pass
+                            board = state.board
+                            if board is None or state.phase != GamePhase.IN_ROUND:
+                                break
+                            cs2 = board.call_state
+                            if cs2 is None:
+                                break
+                        if board is None or state.phase != GamePhase.IN_ROUND:
+                            break
+                        cs = board.call_state
+                        if cs is not None and cs.stage == "chi":
+                            from kernel.play.model import shimocha_seat
+                            chi_seat = shimocha_seat(cs.discard_seat)
+                            try:
+                                state = apply(state, Action(
+                                    kind=ActionKind.PASS_CALL, seat=chi_seat,
+                                )).new_state
+                            except (IllegalActionError, ValueError):
+                                pass
+                    elif cs.stage == "chi":
+                        from kernel.play.model import shimocha_seat
+                        chi_seat = shimocha_seat(cs.discard_seat)
+                        try:
+                            state = apply(state, Action(
+                                kind=ActionKind.PASS_CALL, seat=chi_seat,
+                            )).new_state
+                        except (IllegalActionError, ValueError):
+                            pass
+                else:
+                    break
+            else:
+                break
+
+        # 未触发海底场景（可能提前流局或和了）
+        assert state.phase != GamePhase.FLOWN, "不应在摸牌后直接进入 FLOWN"
         """4 个碰不应触发四杠流局（仅杠才计入）。"""
         from kernel.hand.melds import Meld, MeldKind
 

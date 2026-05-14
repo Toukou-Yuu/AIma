@@ -214,6 +214,48 @@ def _legal_actions_call_response(
     return tuple(actions)
 
 
+def _is_ankan_tenpai_preserved(
+    board: BoardState,
+    seat: int,
+    ankan_meld: Meld,
+) -> bool:
+    """立直后暗杠：校验暗杠前后听牌集合完全一致。
+
+    前提条件（调用方保证）：
+    - board.riichi[seat] is True
+    - board.turn_phase == MUST_DISCARD
+    - board.last_draw_tile is not None
+    - ankan_meld 是有效的暗杠（4张同种牌，均在手牌中）
+    """
+    from kernel.hand.multiset import remove_tiles
+    from kernel.riichi.tenpai import compute_waiting_tiles
+
+    concealed_14 = board.hands[seat]
+    melds_before = board.melds[seat]
+    tsumogiri = board.last_draw_tile
+
+    # 暗杠前听牌集合：摸切牌打出后 13 张手牌的听牌集合
+    if tsumogiri is None or concealed_14.get(tsumogiri, 0) < 1:
+        return False
+    concealed_13 = Counter(concealed_14)
+    concealed_13[tsumogiri] -= 1
+    if concealed_13[tsumogiri] == 0:
+        del concealed_13[tsumogiri]
+    waiting_before = compute_waiting_tiles(concealed_13, melds_before)
+    if not waiting_before:
+        return False
+
+    # 暗杠后听牌集合：移除暗杠 4 张后门内 + 暗杠副露
+    try:
+        concealed_after = remove_tiles(concealed_14, list(ankan_meld.tiles))
+    except ValueError:
+        return False
+    melds_after = melds_before + (ankan_meld,)
+    waiting_after = compute_waiting_tiles(concealed_after, melds_after)
+
+    return waiting_before == waiting_after
+
+
 def _legal_actions_must_discard(
     state: GameState,
     seat: int,
@@ -296,6 +338,10 @@ def _legal_actions_must_discard(
                 )
 
     for m in enumerate_ankan_melds(board, seat):
+        # 立直后暗杠：须保证听牌集合不变
+        if board.riichi[seat]:
+            if not _is_ankan_tenpai_preserved(board, seat, m):
+                continue
         actions.append(LegalAction(kind=ActionKind.ANKAN, seat=seat, meld=m))
 
     for m in enumerate_shankuminkan_melds(board, seat):

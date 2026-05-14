@@ -50,6 +50,17 @@ class EngineError(ValueError):
     """引擎相关输入或阶段错误基类。"""
 
 
+_KAN_KINDS = frozenset({MeldKind.ANKAN, MeldKind.DAIMINKAN, MeldKind.SHANKUMINKAN})
+
+
+def _count_kans_per_seat(board: BoardState) -> tuple[int, int, int, int]:
+    """统计每家的杠数（暗杠 + 大明杠 + 加杠）。"""
+    return tuple(
+        sum(1 for m in seat_melds if m.kind in _KAN_KINDS)
+        for seat_melds in board.melds
+    )
+
+
 class IllegalActionError(EngineError):
     """当前阶段不接受该动作，或阶段尚未接线。"""
 
@@ -594,30 +605,7 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
                 wall_remaining=wall_remaining,
             )
 
-            # 检测荒牌流局
-            flow_result = check_flow_kind(
-                new_board,
-                riichi_state=tuple(board.riichi),
-            )
-            if flow_result is not None and flow_result.kind == FlowKind.EXHAUSTED:
-                # 荒牌流局：进入 FLOWN 状态
-                new_table, tenpai_result = settle_flow(state.table, new_board)
-                flow_event = eb.flow(
-                    flow_kind=flow_result.kind,
-                    tenpai_seats=tenpai_result.tenpai_seats if tenpai_result else frozenset(),
-                )
-                return ApplyOutcome(
-                    new_state=GameState(
-                        phase=GamePhase.FLOWN,
-                        table=new_table,
-                        board=new_board,
-                        flow_result=flow_result,
-                        tenpai_result=tenpai_result,
-                        ron_winners=None,
-                        event_sequence=eb._sequence,
-                    ),
-                    events=(draw_event, flow_event),
-                )
+            # 荒牌检测不在 DRAW 时触发，留给 DISCARD 处理（给玩家自摸机会）
 
             return ApplyOutcome(
                 new_state=GameState(
@@ -715,6 +703,30 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
                         ),
                         events=(discard_event, flow_event),
                     )
+
+            # 检测荒牌流局（弃牌后牌山已空，下家无法摸牌）
+            exhausted_flow = check_flow_kind(
+                new_board,
+                riichi_state=tuple(new_board.riichi),
+            )
+            if exhausted_flow is not None and exhausted_flow.kind == FlowKind.EXHAUSTED:
+                new_table, tenpai_result = settle_flow(new_table, new_board)
+                flow_event = eb.flow(
+                    flow_kind=exhausted_flow.kind,
+                    tenpai_seats=tenpai_result.tenpai_seats if tenpai_result else frozenset(),
+                )
+                return ApplyOutcome(
+                    new_state=GameState(
+                        phase=GamePhase.FLOWN,
+                        table=new_table,
+                        board=new_board,
+                        flow_result=exhausted_flow,
+                        tenpai_result=tenpai_result,
+                        ron_winners=None,
+                        event_sequence=eb._sequence,
+                    ),
+                    events=(discard_event, flow_event),
+                )
 
             return ApplyOutcome(
                 new_state=GameState(
@@ -814,12 +826,9 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
                 call_kind="ankan",
             )
 
-            # 计算杠总数并检测四杠流局
-            kan_count = sum(
-                1 for melds in new_board.melds for m in melds
-                if m.kind in (MeldKind.ANKAN, MeldKind.DAIMINKAN, MeldKind.SHANKUMINKAN)
-            )
-            flow_result = check_flow_kind(new_board, kan_count=kan_count)
+            # 计算每家杠数并检测四杠流局
+            kan_counts = _count_kans_per_seat(new_board)
+            flow_result = check_flow_kind(new_board, kan_counts=kan_counts)
             if flow_result is not None and flow_result.kind == FlowKind.FOUR_KANS:
                 # 四杠流局：进入 FLOWN 状态
                 new_table, tenpai_result = settle_flow(state.table, new_board)
@@ -873,12 +882,9 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
                 call_kind="shankuminkan",
             )
 
-            # 计算杠总数并检测四杠流局
-            kan_count = sum(
-                1 for melds in new_board.melds for m in melds
-                if m.kind in (MeldKind.ANKAN, MeldKind.DAIMINKAN, MeldKind.SHANKUMINKAN)
-            )
-            flow_result = check_flow_kind(new_board, kan_count=kan_count)
+            # 计算每家杠数并检测四杠流局
+            kan_counts = _count_kans_per_seat(new_board)
+            flow_result = check_flow_kind(new_board, kan_counts=kan_counts)
             if flow_result is not None and flow_result.kind == FlowKind.FOUR_KANS:
                 # 四杠流局：进入 FLOWN 状态
                 new_table, tenpai_result = settle_flow(state.table, new_board)

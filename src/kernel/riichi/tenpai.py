@@ -49,3 +49,18 @@ def is_tenpai_default(
     if is_tenpai_seven_pairs(concealed_13, melds):
         return True
     return any(can_ron_default(concealed_13, melds, t) for t in _iter_ron_candidate_tiles())
+
+
+def compute_waiting_tiles(
+    concealed: Counter[Tile],
+    melds: tuple[Meld, ...],
+) -> frozenset[Tile]:
+    """计算听牌所听的全部牌（waiting tiles / machi tiles）。
+
+    对所有 34 种候选牌逐一检查 can_ron_default，
+    返回所有可和了的牌集合。手牌不听牌时返回空集。
+    """
+    return frozenset(
+        t for t in _iter_ron_candidate_tiles()
+        if can_ron_default(concealed, melds, t)
+    )

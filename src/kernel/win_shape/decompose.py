@@ -89,6 +89,44 @@ def menzen_peikou_level_vec34(v: list[int]) -> int:
     return 0
 
 
+def enumerate_concealed_decompositions(
+    concealed: Counter[Tile],
+    melds: tuple[object, ...],
+    win_tile: Tile,
+    *,
+    for_ron: bool,
+) -> list[list[tuple[str, int]]]:
+    """
+    门内牌（含荣和牌）的所有「N 面子 + 1 雀头」分解。
+    N = 4 - len(melds)。每个分解为 [('pon'|'chi', vec34_index), ...]。
+    """
+    c: Counter[Tile] = concealed.copy()
+    if for_ron:
+        c[win_tile] += 1
+    mentsu_needed = 4 - len(melds)
+    if mentsu_needed < 0 or sum(c.values()) != mentsu_needed * 3 + 2:
+        return []
+    v = concealed_to_vec34(c)
+    out: list[list[tuple[str, int]]] = []
+    for j in range(34):
+        if v[j] >= 2:
+            w = v.copy()
+            w[j] -= 2
+            out.extend(_dfs_mentsu(w, mentsu_needed))
+    return out
+
+
+def index_to_suit_rank(i: int) -> tuple[int, int]:
+    """vec34 下标 → (suit_value, rank)。suit_value: 0=MAN, 1=PIN, 2=SOU, 3=HONOR。"""
+    if i < 9:
+        return 0, i + 1
+    if i < 18:
+        return 1, i - 9 + 1
+    if i < 27:
+        return 2, i - 18 + 1
+    return 3, i - 27 + 1
+
+
 def menzen_peikou_level(
     concealed: Counter[Tile],
     melds: tuple[object, ...],

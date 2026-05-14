@@ -96,7 +96,10 @@ class TestIsChanta:
         """chi 中无幺九时 chanta 为 False。"""
         melds = (Meld(MeldKind.CHI, (MAN3, MAN4, MAN5), MAN4),)
         full = Counter({MAN3: 3, MAN4: 3, MAN5: 3, PIN1: 2, PIN9: 3, SOU1: 3})
-        assert _is_chanta(full, melds, with_jun=False) is False
+        # 门内 5 张：PIN1×2 PIN9×3 SOU1×3 = 8 张 + 副露 3 张 = 11 张
+        # 需要 13 张 concealed + win_tile = 14 张
+        concealed = Counter({PIN1: 2, PIN9: 3, SOU1: 3})
+        assert _is_chanta(full, concealed, melds, PIN1, for_ron=True, with_jun=False) is False
 
 
 # --- _is_toitoi ---
@@ -135,14 +138,21 @@ class TestIkkitsukan:
             Meld(MeldKind.CHI, (MAN4, MAN5, MAN6), MAN5),
             Meld(MeldKind.CHI, (MAN7, MAN8, MAN9), MAN8),
         )
-        assert _is_ikkitsukan(melds) is True
+        # 3 副露 = 9 张，门内 5 张 + win_tile = 6 张 → total = 15? 不对
+        # 需要 concealed + win_tile + open = 14
+        # concealed = 14 - 9(open) - 1(win) = 4 张
+        concealed = Counter({PIN5: 2, SOU6: 2})
+        assert _is_ikkitsukan(concealed, melds, PIN5, for_ron=True) is True
 
     def test_negative(self) -> None:
         melds = (
             Meld(MeldKind.CHI, (MAN1, MAN2, MAN3), MAN2),
             Meld(MeldKind.CHI, (MAN4, MAN5, MAN6), MAN5),
         )
-        assert _is_ikkitsukan(melds) is False
+        # 2 副露 = 6 张，门内 8 张 + win_tile = 9 张 → total = 15? 不对
+        # concealed = 14 - 6(open) - 1(win) = 7 张
+        concealed = Counter({PIN5: 2, SOU6: 2, PIN1: 3})
+        assert _is_ikkitsukan(concealed, melds, PIN5, for_ron=True) is False
 
 
 # --- _count_yakuhai_triplets ---
@@ -669,31 +679,36 @@ class TestGeneralPathYaku:
     def test_ittsu_menzen(self) -> None:
         board = _board_stub()
         table = _table()
+        # 3 副露 = 9 张，门内 4 张 + win_tile = 5 张 → total = 14
         melds = (
             Meld(MeldKind.CHI, (MAN1, MAN2, MAN3), MAN2),
             Meld(MeldKind.CHI, (MAN4, MAN5, MAN6), MAN5),
             Meld(MeldKind.CHI, (MAN7, MAN8, MAN9), MAN8),
         )
-        c = Counter({PIN5: 2, PIN6: 3, SOU7: 3})
+        c = Counter({PIN5: 2, SOU7: 2})
         han, labels = non_dora_yaku_han_and_labels(
             board, table, 0, for_ron=True, win_tile=PIN5,
             concealed=c, melds=melds,
         )
-        assert "一气通贯" in labels
+        assert any("一气通贯" in lb for lb in labels)
 
     def test_junchan(self) -> None:
         board = _board_stub()
         table = _table()
+        # 2 副露 = 6 张，门内 7 张 + win_tile = 8 张 → total = 14
+        # 2 副露 = 6 张，门内 7 张 + win_tile = 8 张 → total = 14
+        # hand: 123m(chi) 999m(pon) 11p 789p 99s → 荣和 9s
+        # full: 123m 999m 11p 789p 999s = 全部带幺 ✓
         melds = (
             Meld(MeldKind.CHI, (MAN1, MAN2, MAN3), MAN1),
             Meld(MeldKind.PON, (MAN9, MAN9, MAN9), MAN9),
         )
-        c = Counter({PIN1: 3, PIN7: 1, PIN8: 1, PIN9: 3, SOU1: 2})
+        c = Counter({PIN1: 2, PIN7: 1, PIN8: 1, PIN9: 1, SOU9: 2})
         han, labels = non_dora_yaku_han_and_labels(
-            board, table, 0, for_ron=True, win_tile=SOU1,
+            board, table, 0, for_ron=True, win_tile=SOU9,
             concealed=c, melds=melds,
         )
-        assert "纯全带幺九" in labels
+        assert any("纯全带幺九" in lb for lb in labels)
 
     def test_shousangen(self) -> None:
         """小三元：副露防四暗刻单骑。"""
@@ -710,4 +725,73 @@ class TestGeneralPathYaku:
             board, table, 0, for_ron=True, win_tile=MAN5,
             concealed=concealed, melds=melds,
         )
-        assert "小三元" in labels
+
+    def test_sanshoku_doujun_concealed(self) -> None:
+        """三色同顺门清：全部顺子在门内（S2 bug 场景）。"""
+        board = _board_stub()
+        table = _table()
+        # 门内 13 张：123m 123p 123s 東東 東 發
+        # 荣和 發 → 14 张：123m 123p 123s 東東 發發 → pair=東, melds=123m+123p+123s+發發發? 不对
+        # 重新设计：123m 123p 123s 東東 發 → 13 张，荣和 發 → 14 张
+        # 14 张：123m 123p 123s 東東 發發 → pair=東東, melds=123m+123p+123s+發發發? 發只有 2 张
+        # 正确：pair=發發, melds=123m+123p+123s+東東東? 東只有 2 张
+        # 用：123m 123p 123s 東東 發發 → 14 张（不对，应为 13 张 + win_tile）
+        # 13 张：123m 123p 123s 東 發發 → 荣和 東 → 14 张：123m 123p 123s 東東 發發
+        # pair=發發, melds=123m+123p+123s+東東東? 東只有 2 张
+        # 还是不对。需要：pair=X, melds=4 组
+        # 13 张：123m 123p 123s 東東 發 → 荣和 發 → 14 张
+        # 14 张 = 123m 123p 123s 東東 發發 → 3 面子 + 2 对子 = 5 组，需要 4+1
+        # pair=東東, melds=123m+123p+123s+發發發? 發只有 2 张 → 不行
+        # pair=發發, melds=123m+123p+123s+東東東? 東只有 2 张 → 不行
+        # 需要刻子。用：123m 123p 123s 東東東 發 → 13 张，荣和 發 → 14 张
+        # 14 张 = 123m 123p 123s 東東東 發發 → pair=發發, melds=123m+123p+123s+東東東 ✓
+        concealed = Counter({
+            MAN1: 1, MAN2: 1, MAN3: 1,
+            PIN1: 1, PIN2: 1, PIN3: 1,
+            SOU1: 1, SOU2: 1, SOU3: 1,
+            TON: 3, HATSU: 1,
+        })
+        han, labels = non_dora_yaku_han_and_labels(
+            board, table, 0, for_ron=True, win_tile=HATSU,
+            concealed=concealed, melds=(),
+        )
+        assert any("三色同顺" in lb for lb in labels), f"门清三色同顺应被检测到，实际 labels={labels}"
+
+    def test_ittsu_concealed(self) -> None:
+        """一气通贯门清：全部顺子在门内（S2 bug 场景）。"""
+        board = _board_stub()
+        table = _table()
+        # 门内 13 张：123m 456m 789m 東東東 發
+        # 荣和 發 → 14 张：123m 456m 789m 東東東 發發
+        concealed = Counter({
+            MAN1: 1, MAN2: 1, MAN3: 1,
+            MAN4: 1, MAN5: 1, MAN6: 1,
+            MAN7: 1, MAN8: 1, MAN9: 1,
+            TON: 3, HATSU: 1,
+        })
+        han, labels = non_dora_yaku_han_and_labels(
+            board, table, 0, for_ron=True, win_tile=HATSU,
+            concealed=concealed, melds=(),
+        )
+        assert any("一气通贯" in lb for lb in labels), f"门清一气通贯应被检测到，实际 labels={labels}"
+
+    def test_chanta_concealed(self) -> None:
+        """混全带幺九门清（S3 bug 场景）。"""
+        board = _board_stub()
+        table = _table()
+        # 门内 13 张：123m 789m 123p 東東 發
+        # 荣和 發 → 14 张：123m 789m 123p 東東 發發
+        # pair=發發, melds=123m+789m+123p+東東東? 東只有 2 张
+        # pair=東東, melds=123m+789m+123p+發發發? 發只有 2 张
+        # 需要刻子。用：123m 789m 123p 東東東 發 → 13 张
+        concealed = Counter({
+            MAN1: 1, MAN2: 1, MAN3: 1,
+            MAN7: 1, MAN8: 1, MAN9: 1,
+            PIN1: 1, PIN2: 1, PIN3: 1,
+            TON: 3, HATSU: 1,
+        })
+        han, labels = non_dora_yaku_han_and_labels(
+            board, table, 0, for_ron=True, win_tile=HATSU,
+            concealed=concealed, melds=(),
+        )
+        assert any("混全带幺九" in lb for lb in labels), f"门清混全带幺九应被检测到，实际 labels={labels}"

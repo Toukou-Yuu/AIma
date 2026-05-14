@@ -60,13 +60,26 @@ def is_four_winds_flow(river_tiles: list[Tile]) -> bool:
     return True
 
 
-def is_four_kans_flow(kan_count: int) -> bool:
+def is_four_kans_flow(kan_counts: tuple[int, int, int, int] | int) -> bool:
     """
-    四杠流局判定：同一局累计完成 4 个杠。
+    四杠散了流局判定：不同玩家合计完成 4 个杠，且无单一玩家独占 4 杠。
 
-    ``kan_count``: 已完成的杠总数（暗杠 + 大明杠 + 加杠）。
+    ``kan_counts``: 各家已完成的杠数元组（暗杠 + 大明杠 + 加杠）。
+
+    规则：
+    - 同一家开 4 杠 → 不流局（该玩家达成四杠子役满），其他人不能再杠
+    - 不同家合计开杠达到 4 次 → 四杠散了流局
     """
-    return kan_count >= 4
+    if isinstance(kan_counts, int):
+        # 向后兼容：单一整数视为全局计数（无法区分一人四杠）
+        return kan_counts >= 4
+    total = sum(kan_counts)
+    if total < 4:
+        return False
+    # 任何一家达到 4 杠 → 一人四杠（役满），不流局
+    if any(count >= 4 for count in kan_counts):
+        return False
+    return True
 
 
 def is_four_riichi_flow(riichi_state: tuple[bool, bool, bool, bool]) -> bool:
@@ -90,6 +103,7 @@ def is_three_ron_flow(ron_claimants: frozenset[int]) -> bool:
 def check_flow_kind(
     board: "BoardState",
     kan_count: int = 0,
+    kan_counts: tuple[int, int, int, int] = (0, 0, 0, 0),
     ron_claimants: frozenset[int] = frozenset(),
     riichi_state: tuple[bool, bool, bool, bool] = (False, False, False, False),
     first_4_river: list[Tile] | None = None,
@@ -118,9 +132,10 @@ def check_flow_kind(
     if is_four_riichi_flow(riichi_state):
         return FlowResult(kind=FlowKind.FOUR_RIICHI)
 
-    # 四杠散
-    if is_four_kans_flow(kan_count):
-        return FlowResult(kind=FlowKind.FOUR_KANS, kan_count=kan_count)
+    # 四杠散（优先使用 per-seat 计数，向后兼容 kan_count）
+    effective_kan_counts = kan_counts if any(kan_counts) else (kan_count, 0, 0, 0)
+    if is_four_kans_flow(effective_kan_counts):
+        return FlowResult(kind=FlowKind.FOUR_KANS, kan_count=sum(effective_kan_counts))
 
     # 四风连打
     if first_4_river and is_four_winds_flow(first_4_river):

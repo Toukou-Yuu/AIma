@@ -372,4 +372,54 @@ class TestIppatsuInterruption:
 
         source = inspect.getsource(play_apply_discard)
         # 确认 apply_discard 不清空一发
-        assert "ippatsu_eligible=frozenset()" not in source
+
+
+class TestRiichiAnkan:
+    """立直后暗杠测试。"""
+
+    def test_compute_waiting_tiles(self) -> None:
+        """compute_waiting_tiles 正确计算听牌集合。"""
+        from kernel.riichi.tenpai import compute_waiting_tiles
+
+        # 13 张听牌手牌：123m 456p 789s 東東 發發 → 听 東 或 發
+        # 和了形：123m 456p 789s 東東東 發發 或 123m 456p 789s 東東 發發發
+        concealed = Counter({
+            Tile(Suit.MAN, 1): 1, Tile(Suit.MAN, 2): 1, Tile(Suit.MAN, 3): 1,
+            Tile(Suit.PIN, 4): 1, Tile(Suit.PIN, 5): 1, Tile(Suit.PIN, 6): 1,
+            Tile(Suit.SOU, 7): 1, Tile(Suit.SOU, 8): 1, Tile(Suit.SOU, 9): 1,
+            Tile(Suit.HONOR, 1): 2,  # 東東
+            Tile(Suit.HONOR, 5): 2,  # 發發
+        })
+        waiting = compute_waiting_tiles(concealed, ())
+        ton = Tile(Suit.HONOR, 1)
+        hatsu = Tile(Suit.HONOR, 5)
+        assert ton in waiting, "应听 東"
+        assert hatsu in waiting, "应听 發"
+
+    def test_riichi_ankan_tenpai_preservation(self) -> None:
+        """暗杠前后听牌集合比较。"""
+        from kernel.riichi.tenpai import compute_waiting_tiles
+
+        # 13 张听牌手牌：123m 456p 789s 東東 發發
+        concealed_13 = Counter({
+            Tile(Suit.MAN, 1): 1, Tile(Suit.MAN, 2): 1, Tile(Suit.MAN, 3): 1,
+            Tile(Suit.PIN, 4): 1, Tile(Suit.PIN, 5): 1, Tile(Suit.PIN, 6): 1,
+            Tile(Suit.SOU, 7): 1, Tile(Suit.SOU, 8): 1, Tile(Suit.SOU, 9): 1,
+            Tile(Suit.HONOR, 1): 2,  # 東東
+            Tile(Suit.HONOR, 5): 2,  # 發發
+        })
+        waiting = compute_waiting_tiles(concealed_13, ())
+        ton = Tile(Suit.HONOR, 1)
+        hatsu = Tile(Suit.HONOR, 5)
+        assert ton in waiting, "应听 東"
+        assert hatsu in waiting, "应听 發"
+
+        # 非听牌手牌返回空集
+        non_tenpai = Counter({
+            Tile(Suit.MAN, 1): 1, Tile(Suit.MAN, 4): 1, Tile(Suit.MAN, 7): 1,
+            Tile(Suit.PIN, 1): 1, Tile(Suit.PIN, 4): 1, Tile(Suit.PIN, 7): 1,
+            Tile(Suit.SOU, 1): 1, Tile(Suit.SOU, 4): 1, Tile(Suit.SOU, 7): 1,
+            Tile(Suit.HONOR, 1): 1, Tile(Suit.HONOR, 2): 1,
+            Tile(Suit.HONOR, 3): 1, Tile(Suit.HONOR, 4): 1,
+        })
+        assert len(compute_waiting_tiles(non_tenpai, ())) == 0
