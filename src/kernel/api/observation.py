@@ -151,9 +151,8 @@ def observation(
         if mode == "debug":
             # 全知模式：可见里宝
             ura_indicators = tuple(board.dead_wall.ura_bases[: len(board.revealed_indicators)])
-        elif board.riichi[seat]:
-            # 立直后：可见里宝（和了后）
-            # 简化：立直后即可见
+        elif board.riichi[seat] and state.phase == GamePhase.HAND_OVER:
+            # 立直和了结算后：里宝可见
             ura_indicators = tuple(board.dead_wall.ura_bases[: len(board.revealed_indicators)])
 
     # 立直状态

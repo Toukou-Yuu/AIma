@@ -229,6 +229,132 @@ def test_is_furiten_when_own_river_contains_win_tile() -> None:
     assert is_furiten_for_tile(b, 1, t5) is False
 
 
+class TestRiichiFuriten:
+    """M5: 立直后振听应检查所有听牌，而非仅当前和了牌。"""
+
+    def test_riichi_furiten_different_waiting_tile_in_river(self) -> None:
+        """M5: 立直双碰听牌，河中有听牌 A，检查听牌 B 也应振听。"""
+        b0 = _board_sorted_deal()
+        pool = _pool_not_in_wall(b0)
+        # 手牌：1m1m1m 2m2m2m 3m3m3m 4m4m 5m5m（13 张，双碰听 4m 或 5m）
+        hand_tiles = [
+            Tile(Suit.MAN, 1), Tile(Suit.MAN, 1), Tile(Suit.MAN, 1),
+            Tile(Suit.MAN, 2), Tile(Suit.MAN, 2), Tile(Suit.MAN, 2),
+            Tile(Suit.MAN, 3), Tile(Suit.MAN, 3), Tile(Suit.MAN, 3),
+            Tile(Suit.MAN, 4), Tile(Suit.MAN, 4),
+            Tile(Suit.MAN, 5), Tile(Suit.MAN, 5),
+        ]
+        hand = Counter(hand_tiles)
+        for t, n in hand.items():
+            pool[t] -= n
+            if pool[t] == 0:
+                del pool[t]
+        hands = [hand]
+        for _ in range(2):
+            hands.append(_take_n(pool, 13))
+        hands.append(Counter(pool.elements()))
+
+        # 河中有 4m（听牌之一），检查 5m 是否振听
+        t4m = Tile(Suit.MAN, 4)
+        t5m = Tile(Suit.MAN, 5)
+        river = (RiverEntry(0, t4m),)
+        b = _mock_board(
+            b0,
+            hands=tuple(hands),
+            river=river,
+            riichi=(True, False, False, False),
+            current_seat=0,
+            turn_phase=TurnPhase.NEED_DRAW,
+        )
+        # 河中有 4m，检查 5m：立直振听应该返回 True
+        assert is_furiten_for_tile(b, 0, t5m) is True
+
+    def test_non_riichi_not_furiten_for_different_tile(self) -> None:
+        """非立直时只检查当前和了牌。"""
+        t5 = Tile(Suit.MAN, 5)
+        t3 = Tile(Suit.MAN, 3)
+        b = _board_need_draw_with_river(2, t5)
+        # 河中有 5m，检查 3m → 不振听（非立直只检查具体牌）
+        assert is_furiten_for_tile(b, 2, t3) is False
+
+    def test_riichi_no_furiten_when_no_waiting_in_river(self) -> None:
+        """立直但听牌不在河中 → 不振听。"""
+        b0 = _board_sorted_deal()
+        pool = _pool_not_in_wall(b0)
+        # 手牌：1m1m1m 2m2m2m 3m3m3m 4m4m 5m5m（13 张，双碰听 4m 或 5m）
+        hand_tiles = [
+            Tile(Suit.MAN, 1), Tile(Suit.MAN, 1), Tile(Suit.MAN, 1),
+            Tile(Suit.MAN, 2), Tile(Suit.MAN, 2), Tile(Suit.MAN, 2),
+            Tile(Suit.MAN, 3), Tile(Suit.MAN, 3), Tile(Suit.MAN, 3),
+            Tile(Suit.MAN, 4), Tile(Suit.MAN, 4),
+            Tile(Suit.MAN, 5), Tile(Suit.MAN, 5),
+        ]
+        hand = Counter(hand_tiles)
+        for t, n in hand.items():
+            pool[t] -= n
+            if pool[t] == 0:
+                del pool[t]
+        hands = [hand]
+        for _ in range(2):
+            hands.append(_take_n(pool, 13))
+        hands.append(Counter(pool.elements()))
+
+        # 河中没有听牌（打了一张无关牌）
+        t1p = Tile(Suit.PIN, 1)
+        river = (RiverEntry(0, t1p),)
+        b = _mock_board(
+            b0,
+            hands=tuple(hands),
+            river=river,
+            riichi=(True, False, False, False),
+            current_seat=0,
+            turn_phase=TurnPhase.NEED_DRAW,
+        )
+        t4m = Tile(Suit.MAN, 4)
+        assert is_furiten_for_tile(b, 0, t4m) is False
+
+
+# --- M3: _is_hotei ---
+
+def _mock_board(b0: BoardState, **overrides) -> BoardState:
+    """绕过 __post_init__ 验证构造修改后的 BoardState。"""
+    import dataclasses as dc
+
+    b = object.__new__(BoardState)
+    for f in dc.fields(b0):
+        val = overrides.get(f.name, getattr(b0, f.name))
+        object.__setattr__(b, f.name, val)
+    return b
+
+
+class TestHotei:
+    """M3: 河底捞鱼应使用本墙耗尽判定，而非 river_count >= 17 近似。"""
+
+    def test_hotei_wall_exhausted(self) -> None:
+        """本墙已空 → 河底 = True。"""
+        from kernel.scoring.settle import _is_hotei
+
+        b0 = _board_sorted_deal()
+        b = _mock_board(b0, live_draw_index=len(b0.live_wall))
+        assert _is_hotei(b, discard_seat=0) is True
+
+    def test_hotei_wall_not_exhausted(self) -> None:
+        """本墙未空 → 河底 = False。"""
+        from kernel.scoring.settle import _is_hotei
+
+        b0 = _board_sorted_deal()
+        assert _is_hotei(b0, discard_seat=0) is False
+
+    def test_hotei_with_melds_wall_exhausted(self) -> None:
+        """有副露时 river_count 远少 17，但本墙已空仍为河底。"""
+        from kernel.scoring.settle import _is_hotei
+
+        b0 = _board_sorted_deal()
+        river = tuple(RiverEntry(0, b0.hands[0].most_common(1)[0][0]) for _ in range(3))
+        b = _mock_board(b0, live_draw_index=len(b0.live_wall), river=river)
+        assert _is_hotei(b, discard_seat=0) is True
+
+
 class TestKiriageMangan:
     """切上满贯测试。"""
 

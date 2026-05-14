@@ -419,6 +419,8 @@ def _is_suuankou(
     """
     if melds:
         return False  # 有副露则不是四暗刻
+    if for_ron:
+        return False  # 荣和破坏门清，四暗刻仅由 _is_suuankou_tanki 处理
 
     anko_count = 0
     pair_count = 0
@@ -761,29 +763,29 @@ def _is_shou_suushii(full: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
     return wind_triplet_count == 3 and wind_pair_count >= 1
 
 
-def _is_tenhou(board: BoardState, winner: int, is_tsumo: bool) -> bool:
+def _is_tenhou(board: BoardState, winner: int, is_tsumo: bool, dealer_seat: int = 0) -> bool:
     """
     天和：亲家第一巡自摸。
     役满。
     """
     if not is_tsumo:
         return False
-    if winner != 0:  # 只有亲家（席次 0）能天和
+    if winner != dealer_seat:
         return False
-    if board.current_seat != 0:  # 亲家必须是席次 0
+    if board.current_seat != dealer_seat:
         return False
     # 第一巡：无人打牌
     return len(board.river) == 0
 
 
-def _is_chihou(board: BoardState, winner: int, is_tsumo: bool) -> bool:
+def _is_chihou(board: BoardState, winner: int, is_tsumo: bool, dealer_seat: int = 0) -> bool:
     """
     地和：子家第一巡自摸。
     役满。
     """
     if not is_tsumo:
         return False
-    if board.current_seat == 0:  # 亲家不算地和
+    if board.current_seat == dealer_seat:  # 亲家不算地和
         return False
     # 第一巡：河里仅有亲家的一张舍牌
     return len(board.river) == 1
@@ -882,9 +884,9 @@ def non_dora_yaku_han_and_labels(
         return 13, ("大四喜",)
     if _is_shou_suushii(full, melds):
         return 13, ("小四喜",)
-    if _is_tenhou(board, winner, is_tsumo=is_tsumo):
+    if _is_tenhou(board, winner, is_tsumo=is_tsumo, dealer_seat=table.dealer_seat):
         return 13, ("天和",)
-    if _is_chihou(board, winner, is_tsumo=is_tsumo):
+    if _is_chihou(board, winner, is_tsumo=is_tsumo, dealer_seat=table.dealer_seat):
         return 13, ("地和",)
 
     han = 0

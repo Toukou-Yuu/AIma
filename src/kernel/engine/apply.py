@@ -246,7 +246,7 @@ def _validate_action_seat(action: Action) -> None:
 _CALL_PASS_DRAIN_MAX = 64
 
 
-def _outcome_pass_call(state: GameState, seat: int) -> ApplyOutcome:
+def _outcome_pass_call(state: GameState, seat: int, config: MahjongConfig = DEFAULT_CONFIG) -> ApplyOutcome:
     """执行单次 ``PASS_CALL``（含荣和收集结束时的结算与事件）。"""
     phase = state.phase
     board = state.board
@@ -259,6 +259,33 @@ def _outcome_pass_call(state: GameState, seat: int) -> ApplyOutcome:
         raise IllegalActionError(str(e)) from e
     cs_pb = new_board.call_state
     if cs_pb is not None and cs_pb.finished and cs_pb.ron_claimants:
+        # 三家和流局判定：一炮多响=false 且 3 家荣和时触发流局
+        if not config.allow_multiple_ron and len(cs_pb.ron_claimants) >= 3:
+            flow_result = FlowResult(
+                kind=FlowKind.THREE_RON,
+                ron_claimants=cs_pb.ron_claimants,
+            )
+            settled = board_after_ron_winners(new_board)
+            eb = _create_event_builder(state)
+            flow_event = eb.flow(
+                flow_kind=FlowKind.THREE_RON,
+                tenpai_seats=frozenset(),
+            )
+            hand_over_event = eb.hand_over(
+                winners=(),
+                payments=(0, 0, 0, 0),
+                win_lines=(),
+            )
+            return ApplyOutcome(
+                new_state=GameState(
+                    phase=GamePhase.FLOWN,
+                    table=state.table,
+                    board=settled,
+                    flow_result=flow_result,
+                    event_sequence=eb._sequence,
+                ),
+                events=(flow_event, hand_over_event),
+            )
         settled = board_after_ron_winners(new_board)
         ura = ura_indicators_for_settlement(
             new_board.dead_wall,
@@ -332,7 +359,7 @@ def _call_response_active_seat(board: BoardState) -> int | None:
     return None
 
 
-def _apply_call_pass_drain(state: GameState) -> ApplyOutcome:
+def _apply_call_pass_drain(state: GameState, config: MahjongConfig = DEFAULT_CONFIG) -> ApplyOutcome:
     """连续执行「当前先序席仅可过」的 ``PASS_CALL``，直至否则或离开应答。"""
     # 延迟导入，避免 ``apply`` ↔ ``legal_actions`` 与 ``engine.__init__`` 形成环
     from kernel.api.legal_actions import legal_actions
@@ -352,7 +379,7 @@ def _apply_call_pass_drain(state: GameState) -> ApplyOutcome:
         acts = legal_actions(cur, seat)
         if len(acts) != 1 or acts[0].kind != ActionKind.PASS_CALL:
             break
-        out = _outcome_pass_call(cur, seat)
+        out = _outcome_pass_call(cur, seat, config=config)
         drained += 1
         events_list.extend(out.events)
         cur = out.new_state
@@ -453,12 +480,12 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
                 if action.seat is not None:
                     msg = "CALL_PASS_DRAIN does not use seat"
                     raise IllegalActionError(msg)
-                return _apply_call_pass_drain(state)
+                return _apply_call_pass_drain(state, config=config)
             if kind == ActionKind.PASS_CALL:
                 if action.seat is None:
                     msg = "PASS_CALL requires seat"
                     raise IllegalActionError(msg)
-                return _outcome_pass_call(state, action.seat)
+                return _outcome_pass_call(state, action.seat, config=config)
             if kind == ActionKind.RON:
                 if action.seat is None:
                     msg = "RON requires seat"

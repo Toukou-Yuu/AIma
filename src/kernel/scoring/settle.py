@@ -28,12 +28,8 @@ def _is_haitei(board: BoardState) -> bool:
 
 
 def _is_hotei(board: BoardState, discard_seat: int) -> bool:
-    """
-    是否河底（某席的舍牌已是该席最后一张打出的牌）。
-    简化判定：河中该席舍牌数 = 该席应打总数 - 1。
-    """
-    river_count = sum(1 for e in board.river if e.seat == discard_seat)
-    return river_count >= 17  # 近似判定
+    """是否河底（本墙已摸完时的舍牌）。"""
+    return board.live_draw_index >= len(board.live_wall)
 
 
 def _hand_pattern_zh(

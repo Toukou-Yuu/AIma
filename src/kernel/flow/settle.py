@@ -223,10 +223,11 @@ def settle_flow(
     流局综合结算。
 
     1. 计算听牌结果
-    2. 听牌支付结算
-    3. 流局满贯结算
-    4. 连庄/亲流判定
-    5. 本场数更新
+    2. 检测流局满贯者
+    3. 结算流局满贯（替代普通听牌结算）
+    4. 结算普通听牌（排除流局满贯者和未听牌者之间的结算）
+    5. 连庄/亲流判定
+    6. 本场数更新
 
     返回： ``(new_table, tenpai_result)``
 
@@ -241,20 +242,53 @@ def settle_flow(
     # 1. 计算听牌结果
     tenpai_result = compute_tenpai_result(board)
 
-    # 2. 听牌支付结算
-    new_table = settle_tenpai(table, tenpai_result)
+    # 2. 检测流局满贯者（替代普通听牌结算）
+    flow_mangan_seats = frozenset(
+        s for s in tenpai_result.tenpai_seats if check_flow_mangan(board, table, s)
+    )
 
-    # 3. 流局满贯结算
-    new_table = settle_flow_mangan(new_table, board, tenpai_result, config)
+    # 3. 计算实际参与普通听牌结算的席位
+    # - 流局满贯者：中立（不收取也不支付听牌料）
+    # - 普通听牌者：从未听牌者收取
+    # - 未听牌者：支付给普通听牌者（不含流局满贯者）
+    normal_tenpai = tenpai_result.tenpai_seats - flow_mangan_seats
+    noten = frozenset(s for s in range(4) if s not in tenpai_result.tenpai_seats)
 
-    # 4. 连庄/亲流判定
+    scores = list(table.scores)
+
+    # 4. 流局满贯结算（从未听牌者收取）
+    if flow_mangan_seats and config.flow_mangan_enabled:
+        for fm_seat in flow_mangan_seats:
+            deltas = nagashi_mangan_payments(
+                fm_seat,
+                table.dealer_seat,
+                table.honba,
+                noten,
+            )
+            for s in range(4):
+                scores[s] += deltas[s]
+
+    # 5. 普通听牌结算（排除流局满贯者）
+    if normal_tenpai and noten:
+        tenpai_count = len(normal_tenpai)
+        noten_count = len(noten)
+        # 普通听牌者从未听牌者收取 1000
+        for t in normal_tenpai:
+            scores[t] += TENPAI_PAYMENT_POINTS * noten_count
+        # 未听牌者支付给普通听牌者
+        for n in noten:
+            scores[n] -= TENPAI_PAYMENT_POINTS * tenpai_count
+
+    new_table = replace(table, scores=tuple(scores))
+
+    # 6. 连庄/亲流判定（使用原始 tenpai_result）
     continue_dealer = should_continue_dealer(
         new_table,
         tenpai_result,
         winner_seat=winner_seat,
     )
 
-    # 5. 本场数更新
+    # 7. 本场数更新
     new_table = update_honba(new_table, continue_dealer)
 
     return new_table, tenpai_result

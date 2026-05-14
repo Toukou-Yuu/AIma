@@ -12,6 +12,7 @@ from kernel.engine.phase import GamePhase
 from kernel.engine.state import initial_game_state
 from kernel.flow.model import FlowKind, TenpaiResult
 from kernel.flow.settle import (
+    check_flow_mangan,
     compute_tenpai_result,
     settle_flow,
 )
@@ -582,65 +583,101 @@ class TestFlowIntegration:
         assert is_four_kans_flow(kan_count) is False
 
 
+def _take_n(pool: Counter[Tile], n: int) -> Counter[Tile]:
+    """从牌池中取 n 张牌。"""
+    out = Counter()
+    for _ in range(n):
+        if not pool:
+            break
+        t = next(iter(pool.elements()))
+        out[t] += 1
+        pool[t] -= 1
+        if pool[t] == 0:
+            del pool[t]
+    return out
+
+
+def _mock_board(b0: BoardState, **overrides) -> BoardState:
+    """绕过 __post_init__ 验证构造修改后的 BoardState。"""
+    import dataclasses as dc
+
+    b = object.__new__(BoardState)
+    for f in dc.fields(b0):
+        val = overrides.get(f.name, getattr(b0, f.name))
+        object.__setattr__(b, f.name, val)
+    return b
+
+
 class TestFlowMangan:
     """流局满贯测试。"""
 
-    def test_check_flow_mangan_with_riichi(self) -> None:
-        """流局满贯判定：有立直。"""
-        # 使用集成测试方式，通过实际对局到达流局状态
-        # 这里简化：测试 settle_flow_mangan 的结算逻辑
-        table = initial_table_snapshot()
+    def test_flow_mangan_excluded_from_tenpai_payment(self) -> None:
+        """M2: 流局满贯者应替代普通听牌结算，不叠加听牌料。"""
+        from kernel.table.model import initial_table_snapshot
 
-        # 构造一个简单的 TenpaiResult
-        tenpai_result = TenpaiResult(
-            tenpai_seats=frozenset({0}),
-            tenpai_types=("tenpai", "noten", "noten", "noten"),
+        # 构造局面：seat 1 是流局满贯者（子家），seat 0 是普通听牌者（亲家）
+        b0 = _make_board_from_wall(_make_standard_wall(seed=0))
+
+        # seat 1: 构造听牌手牌（七对子单骑）
+        hand1 = Counter([
+            Tile(Suit.MAN, 1), Tile(Suit.MAN, 1),
+            Tile(Suit.MAN, 2), Tile(Suit.MAN, 2),
+            Tile(Suit.MAN, 3), Tile(Suit.MAN, 3),
+            Tile(Suit.HONOR, 1), Tile(Suit.HONOR, 1),
+            Tile(Suit.HONOR, 2), Tile(Suit.HONOR, 2),
+            Tile(Suit.HONOR, 3), Tile(Suit.HONOR, 3),
+            Tile(Suit.HONOR, 4),  # 单骑听北
+        ])
+
+        # seat 0: 普通听牌（亲家，非流局满贯）
+        hand0 = Counter([
+            Tile(Suit.PIN, 1), Tile(Suit.PIN, 2), Tile(Suit.PIN, 3),
+            Tile(Suit.PIN, 4), Tile(Suit.PIN, 5), Tile(Suit.PIN, 6),
+            Tile(Suit.SOU, 1), Tile(Suit.SOU, 2), Tile(Suit.SOU, 3),
+            Tile(Suit.HONOR, 5), Tile(Suit.HONOR, 5),
+            Tile(Suit.HONOR, 6), Tile(Suit.HONOR, 6),
+        ])
+
+        hands = (hand0, hand1, b0.hands[2], b0.hands[3])
+
+        # seat 1 的舍牌全是幺九
+        all_discards_1 = [
+            Tile(Suit.HONOR, 1),
+            Tile(Suit.HONOR, 2),
+            Tile(Suit.HONOR, 3),
+        ]
+        # seat 0 的舍牌含非幺九（不能流局满贯）
+        all_discards_0 = [
+            Tile(Suit.PIN, 5),  # 非幺九
+        ]
+
+        board = _mock_board(
+            b0,
+            hands=hands,
+            all_discards_per_seat=(
+                tuple(all_discards_0),
+                tuple(all_discards_1),
+                (),
+                (),
+            ),
+            called_discard_indices=(frozenset(), frozenset(), frozenset(), frozenset()),
         )
 
-        # 测试 settle_flow_mangan 的结算逻辑
-        # 由于 check_flow_mangan 需要完整的 BoardState，这里仅测试结算部分
-        # 实际的流局满贯判定需要更复杂的 setup
-        pass
+        # seat 0 = dealer, seat 1 = 流局满贯者（子家）
+        table = initial_table_snapshot(dealer_seat=0, starting_points=25000)
+        assert check_flow_mangan(board, table, 1) is True  # seat 1 是流局满贯
+        assert check_flow_mangan(board, table, 0) is False  # seat 0 不是
 
-    def test_settle_flow_mangan_dealer(self) -> None:
-        """流局满贯结算：亲家。"""
-        table = initial_table_snapshot(dealer_seat=0)
+        # 结算
+        new_table, tenpai_result = settle_flow(table, board)
 
-        # 假设 seat0 是流局满贯者
-        tenpai_result = TenpaiResult(
-            tenpai_seats=frozenset({0}),
-            tenpai_types=("tenpai", "noten", "noten", "noten"),
-        )
+        # seat 1: 子家满贯 = 8000（不应再加听牌料）
+        delta1 = new_table.scores[1] - table.scores[1]
+        assert delta1 == 8000
 
-        # 构造一个虚拟的 board（用于 check_flow_mangan 判断）
-        # 这里简化：直接测试结算逻辑
-
-        b0 = _make_board_from_wall(_make_standard_wall())
-
-        # 创建一个简化的 board，让 check_flow_mangan 返回 True
-        # 由于需要完整的牌数守恒，这里使用实际的 board
-        board = b0
-
-        # 由于 b0 的手牌不是流局满贯形，这里需要手动构造
-        # 但这会违反牌数守恒，所以改用测试其他逻辑
-
-        # 测试：流局满贯者从每个未听牌者收取 12000 点
-        # 假设 seat0 是流局满贯者（亲家）
-        scores_before = list(table.scores)
-
-        # 由于 check_flow_mangan 需要实际的手牌，这里暂时跳过实际判定
-        # 测试重点放在 settle_flow_mangan 的结算逻辑
-        pass
-
-    def test_settle_flow_mangan_child(self) -> None:
-        """流局满贯结算：子家。"""
-        table = initial_table_snapshot(dealer_seat=0)
-
-        # 假设 seat1 是流局满贯者（子家）
-        tenpai_result = TenpaiResult(
-            tenpai_seats=frozenset({1}),
-            tenpai_types=("noten", "tenpai", "noten", "noten"),
-        )
+        # seat 0: 亲家听牌料 = 1000 * 2（从 seat 2, 3 收取）= 2000
+        delta0 = new_table.scores[0] - table.scores[0]
+        assert delta0 == 2000
 
         # 测试逻辑同上
 

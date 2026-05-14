@@ -20,42 +20,29 @@ MAN2 = Tile(Suit.MAN, 2)
 
 
 class TestIsHotei:
-    """_is_hotei 河底判定。"""
+    """_is_hotei 河底判定（本墙已空）。"""
 
-    def test_river_count_17_returns_true(self) -> None:
-        """某席河中 17 张舍牌应判定为河底。"""
+    @staticmethod
+    def _mock_board(b0, **overrides):
+        """绕过 __post_init__ 验证构造修改后的 BoardState。"""
+        import dataclasses as dc
+        from kernel.deal.model import BoardState
+        b = object.__new__(BoardState)
+        for f in dc.fields(b0):
+            val = overrides.get(f.name, getattr(b0, f.name))
+            object.__setattr__(b, f.name, val)
+        return b
+
+    def test_live_wall_exhausted_returns_true(self) -> None:
+        """本墙已空（live_draw_index >= len(live_wall)) 应判定为河底。"""
         b0 = board_sorted_deal(dealer=0)
-        n = 17
-        discards = tuple(
-            RiverEntry(seat=0, tile=MAN1, tsumogiri=False, riichi=False)
-            for _ in range(n)
-        )
-        all_disc = list(b0.all_discards_per_seat)
-        all_disc[0] = tuple(MAN1 for _ in range(n))
-        b = replace(
-            b0,
-            river=discards,
-            all_discards_per_seat=tuple(all_disc),
-            live_draw_index=b0.live_draw_index + n,
-        )
+        b = self._mock_board(b0, live_draw_index=len(b0.live_wall))
         assert _is_hotei(b, 0) is True
 
-    def test_river_count_16_returns_false(self) -> None:
-        """某席河中 16 张舍牌不应判定为河底。"""
+    def test_live_wall_not_exhausted_returns_false(self) -> None:
+        """本墙未空不应判定为河底。"""
         b0 = board_sorted_deal(dealer=0)
-        n = 16
-        discards = tuple(
-            RiverEntry(seat=0, tile=MAN1, tsumogiri=False, riichi=False)
-            for _ in range(n)
-        )
-        all_disc = list(b0.all_discards_per_seat)
-        all_disc[0] = tuple(MAN1 for _ in range(n))
-        b = replace(
-            b0,
-            river=discards,
-            all_discards_per_seat=tuple(all_disc),
-            live_draw_index=b0.live_draw_index + n,
-        )
+        b = self._mock_board(b0, live_draw_index=17)
         assert _is_hotei(b, 0) is False
 
 

@@ -9,12 +9,14 @@ from kernel.scoring.yaku import (
     _count_yakuhai_triplets,
     _has_ryanmen_chiito as _has_ryanmen_chi,
     _is_chanta,
+    _is_chihou,
     _is_chinroutou,
     _is_chuuren_poutou,
     _is_ikkitsukan,
     _is_kokushi_musou,
     _is_kokushi_thirteen_waits,
     _is_sanshoku_doukou,
+    _is_suuankou,
     _is_suuankou_tanki,
     _is_tenhou,
     _is_toitoi,
@@ -72,6 +74,14 @@ def _board_stub():
 
     w = tuple(build_deck())
     return build_board_after_split(split_wall(w), dealer_seat=0)
+
+
+def _board_stub_with_dealer(dealer: int):
+    """合法 BoardState stub，指定亲家席次。"""
+    from kernel import build_board_after_split, build_deck, split_wall
+
+    w = tuple(build_deck())
+    return build_board_after_split(split_wall(w), dealer_seat=dealer)
 
 
 # --- _has_ryanmen_chi ---
@@ -295,6 +305,76 @@ class TestTenhou:
         """is_tsumo=False 时天和不成立。"""
         board = _board_stub()
         assert _is_tenhou(board, winner=0, is_tsumo=False) is False
+
+    def test_tenhou_dealer_seat_2_correct(self) -> None:
+        """M1: dealer_seat=2 时，winner=2 应为天和。"""
+        board = _board_stub_with_dealer(2)
+        assert _is_tenhou(board, winner=2, is_tsumo=True, dealer_seat=2) is True
+
+    def test_tenhou_dealer_seat_2_wrong_winner(self) -> None:
+        """M1: dealer_seat=2 时，winner=0 不应为天和。"""
+        board = _board_stub_with_dealer(2)
+        assert _is_tenhou(board, winner=0, is_tsumo=True, dealer_seat=2) is False
+
+
+class TestChihou:
+    """M1: 地和判定应使用 dealer_seat 而非硬编码 0。"""
+
+    def test_chihou_not_tsumo(self) -> None:
+        """is_tsumo=False 时地和不成立。"""
+        board = _board_stub()
+        assert _is_chihou(board, winner=1, is_tsumo=False, dealer_seat=0) is False
+
+    def test_chihou_dealer_cannot_chihou(self) -> None:
+        """亲家不能地和。"""
+        board = _board_stub_with_dealer(2)
+        assert _is_chihou(board, winner=2, is_tsumo=True, dealer_seat=2) is False
+
+    def test_chihou_dealer_seat_2_non_dealer_wins(self) -> None:
+        """M1: dealer_seat=2 时，winner=0 且第一巡可为地和。"""
+        import dataclasses
+        from collections import Counter as C
+        from kernel.api.observation import RiverEntry
+        from kernel.play.model import TurnPhase
+
+        board = _board_stub_with_dealer(2)
+        # 亲家（seat=2）打出一张牌，同时从手牌中移除
+        disc = board.hands[2].most_common(1)[0][0]
+        new_hand_2 = C(board.hands[2])
+        new_hand_2[disc] -= 1
+        if new_hand_2[disc] == 0:
+            del new_hand_2[disc]
+        hands = list(board.hands)
+        hands[2] = new_hand_2
+        river_entry = RiverEntry(tile=disc, seat=2, is_tsumogiri=True, is_riichi=False)
+        board = dataclasses.replace(
+            board,
+            hands=tuple(hands),
+            river=(river_entry,),
+            current_seat=0,
+            turn_phase=TurnPhase.NEED_DRAW,
+        )
+        assert _is_chihou(board, winner=0, is_tsumo=True, dealer_seat=2) is True
+
+
+# --- _is_suuankou (M4) ---
+
+class TestSuuankouRon:
+    """M4: 荣和非单骑时四暗刻不应成立。"""
+
+    def test_ron_non_tanki_returns_false(self) -> None:
+        """荣和非单骑：4 暗刻 + 1 对子，荣和使对子变刻子，不应算四暗刻。"""
+        concealed = Counter({MAN1: 3, MAN2: 3, MAN3: 3, MAN4: 3, Tile(Suit.PIN, 1): 1})
+        # 手牌 13 张：4 组刻子 + 1 张单牌，等待 PIN1 完成对子
+        # for_ron=True 时 win_tile 加入后 PIN1 变成 2（对子），anko_count=4, pair_count=1
+        # 但荣和破坏门清，四暗刻不应成立
+        assert _is_suuankou(concealed, melds=(), win_tile=Tile(Suit.PIN, 1), for_ron=True) is False
+
+    def test_tsumo_returns_true(self) -> None:
+        """自摸四暗刻：4 暗刻 + 1 对子，自摸应成立。"""
+        concealed = Counter({MAN1: 3, MAN2: 3, MAN3: 3, MAN4: 3, Tile(Suit.PIN, 1): 2})
+        # 手牌 14 张：4 组刻子 + 1 对子
+        assert _is_suuankou(concealed, melds=(), win_tile=Tile(Suit.PIN, 1), for_ron=False) is True
 
 
 # --- _yakuhai_labels_for_triplets ---

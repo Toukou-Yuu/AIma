@@ -34,9 +34,8 @@ def _scoring_is_haitei(board: BoardState) -> bool:
 
 
 def _scoring_is_hotei(board: BoardState, discard_seat: int) -> bool:
-    """与 ``scoring.settle`` 一致：河底近似判定。"""
-    river_count = sum(1 for e in board.river if e.seat == discard_seat)
-    return river_count >= 17
+    """与 ``scoring.settle`` 一致：河底判定（本墙已摸完）。"""
+    return board.live_draw_index >= len(board.live_wall)
 
 
 def _legal_ron_non_dora_han(state: GameState, seat: int, win_tile: Tile) -> int:

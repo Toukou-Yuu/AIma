@@ -316,3 +316,41 @@ class TestRiverEntry:
         assert entry.seat == 0
         assert entry.is_tsumogiri is True
         assert entry.is_riichi is False
+
+
+class TestUraIndicatorVisibility:
+    """M6: 里宝指示牌仅在 HAND_OVER 阶段对已立直者可见。"""
+
+    def _state_with_riichi(self, phase: GamePhase) -> GameState:
+        """构造含立直状态的 GameState。"""
+        import dataclasses
+
+        w = _wall136(seed=0)
+        g0 = initial_game_state()
+        out = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=w))
+        board = dataclasses.replace(out.new_state.board, riichi=(True, False, False, False))
+        return GameState(phase=phase, table=out.new_state.table, board=board)
+
+    def test_ura_hidden_in_round_with_riichi(self) -> None:
+        """IN_ROUND 阶段立直后里宝不可见。"""
+        state = self._state_with_riichi(GamePhase.IN_ROUND)
+        obs = observation(state, seat=0, mode="human")
+        assert obs.ura_indicators is None
+
+    def test_ura_visible_hand_over_with_riichi(self) -> None:
+        """HAND_OVER 阶段立直后里宝可见。"""
+        state = self._state_with_riichi(GamePhase.HAND_OVER)
+        obs = observation(state, seat=0, mode="human")
+        assert obs.ura_indicators is not None
+        assert len(obs.ura_indicators) > 0
+
+    def test_ura_hidden_hand_over_without_riichi(self) -> None:
+        """HAND_OVER 阶段未立直则里宝不可见。"""
+        import dataclasses
+
+        w = _wall136(seed=0)
+        g0 = initial_game_state()
+        out = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=w))
+        state = GameState(phase=GamePhase.HAND_OVER, table=out.new_state.table, board=out.new_state.board)
+        obs = observation(state, seat=0, mode="human")
+        assert obs.ura_indicators is None
