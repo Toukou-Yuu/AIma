@@ -12,7 +12,7 @@ from kernel.call.transitions import (
     board_after_ron_winners,
 )
 from kernel.hand.melds import Meld, MeldKind
-from kernel.play.model import CallResolution, RiverEntry, TurnPhase
+from kernel.board import CallResolution, RiverEntry, TurnPhase
 from kernel.tiles.model import Suit, Tile
 from tests.engine_helpers import (
     board_sorted_deal,

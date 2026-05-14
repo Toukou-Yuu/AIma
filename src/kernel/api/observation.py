@@ -15,7 +15,7 @@ from kernel.tiles.model import Tile
 if TYPE_CHECKING:
     from collections.abc import Counter
 
-    from kernel.deal.model import Meld
+    from kernel.hand.melds import Meld
     from kernel.engine.state import GameState
 
 

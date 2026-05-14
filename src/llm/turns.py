@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from kernel import GamePhase, legal_actions
-from kernel.deal.model import TurnPhase
+from kernel.board import TurnPhase
 from kernel.engine.state import GameState
 
 

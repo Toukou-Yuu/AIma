@@ -7,7 +7,7 @@ from dataclasses import replace
 
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState
-from kernel.play.model import CallResolution, TurnPhase
+from kernel.board import CallResolution, TurnPhase
 from kernel.table import initial_table_snapshot
 from tests.engine_helpers import board_sorted_deal, make_board_with_discard
 from tests.call_helpers import clear_call_window

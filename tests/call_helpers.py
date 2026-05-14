@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from kernel.call import apply_pass_call
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.engine.state import GameState
-from kernel.play.model import TurnPhase, shimocha_seat
+from kernel.board import TurnPhase, shimocha_seat
 
 
 def clear_call_window(board: BoardState) -> BoardState:

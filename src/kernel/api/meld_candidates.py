@@ -6,7 +6,7 @@ from collections import Counter
 from itertools import combinations, product
 
 from kernel.call.transitions import _hand_subset_for_open_meld
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.hand.melds import (
     Meld,
     MeldKind,
@@ -16,7 +16,7 @@ from kernel.hand.melds import (
     validate_meld_shape,
 )
 from kernel.hand.multiset import remove_tile, remove_tiles
-from kernel.play.model import TurnPhase, shimocha_seat
+from kernel.board import TurnPhase, shimocha_seat
 from kernel.tiles.model import Suit, Tile
 
 

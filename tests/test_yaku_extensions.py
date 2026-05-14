@@ -7,7 +7,7 @@ from collections import Counter
 import pytest
 
 from kernel import Tile, build_board_after_split, build_deck, split_wall
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.hand.melds import Meld, MeldKind
 from kernel.scoring.yaku import (
     _is_sanshoku_doukou,

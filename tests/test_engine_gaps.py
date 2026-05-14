@@ -7,13 +7,13 @@ from dataclasses import replace
 
 from kernel import Tile, Suit, build_deck
 from kernel.call.win import can_ron_default, can_tsumo_default
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.engine.actions import Action, ActionKind
 from kernel.engine.apply import apply
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState, initial_game_state
 from kernel.hand.melds import Meld, MeldKind
-from kernel.play.model import TurnPhase
+from kernel.board import TurnPhase
 from kernel.play.transitions import apply_discard, apply_draw
 from kernel.table.model import initial_table_snapshot
 

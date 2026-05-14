@@ -7,8 +7,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from kernel.call.win import can_ron_default
-from kernel.deal.model import BoardState, Meld
-from kernel.play.model import TurnPhase
+from kernel.board import BoardState, TurnPhase
+from kernel.hand.melds import Meld
 from kernel.scoring.furiten import is_furiten_for_tile
 from kernel.tiles.model import Tile
 

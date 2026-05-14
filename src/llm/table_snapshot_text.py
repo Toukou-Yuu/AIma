@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.engine.state import GameState
 from kernel.event_log import FlowEvent, GameEvent, HandOverEvent
 from kernel.flow.model import FlowKind

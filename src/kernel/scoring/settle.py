@@ -5,16 +5,17 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import replace
 
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.event_log import WinSettlementLine
 from kernel.hand.melds import Meld
 from kernel.scoring.dora import count_dora_total, count_ura_dora_total
 from kernel.scoring.fu import compute_fu_detail
 from kernel.scoring.points import child_ron_payment_from_discarder, child_tsumo_payments
 from kernel.scoring.yaku import (
-    _is_kokushi_musou,
-    _is_kokushi_thirteen_waits,
-    _prevailing_wind_tile,
+    hand_pattern_label,
+    is_kokushi_musou,
+    is_kokushi_thirteen_waits,
+    prevailing_wind_tile,
     non_dora_yaku_han_and_labels,
 )
 from kernel.table.model import TableSnapshot, seat_wind_rank
@@ -30,26 +31,6 @@ def _is_haitei(board: BoardState) -> bool:
 def _is_hotei(board: BoardState, discard_seat: int) -> bool:
     """是否河底（本墙已摸完时的舍牌）。"""
     return board.live_draw_index >= len(board.live_wall)
-
-
-def _hand_pattern_zh(
-    concealed: Counter[Tile],
-    melds: tuple[Meld, ...],
-    win_tile: Tile,
-    *,
-    for_ron: bool,
-) -> str:
-    """和了形的人类可读分类（不含具体面子分解）。"""
-    from kernel.call.win import can_ron_seven_pairs, can_win_seven_pairs_concealed_14
-
-    if for_ron:
-        if can_ron_seven_pairs(concealed, melds, win_tile):
-            return "七对子"
-    elif can_win_seven_pairs_concealed_14(concealed, melds):
-        return "七对子"
-    if _is_kokushi_thirteen_waits(concealed, melds, win_tile) or _is_kokushi_musou(concealed, melds):
-        return "国士无双"
-    return "一般形"
 
 
 def settle_ron_table(
@@ -87,7 +68,7 @@ def settle_ron_table(
             msg = "winner seat must be 0..3"
             raise ValueError(msg)
         menzen = len(board.melds[w]) == 0
-        rw = _prevailing_wind_tile(table.prevailing_wind)
+        rw = prevailing_wind_tile(table.prevailing_wind)
         sw = Tile(Suit.HONOR, seat_wind_rank(table.dealer_seat, w))
 
         from kernel.call.win import can_ron_seven_pairs
@@ -171,7 +152,7 @@ def settle_ron_table(
         scores[discard_seat] -= pay
         scores[w] += pay
 
-        pattern = _hand_pattern_zh(board.hands[w], board.melds[w], win_tile, for_ron=True)
+        pattern = hand_pattern_label(board.hands[w], board.melds[w], win_tile, for_ron=True)
         built.append(
             WinSettlementLine(
                 seat=w,
@@ -237,7 +218,7 @@ def settle_tsumo_table(
 
     old_scores = table.scores
     menzen = len(board.melds[winner]) == 0
-    rw = _prevailing_wind_tile(table.prevailing_wind)
+    rw = prevailing_wind_tile(table.prevailing_wind)
     sw = Tile(Suit.HONOR, seat_wind_rank(table.dealer_seat, winner))
 
     from kernel.call.win import can_win_seven_pairs_concealed_14
@@ -329,7 +310,7 @@ def settle_tsumo_table(
     # child_tsumo_payments 已含本场；和了者净得（含三家支付）+ 供托
     points_line = deltas[winner] + kt
 
-    pattern = _hand_pattern_zh(board.hands[winner], board.melds[winner], win_tile, for_ron=False)
+    pattern = hand_pattern_label(board.hands[winner], board.melds[winner], win_tile, for_ron=False)
     line = WinSettlementLine(
         seat=winner,
         win_kind="tsumo",

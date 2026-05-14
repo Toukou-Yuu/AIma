@@ -7,7 +7,7 @@ from dataclasses import replace
 
 from kernel import BoardState, build_board_after_split, build_deck, split_wall
 from kernel.hand.melds import Meld, MeldKind
-from kernel.play.model import CallResolution, RiverEntry, TurnPhase
+from kernel.board import CallResolution, RiverEntry, TurnPhase
 from kernel.tiles.model import Suit, Tile
 
 

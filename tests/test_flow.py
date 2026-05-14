@@ -438,7 +438,7 @@ class TestFlowIntegration:
 
         通过 apply 推进对局到牌山最后一张。
         """
-        from kernel.play.model import TurnPhase
+        from kernel.board import TurnPhase
 
         wall = tuple(shuffle_deck(build_deck(), seed=0))
         state = initial_game_state()
@@ -511,7 +511,7 @@ class TestFlowIntegration:
                             break
                         cs = board.call_state
                         if cs is not None and cs.stage == "chi":
-                            from kernel.play.model import shimocha_seat
+                            from kernel.board import shimocha_seat
                             chi_seat = shimocha_seat(cs.discard_seat)
                             try:
                                 state = apply(state, Action(
@@ -537,7 +537,7 @@ class TestFlowIntegration:
                             break
                         cs = board.call_state
                         if cs is not None and cs.stage == "chi":
-                            from kernel.play.model import shimocha_seat
+                            from kernel.board import shimocha_seat
                             chi_seat = shimocha_seat(cs.discard_seat)
                             try:
                                 state = apply(state, Action(
@@ -546,7 +546,7 @@ class TestFlowIntegration:
                             except (IllegalActionError, ValueError):
                                 pass
                     elif cs.stage == "chi":
-                        from kernel.play.model import shimocha_seat
+                        from kernel.board import shimocha_seat
                         chi_seat = shimocha_seat(cs.discard_seat)
                         try:
                             state = apply(state, Action(

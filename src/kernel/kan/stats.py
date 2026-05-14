@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from kernel.deal.model import BoardState
+    from kernel.board import BoardState
 
 
 def completed_kan_rinshan_count(board: BoardState) -> int:

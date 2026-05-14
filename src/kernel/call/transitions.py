@@ -9,11 +9,11 @@ from kernel.call.ron_rules import require_can_declare_ron
 from kernel.hand.melds import Meld, MeldKind, triplet_key, validate_meld_shape
 from kernel.hand.multiset import remove_tiles
 from kernel.kan.rinshan import apply_after_kan_rinshan_draw
-from kernel.play.model import CallResolution, TurnPhase, shimocha_seat
+from kernel.board import CallResolution, TurnPhase, shimocha_seat
 from kernel.tiles.model import Tile
 
 if TYPE_CHECKING:
-    from kernel.deal.model import BoardState
+    from kernel.board import BoardState
 
 
 def _hand_subset_for_open_meld(meld: Meld, claimed: Tile, want_from_hand: int) -> list[Tile]:
@@ -33,7 +33,7 @@ def _hand_subset_for_open_meld(meld: Meld, claimed: Tile, want_from_hand: int) -
 
 
 def _replace_board(board: BoardState, **kwargs: object) -> BoardState:
-    from kernel.deal.model import BoardState
+    from kernel.board import BoardState
 
     return BoardState(
         hands=kwargs.get("hands", board.hands),
@@ -365,7 +365,7 @@ def board_after_ron_winners(board: BoardState) -> BoardState:
     多家荣和后的牌桌快照（结算占位）：保持手牌/河不变，仅清除应答状态。
     和了牌仍在河中由上层处理或后续 K10 细化。
     """
-    from kernel.deal.model import BoardState
+    from kernel.board import BoardState
 
     cs = board.call_state
     if cs is None or not cs.ron_claimants or not cs.finished:

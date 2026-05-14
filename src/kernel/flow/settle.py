@@ -6,7 +6,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from kernel.config import DEFAULT_CONFIG, MahjongConfig
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.flow.model import TenpaiResult
 from kernel.riichi.tenpai import is_tenpai_default
 from kernel.scoring.points import nagashi_mangan_payments

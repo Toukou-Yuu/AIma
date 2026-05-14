@@ -11,7 +11,7 @@ from kernel import (
     build_deck,
     split_wall,
 )
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.hand.melds import Meld, MeldKind
 from kernel.scoring.yaku import (
     _is_chinroutou,
@@ -19,8 +19,8 @@ from kernel.scoring.yaku import (
     _is_daisangen,
     _is_daisuushii,
     _is_junsei_chuuren_poutou,
-    _is_kokushi_musou,
-    _is_kokushi_thirteen_waits,
+    is_kokushi_musou,
+    is_kokushi_thirteen_waits,
     _is_ryuuiisou,
     _is_shou_suushii,
     _is_suu_kantsu,
@@ -182,7 +182,7 @@ class TestKokushiMusou:
 
         melds: tuple[Meld, ...] = ()
 
-        assert _is_kokushi_musou(c, melds) is True
+        assert is_kokushi_musou(c, melds) is True
 
     def test_kokushi_thirteen_waits(self) -> None:
         """国士十三面：十三种幺九牌各一张。"""
@@ -208,7 +208,7 @@ class TestKokushiMusou:
         melds: tuple[Meld, ...] = ()
         win_tile = Tile(Suit.HONOR, 7)  # 荣和成对
 
-        assert _is_kokushi_thirteen_waits(c, melds, win_tile) is True
+        assert is_kokushi_thirteen_waits(c, melds, win_tile) is True
 
     def test_kokushi_not_with_melds(self) -> None:
         """国士：有副露则不是。"""
@@ -229,7 +229,7 @@ class TestKokushiMusou:
             ),
         )
 
-        assert _is_kokushi_musou(c, melds) is False
+        assert is_kokushi_musou(c, melds) is False
 
 
 class TestChinroutou:
@@ -574,7 +574,7 @@ class TestChiihou:
         """构造子家第一巡自摸的 board 状态。"""
         from dataclasses import replace
 
-        from kernel.play.model import RiverEntry
+        from kernel.board import RiverEntry
 
         board = _board_sorted_deal(dealer=0)
         # 亲家舍一张

@@ -7,7 +7,7 @@ from dataclasses import replace
 
 from kernel.hand.melds import Meld, MeldKind
 from kernel.kan.declare import apply_ankan, apply_kakan
-from kernel.play.model import TurnPhase
+from kernel.board import TurnPhase
 from kernel.tiles.model import Suit, Tile
 from tests.engine_helpers import board_sorted_deal, make_board_with_discard
 from tests.call_helpers import clear_call_window

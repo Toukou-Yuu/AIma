@@ -5,16 +5,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from kernel.hand.multiset import add_tile, remove_tile
-from kernel.play.model import CallResolution, RiverEntry, TurnPhase
+from kernel.board import CallResolution, RiverEntry, TurnPhase
 from kernel.tiles.model import Tile
 
 if TYPE_CHECKING:
-    from kernel.deal.model import BoardState
+    from kernel.board import BoardState
 
 
 def apply_draw(board: BoardState, seat: int) -> BoardState:
     """自摸：``NEED_DRAW`` 且 ``seat == current_seat``；墙枯则抛 ``ValueError``。"""
-    from kernel.deal.model import BoardState
+    from kernel.board import BoardState
 
     if board.turn_phase != TurnPhase.NEED_DRAW:
         msg = "DRAW requires turn_phase NEED_DRAW"
@@ -55,7 +55,7 @@ def board_after_tsumo_win(board: BoardState, *, winner: int, win_tile: Tile) -> 
     自摸进入结算占位：转 ``NEED_DRAW``，清摸打标记。
     门内减一枚和了牌并写入河（摸切标记），保持 136 张守恒与各家 13 张（结算谱面占位）。
     """
-    from kernel.deal.model import BoardState
+    from kernel.board import BoardState
 
     new_hands = list(board.hands)
     new_hands[winner] = remove_tile(new_hands[winner], win_tile)
@@ -92,7 +92,7 @@ def apply_discard(
     declare_riichi: bool = False,
 ) -> BoardState:
     """打牌：``MUST_DISCARD``；写入河，下家为下一摸席并进入 ``CALL_RESPONSE``。"""
-    from kernel.deal.model import BoardState
+    from kernel.board import BoardState
 
     if board.turn_phase != TurnPhase.MUST_DISCARD:
         msg = "DISCARD requires turn_phase MUST_DISCARD"

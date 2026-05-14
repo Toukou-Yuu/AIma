@@ -702,7 +702,7 @@ class TestTileRendererRiver:
 
     def test_river_with_tiles(self) -> None:
         """有牌的牌河。"""
-        from kernel.deal.model import RiverEntry
+        from kernel.board import RiverEntry
         from kernel.tiles.model import Suit, Tile
         from ui.terminal.components import TileRenderer
 
@@ -717,7 +717,7 @@ class TestTileRendererRiver:
 
     def test_river_with_riichi_tiles(self) -> None:
         """立直打牌用方括号标记。"""
-        from kernel.deal.model import RiverEntry
+        from kernel.board import RiverEntry
         from kernel.tiles.model import Suit, Tile
         from ui.terminal.components import TileRenderer
 

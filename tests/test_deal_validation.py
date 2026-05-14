@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import replace
 
-from kernel.deal.model import BoardState, validate_board_state
+from kernel.board import BoardState, validate_board_state
 from kernel.hand.melds import Meld, MeldKind
-from kernel.play.model import CallResolution, RiverEntry, TurnPhase
+from kernel.board import CallResolution, RiverEntry, TurnPhase
 from kernel.tiles.model import Suit, Tile
 from kernel.wall.split import RINSHAN_COUNT, INDICATOR_COUNT, DeadWall, LIVE_WALL_SIZE
 from tests.engine_helpers import board_sorted_deal, make_board_with_discard

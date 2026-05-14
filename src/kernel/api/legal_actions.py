@@ -16,10 +16,10 @@ from kernel.api.meld_candidates import (
 )
 from kernel.call.ron_rules import can_declare_ron
 from kernel.config import DEFAULT_CONFIG
-from kernel.deal.model import BoardState, Meld
+from kernel.board import BoardState, TurnPhase
 from kernel.engine.actions import ActionKind
 from kernel.engine.state import GameState
-from kernel.play.model import TurnPhase
+from kernel.hand.melds import Meld
 from kernel.riichi.tenpai import is_tenpai_default
 from kernel.scoring.yaku import non_dora_yaku_han_and_labels
 from kernel.tiles.model import Tile
@@ -186,7 +186,7 @@ def _legal_actions_call_response(
         if seat == cs.pon_kan_order[cs.pon_kan_idx]:
             actions.append(LegalAction(kind=ActionKind.PASS_CALL, seat=seat))
     elif cs.stage == "chi":
-        from kernel.play.model import shimocha_seat
+        from kernel.board import shimocha_seat
 
         if seat == shimocha_seat(cs.discard_seat):
             actions.append(LegalAction(kind=ActionKind.PASS_CALL, seat=seat))

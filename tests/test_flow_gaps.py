@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from kernel.config import MahjongConfig
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.flow.model import TenpaiResult
 from kernel.flow.settle import (
     _is_yaochu_tile,

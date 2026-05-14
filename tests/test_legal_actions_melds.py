@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections import Counter
 
 from kernel.api.legal_actions import legal_actions
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.engine.actions import ActionKind
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState
 from kernel.hand.melds import MeldKind
-from kernel.play.model import CallResolution, RiverEntry, TurnPhase
+from kernel.board import CallResolution, RiverEntry, TurnPhase
 from kernel.table import initial_table_snapshot
 from kernel.tiles.model import Suit, Tile
 from llm.observation_format import action_to_natural_text

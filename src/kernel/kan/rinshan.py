@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from kernel.hand.multiset import add_tile
-from kernel.play.model import TurnPhase
+from kernel.board import TurnPhase
 from kernel.wall.split import INDICATOR_COUNT, RINSHAN_COUNT
 
 if TYPE_CHECKING:
-    from kernel.deal.model import BoardState
+    from kernel.board import BoardState
 
 
 def apply_after_kan_rinshan_draw(board: BoardState, seat: int) -> BoardState:
@@ -18,7 +18,7 @@ def apply_after_kan_rinshan_draw(board: BoardState, seat: int) -> BoardState:
 
     岭上顺序：``dead_wall.rinshan[rinshan_draw_index]`` 从 0 递增（见 ``wall/README.md``）。
     """
-    from kernel.deal.model import BoardState
+    from kernel.board import BoardState
 
     if board.turn_phase != TurnPhase.MUST_DISCARD:
         msg = "after_kan_rinshan expects MUST_DISCARD (post-meld totals)"

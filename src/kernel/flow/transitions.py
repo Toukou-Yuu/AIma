@@ -9,7 +9,7 @@ from kernel.flow.model import FlowKind, FlowResult
 from kernel.tiles.model import Suit, Tile
 
 if TYPE_CHECKING:
-    from kernel.deal.model import BoardState
+    from kernel.board import BoardState
 
 
 def is_exhausted_flow(board: "BoardState") -> bool:

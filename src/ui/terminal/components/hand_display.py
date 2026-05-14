@@ -10,7 +10,7 @@ from rich.cells import cell_len, set_cell_size
 from rich.console import Group
 from rich.text import Text
 
-from kernel.deal.model import TurnPhase
+from kernel.board import TurnPhase
 from ui.terminal.components.meld_display import MeldDisplay
 from ui.terminal.components.render import TileRenderer
 from ui.terminal.components.tiles import tile_to_rich

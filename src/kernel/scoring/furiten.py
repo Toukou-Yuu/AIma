@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.riichi.tenpai import compute_waiting_tiles
 from kernel.tiles.model import Tile
 

@@ -439,7 +439,7 @@ def demo_dry_run(seed: int = 0, steps: int = 100, delay: float = 0.3) -> None:
     from kernel import apply, shuffle_deck
     from kernel.engine.actions import Action, ActionKind
     from kernel.engine.state import initial_game_state
-    from kernel.play.model import TurnPhase
+    from kernel.board import TurnPhase
     from kernel.tiles.deck import build_deck
     from llm.turns import pending_actor_seats
 

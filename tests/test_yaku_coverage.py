@@ -13,8 +13,8 @@ from kernel.scoring.yaku import (
     _is_chinroutou,
     _is_chuuren_poutou,
     _is_ikkitsukan,
-    _is_kokushi_musou,
-    _is_kokushi_thirteen_waits,
+    is_kokushi_musou,
+    is_kokushi_thirteen_waits,
     _is_sanshoku_doukou,
     _is_suuankou,
     _is_suuankou_tanki,
@@ -243,7 +243,7 @@ class TestKokushiMusou:
             # 缺少 CHUN
             MAN2: 2,  # 多一张非幺九
         })
-        assert _is_kokushi_musou(c, ()) is False
+        assert is_kokushi_musou(c, ()) is False
 
 
 # --- _is_kokushi_thirteen_waits ---
@@ -256,7 +256,7 @@ class TestKokushiThirteenWaits:
             TON: 1, NAN: 1, SHA: 1, PEI: 1, HAKU: 1, HATSU: 1,
             # 缺少 CHUN，MAN1 多一张
         })
-        assert _is_kokushi_thirteen_waits(c, (), CHUN) is False
+        assert is_kokushi_thirteen_waits(c, (), CHUN) is False
 
     def test_missing_terminal_type(self) -> None:
         """13 版中缺少一种幺九牌时返回 False。"""
@@ -265,7 +265,7 @@ class TestKokushiThirteenWaits:
             TON: 1, NAN: 1, SHA: 1, PEI: 1, HAKU: 1, HATSU: 1,
             MAN2: 1,  # 非幺九牌代替 CHUN
         })
-        assert _is_kokushi_thirteen_waits(c, (), CHUN) is False
+        assert is_kokushi_thirteen_waits(c, (), CHUN) is False
 
 
 # --- _is_chinroutou ---
@@ -335,7 +335,7 @@ class TestChihou:
         import dataclasses
         from collections import Counter as C
         from kernel.api.observation import RiverEntry
-        from kernel.play.model import TurnPhase
+        from kernel.board import TurnPhase
 
         board = _board_stub_with_dealer(2)
         # 亲家（seat=2）打出一张牌，同时从手牌中移除

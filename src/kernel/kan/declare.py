@@ -8,15 +8,15 @@ from typing import TYPE_CHECKING
 from kernel.hand.melds import Meld, MeldKind, triplet_key, validate_meld_shape
 from kernel.hand.multiset import remove_tile, remove_tiles
 from kernel.kan.rinshan import apply_after_kan_rinshan_draw
-from kernel.play.model import CallResolution, TurnPhase
+from kernel.board import CallResolution, TurnPhase
 
 if TYPE_CHECKING:
-    from kernel.deal.model import BoardState
+    from kernel.board import BoardState
 
 
 def apply_ankan(board: BoardState, seat: int, meld: Meld) -> BoardState:
     """暗杠：须 ``MUST_DISCARD``、门清四张同种；返回岭摸+翻宝后的状态。"""
-    from kernel.deal.model import BoardState
+    from kernel.board import BoardState
 
     validate_meld_shape(meld)
     if meld.kind != MeldKind.ANKAN:
@@ -62,7 +62,7 @@ def apply_ankan(board: BoardState, seat: int, meld: Meld) -> BoardState:
 
 def apply_kakan(board: BoardState, seat: int, meld: Meld) -> BoardState:
     """加杠：将已有 ``PON`` 与手牌一张合成 ``KAKAN``。"""
-    from kernel.deal.model import BoardState
+    from kernel.board import BoardState
 
     validate_meld_shape(meld)
     if meld.kind != MeldKind.KAKAN:

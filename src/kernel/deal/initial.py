@@ -10,7 +10,7 @@ from kernel.deal.model import (
     INITIAL_DEAL_TILES,
     BoardState,
 )
-from kernel.play.model import TurnPhase
+from kernel.board import TurnPhase
 from kernel.tiles.deck import build_deck
 from kernel.tiles.model import Tile
 from kernel.wall.split import LIVE_WALL_SIZE, WallSplit

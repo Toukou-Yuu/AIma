@@ -10,11 +10,11 @@ from __future__ import annotations
 
 from collections import Counter
 
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.event_log import FlowEvent, HandOverEvent, WinSettlementLine
 from kernel.flow.model import FlowKind
 from kernel.hand.melds import Meld, MeldKind
-from kernel.play.model import RiverEntry
+from kernel.board import RiverEntry
 from kernel.tiles.model import Suit, Tile
 from llm.table_snapshot_text import (
     _absolute_seat_suffix,

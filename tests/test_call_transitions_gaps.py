@@ -6,9 +6,9 @@ from collections import Counter
 
 from kernel import Tile, Suit
 from kernel.call.win import can_ron_default
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.hand.melds import Meld, MeldKind
-from kernel.play.model import CallResolution, RiverEntry, TurnPhase
+from kernel.board import CallResolution, RiverEntry, TurnPhase
 from kernel.play.transitions import apply_discard, apply_draw
 
 from tests.engine_helpers import (

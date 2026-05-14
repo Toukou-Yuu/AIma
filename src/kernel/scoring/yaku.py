@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 
 from kernel.config import DEFAULT_CONFIG, MahjongConfig
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.hand.melds import Meld, MeldKind, triplet_key
 from kernel.table.model import PrevailingWind, TableSnapshot, seat_wind_rank
 from kernel.tiles.model import Suit, Tile
@@ -29,7 +29,8 @@ def _full_tile_counter(
     return c
 
 
-def _prevailing_wind_tile(pw: PrevailingWind) -> Tile:
+def prevailing_wind_tile(pw: PrevailingWind) -> Tile:
+    """将 PrevailingWind 枚举转换为对应的牌张。"""
     if pw == PrevailingWind.EAST:
         return Tile(Suit.HONOR, 1)
     return Tile(Suit.HONOR, 2)
@@ -472,7 +473,7 @@ def _is_suuankou_tanki(
     return False
 
 
-def _is_kokushi_musou(concealed: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
+def is_kokushi_musou(concealed: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
     """
     国士无理（十三幺）：十三种幺九牌各至少一枚 + 一对。
     门前清限定。
@@ -516,7 +517,7 @@ def _is_kokushi_musou(concealed: Counter[Tile], melds: tuple[Meld, ...]) -> bool
     return pair_count == 1
 
 
-def _is_kokushi_thirteen_waits(
+def is_kokushi_thirteen_waits(
     concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile
 ) -> bool:
     """
@@ -560,6 +561,26 @@ def _is_kokushi_thirteen_waits(
 
     # 荣和的牌必须是十三种幺九牌之一
     return win_tile in terminals
+
+
+def hand_pattern_label(
+    concealed: Counter[Tile],
+    melds: tuple[Meld, ...],
+    win_tile: Tile,
+    *,
+    for_ron: bool,
+) -> str:
+    """返回和了形分类：「国士无双」/「七对子」/「一般形」。"""
+    from kernel.call.win import can_ron_seven_pairs, can_win_seven_pairs_concealed_14
+
+    if for_ron:
+        if can_ron_seven_pairs(concealed, melds, win_tile):
+            return "七对子"
+    elif can_win_seven_pairs_concealed_14(concealed, melds):
+        return "七对子"
+    if is_kokushi_thirteen_waits(concealed, melds, win_tile) or is_kokushi_musou(concealed, melds):
+        return "国士无双"
+    return "一般形"
 
 
 def _is_chinroutou(full: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
@@ -866,9 +887,9 @@ def non_dora_yaku_han_and_labels(
         return 13, ("四暗刻单骑",)
     if _is_suuankou(concealed, melds, win_tile, for_ron=for_ron):
         return 13, ("四暗刻",)
-    if _is_kokushi_thirteen_waits(concealed, melds, win_tile):
+    if is_kokushi_thirteen_waits(concealed, melds, win_tile) or is_kokushi_musou(concealed, melds):
         return 13, ("国士无双十三面",)
-    if _is_kokushi_musou(concealed, melds):
+    if is_kokushi_musou(concealed, melds):
         return 13, ("国士无双",)
     if _is_chinroutou(full, melds):
         return 13, ("清老头",)
@@ -902,7 +923,7 @@ def non_dora_yaku_han_and_labels(
         han += 1
         labels.append("一发")
 
-    rw = _prevailing_wind_tile(table.prevailing_wind)
+    rw = prevailing_wind_tile(table.prevailing_wind)
     sw = Tile(Suit.HONOR, seat_wind_rank(table.dealer_seat, winner))
 
     if _is_chiitoitsu(full, melds):

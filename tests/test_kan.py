@@ -35,7 +35,7 @@ from kernel.kan import (
 )
 from kernel.play import apply_discard
 from kernel.play.transitions import apply_draw
-from kernel.play.model import CallResolution
+from kernel.board import CallResolution
 from kernel.table import initial_table_snapshot
 from tests.call_helpers import clear_call_window
 

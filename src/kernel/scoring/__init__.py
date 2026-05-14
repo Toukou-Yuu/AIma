@@ -19,7 +19,13 @@ from kernel.scoring.points import (
     round_up_100,
 )
 from kernel.scoring.settle import settle_ron_table, settle_tsumo_table
-from kernel.scoring.yaku import count_yaku_han
+from kernel.scoring.yaku import (
+    count_yaku_han,
+    hand_pattern_label,
+    is_kokushi_musou,
+    is_kokushi_thirteen_waits,
+    prevailing_wind_tile,
+)
 
 __all__ = [
     "child_ron_base_points",
@@ -31,7 +37,11 @@ __all__ = [
     "count_yaku_han",
     "dealer_ron_base_points",
     "dora_from_indicators",
+    "hand_pattern_label",
     "is_furiten_for_tile",
+    "is_kokushi_musou",
+    "is_kokushi_thirteen_waits",
+    "prevailing_wind_tile",
     "round_up_100",
     "settle_ron_table",
     "settle_tsumo_table",

@@ -22,7 +22,7 @@ from kernel import (
     shuffle_deck,
 )
 from kernel.api.observation import RiverEntry
-from kernel.play.model import TurnPhase
+from kernel.board import TurnPhase
 from kernel.tiles.model import Suit, Tile
 
 

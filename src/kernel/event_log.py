@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from kernel.deal.model import Meld
+    from kernel.hand.melds import Meld
     from kernel.flow.model import FlowKind
     from kernel.tiles.model import Tile
 

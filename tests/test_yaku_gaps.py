@@ -9,7 +9,7 @@ from kernel.scoring.yaku import (
     _count_chi_sequences,
     _has_same_suit_sequences,
     _is_tanyao,
-    _prevailing_wind_tile,
+    prevailing_wind_tile,
     _yakuhai_han_chiitoitsu_pairs,
     _yakuhai_han_triplets,
 )
@@ -49,14 +49,14 @@ SHA = Tile(Suit.HONOR, 3)
 PEI = Tile(Suit.HONOR, 4)
 
 
-# --- _prevailing_wind_tile ---
+# --- prevailing_wind_tile ---
 
 class TestPrevailingWindTile:
     def test_east(self) -> None:
-        assert _prevailing_wind_tile(PrevailingWind.EAST) == TON
+        assert prevailing_wind_tile(PrevailingWind.EAST) == TON
 
     def test_south(self) -> None:
-        assert _prevailing_wind_tile(PrevailingWind.SOUTH) == NAN
+        assert prevailing_wind_tile(PrevailingWind.SOUTH) == NAN
 
 
 # --- _is_tanyao ---

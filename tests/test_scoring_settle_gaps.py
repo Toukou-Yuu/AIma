@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import replace
 
-from kernel.play.model import RiverEntry
+from kernel.board import RiverEntry
 from kernel.scoring.settle import _is_hotei, settle_ron_table, settle_tsumo_table
 from kernel.table.model import initial_table_snapshot
 from kernel.tiles.model import Suit, Tile
@@ -26,7 +26,7 @@ class TestIsHotei:
     def _mock_board(b0, **overrides):
         """绕过 __post_init__ 验证构造修改后的 BoardState。"""
         import dataclasses as dc
-        from kernel.deal.model import BoardState
+        from kernel.board import BoardState
         b = object.__new__(BoardState)
         for f in dc.fields(b0):
             val = overrides.get(f.name, getattr(b0, f.name))

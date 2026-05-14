@@ -24,9 +24,9 @@ from kernel import (
 from kernel.api.legal_actions import legal_actions
 from kernel.call.transitions import apply_pass_call, apply_ron
 from kernel.call.win import can_ron_seven_pairs
-from kernel.deal.model import BoardState
+from kernel.board import BoardState
 from kernel.hand.melds import Meld, MeldKind
-from kernel.play.model import CallResolution, RiverEntry, TurnPhase
+from kernel.board import CallResolution, RiverEntry, TurnPhase
 from tests.test_scoring import _board_sorted_deal, _pool_not_in_wall, _take_n
 
 
@@ -175,7 +175,7 @@ def test_pass_call_chain_via_engine_reaches_need_draw() -> None:
         elif cs.stage == "pon_kan":
             s = cs.pon_kan_order[cs.pon_kan_idx]
         else:
-            from kernel.play.model import shimocha_seat
+            from kernel.board import shimocha_seat
 
             s = shimocha_seat(cs.discard_seat)
         g = apply(g, Action(ActionKind.PASS_CALL, seat=s)).new_state
@@ -203,7 +203,7 @@ def test_call_pass_drain_equivalent_to_serial_pass() -> None:
         elif cs.stage == "pon_kan":
             s = cs.pon_kan_order[cs.pon_kan_idx]
         else:
-            from kernel.play.model import shimocha_seat
+            from kernel.board import shimocha_seat
 
             s = shimocha_seat(cs.discard_seat)
         g_chain = apply(g_chain, Action(ActionKind.PASS_CALL, seat=s)).new_state
