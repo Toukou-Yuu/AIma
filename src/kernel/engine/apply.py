@@ -27,10 +27,11 @@ from kernel.event_log import (
 )
 from kernel.config import DEFAULT_CONFIG, MahjongConfig
 from kernel.flow import FlowKind, FlowResult, check_flow_kind, settle_flow
+from kernel.flow.settle import update_honba
 from kernel.flow.model import TenpaiResult
 from kernel.hand.melds import MeldKind
 from kernel.hand.multiset import remove_tile
-from kernel.kan import apply_ankan, apply_shankuminkan
+from kernel.kan import apply_ankan, apply_kakan
 from kernel.play import apply_discard, apply_draw, board_after_tsumo_win
 from kernel.play.model import TurnPhase, shimocha_seat
 from kernel.riichi.tenpai import is_tenpai_default
@@ -50,7 +51,7 @@ class EngineError(ValueError):
     """引擎相关输入或阶段错误基类。"""
 
 
-_KAN_KINDS = frozenset({MeldKind.ANKAN, MeldKind.DAIMINKAN, MeldKind.SHANKUMINKAN})
+_KAN_KINDS = frozenset({MeldKind.ANKAN, MeldKind.DAIMINKAN, MeldKind.KAKAN})
 
 
 def _count_kans_per_seat(board: BoardState) -> tuple[int, int, int, int]:
@@ -301,8 +302,8 @@ def _outcome_pass_call(state: GameState, seat: int, config: MahjongConfig = DEFA
             win_tile=cs_pb.claimed_tile,
             ura_indicators=ura,
             is_chankan=is_chankan,
-            continue_dealer=continue_dealer,
         )
+        new_table = update_honba(new_table, continue_dealer=continue_dealer)
         eb = _create_event_builder(state)
         events: list[GameEvent] = []
         for winner in cs_pb.ron_claimants:
@@ -412,7 +413,7 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
     - ``PRE_DEAL`` + ``BEGIN_ROUND``（附带合法 136 张 ``wall``）→ ``IN_ROUND`` 并写入 ``board``
     - ``IN_ROUND`` + ``NOOP`` → 恒等
     - ``IN_ROUND`` + ``DRAW`` / ``DISCARD`` → 摸打（``kernel.play``）
-    - ``IN_ROUND`` + ``MUST_DISCARD`` + ``ANKAN`` / ``SHANKUMINKAN`` → ``kernel.kan``
+    - ``IN_ROUND`` + ``MUST_DISCARD`` + ``ANKAN`` / ``KAKAN`` → ``kernel.kan``
     - ``IN_ROUND`` 且 ``board.turn_phase == CALL_RESPONSE``：
       ``PASS_CALL`` / ``RON`` / ``OPEN_MELD``（``kernel.call``）；荣和成立时转 ``HAND_OVER``。
     - ``IN_ROUND`` 且 ``MUST_DISCARD`` + ``TSUMO``：自摸和了（须 ``last_draw_tile``；
@@ -539,8 +540,8 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
                         win_tile=cs.claimed_tile,
                         ura_indicators=ura,
                         is_chankan=is_chankan,
-                        continue_dealer=continue_dealer,
                     )
+                    new_table = update_honba(new_table, continue_dealer=continue_dealer)
                     # 生成 RonEvent 和 HandOverEvent
                     eb = _create_event_builder(state)
                     events = []
@@ -810,8 +811,8 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
                 winner=seat,
                 win_tile=wt,
                 ura_indicators=ura,
-                continue_dealer=continue_dealer,
             )
+            new_table = update_honba(new_table, continue_dealer=continue_dealer)
 
             winners = (seat,)
             hand_over_event = eb.hand_over(
@@ -886,27 +887,27 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
                 ),
                 events=(kan_event,),
             )
-        if kind == ActionKind.SHANKUMINKAN:
+        if kind == ActionKind.KAKAN:
             if board.turn_phase != TurnPhase.MUST_DISCARD:
-                msg = "SHANKUMINKAN requires MUST_DISCARD"
+                msg = "KAKAN requires MUST_DISCARD"
                 raise IllegalActionError(msg)
             if action.seat is None:
-                msg = "SHANKUMINKAN requires seat"
+                msg = "KAKAN requires seat"
                 raise IllegalActionError(msg)
             if action.meld is None:
-                msg = "SHANKUMINKAN requires meld"
+                msg = "KAKAN requires meld"
                 raise IllegalActionError(msg)
             try:
-                new_board = apply_shankuminkan(board, action.seat, action.meld)
+                new_board = apply_kakan(board, action.seat, action.meld)
             except ValueError as e:
                 raise IllegalActionError(str(e)) from e
 
-            # 生成 CallEvent (shankuminkan)
+            # 生成 CallEvent (kakan)
             eb = _create_event_builder(state)
             kan_event = eb.call(
                 seat=action.seat,
                 meld=action.meld,
-                call_kind="shankuminkan",
+                call_kind="kakan",
             )
 
             # 计算每家杠数并检测四杠流局

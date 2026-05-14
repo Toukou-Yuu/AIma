@@ -15,7 +15,7 @@ class MeldKind(Enum):
     PON = "pon"
     DAIMINKAN = "daiminkan"
     ANKAN = "ankan"
-    SHANKUMINKAN = "shankuminkan"
+    KAKAN = "kakan"
 
 
 def triplet_key(tile: Tile) -> tuple[Suit, int]:
@@ -131,9 +131,9 @@ def validate_meld_shape(meld: Meld) -> None:
             raise ValueError(msg)
         return
 
-    if kind == MeldKind.SHANKUMINKAN:
+    if kind == MeldKind.KAKAN:
         if len(tiles) != 4:
-            msg = "shankuminkan must have exactly 4 tiles"
+            msg = "kakan must have exactly 4 tiles"
             raise ValueError(msg)
         if called is not None and called not in tiles:
             msg = "called_tile must be one of meld tiles when set"

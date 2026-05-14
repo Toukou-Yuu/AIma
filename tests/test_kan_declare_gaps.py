@@ -6,7 +6,7 @@ from collections import Counter
 from dataclasses import replace
 
 from kernel.hand.melds import Meld, MeldKind
-from kernel.kan.declare import apply_ankan, apply_shankuminkan
+from kernel.kan.declare import apply_ankan, apply_kakan
 from kernel.play.model import TurnPhase
 from kernel.tiles.model import Suit, Tile
 from tests.engine_helpers import board_sorted_deal, make_board_with_discard
@@ -94,7 +94,7 @@ class TestAnkanErrorGuards:
             pass
 
 
-# --- apply_shankuminkan error guards ---
+# --- apply_kakan error guards ---
 
 class TestShankuminkanErrorGuards:
     def test_wrong_meld_kind(self) -> None:
@@ -102,38 +102,38 @@ class TestShankuminkanErrorGuards:
         tile = next(iter(b.hands[0]))
         meld = Meld(MeldKind.PON, (tile, tile, tile), tile)
         try:
-            apply_shankuminkan(b, 0, meld)
-            raise AssertionError("expected ValueError for shankuminkan with non-SHANKUMINKAN meld")
+            apply_kakan(b, 0, meld)
+            raise AssertionError("expected ValueError for kakan with non-KAKAN meld")
         except ValueError:
             pass
 
     def test_wrong_turn_phase(self) -> None:
         b = _need_draw_board()
         tile = next(iter(b.hands[b.current_seat]))
-        meld = Meld(MeldKind.SHANKUMINKAN, (tile, tile, tile, tile))
+        meld = Meld(MeldKind.KAKAN, (tile, tile, tile, tile))
         try:
-            apply_shankuminkan(b, b.current_seat, meld)
-            raise AssertionError("expected ValueError for shankuminkan in NEED_DRAW")
+            apply_kakan(b, b.current_seat, meld)
+            raise AssertionError("expected ValueError for kakan in NEED_DRAW")
         except ValueError:
             pass
 
     def test_wrong_seat(self) -> None:
         b = _must_discard_board()
         tile = next(iter(b.hands[0]))
-        meld = Meld(MeldKind.SHANKUMINKAN, (tile, tile, tile, tile))
+        meld = Meld(MeldKind.KAKAN, (tile, tile, tile, tile))
         try:
-            apply_shankuminkan(b, 1, meld)
-            raise AssertionError("expected ValueError for shankuminkan wrong seat")
+            apply_kakan(b, 1, meld)
+            raise AssertionError("expected ValueError for kakan wrong seat")
         except ValueError:
             pass
 
     def test_rinshan_pending(self) -> None:
         b = _rinshan_board()
         tile = b.last_draw_tile
-        meld = Meld(MeldKind.SHANKUMINKAN, (tile, tile, tile, tile))
+        meld = Meld(MeldKind.KAKAN, (tile, tile, tile, tile))
         try:
-            apply_shankuminkan(b, 0, meld)
-            raise AssertionError("expected ValueError for shankuminkan with rinshan pending")
+            apply_kakan(b, 0, meld)
+            raise AssertionError("expected ValueError for kakan with rinshan pending")
         except ValueError:
             pass
 
@@ -146,10 +146,10 @@ class TestShankuminkanErrorGuards:
             discarder_hand=b.hands[0],
         )
         assert b2.turn_phase == TurnPhase.CALL_RESPONSE
-        meld = Meld(MeldKind.SHANKUMINKAN, (tile, tile, tile, tile))
+        meld = Meld(MeldKind.KAKAN, (tile, tile, tile, tile))
         try:
-            apply_shankuminkan(b2, b2.current_seat, meld)
-            raise AssertionError("expected ValueError for shankuminkan during CALL_RESPONSE")
+            apply_kakan(b2, b2.current_seat, meld)
+            raise AssertionError("expected ValueError for kakan during CALL_RESPONSE")
         except ValueError:
             pass
 
@@ -159,10 +159,10 @@ class TestShankuminkanErrorGuards:
         riichi_list[0] = True
         b2 = replace(b, riichi=tuple(riichi_list))
         tile = next(iter(b.hands[0]))
-        meld = Meld(MeldKind.SHANKUMINKAN, (tile, tile, tile, tile))
+        meld = Meld(MeldKind.KAKAN, (tile, tile, tile, tile))
         try:
-            apply_shankuminkan(b2, 0, meld)
-            raise AssertionError("expected ValueError for shankuminkan after riichi")
+            apply_kakan(b2, 0, meld)
+            raise AssertionError("expected ValueError for kakan after riichi")
         except ValueError:
             pass
 

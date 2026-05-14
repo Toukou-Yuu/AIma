@@ -107,19 +107,19 @@ def test_ankan_missing_meld_raises() -> None:
         raise AssertionError("应抛出 ValueError")
 
 
-def test_shankuminkan() -> None:
+def test_kakan() -> None:
     meld = Meld(
-        kind=MeldKind.SHANKUMINKAN,
+        kind=MeldKind.KAKAN,
         tiles=(Tile(Suit.MAN, 9), Tile(Suit.MAN, 9), Tile(Suit.MAN, 9), Tile(Suit.MAN, 9)),
     )
-    la = LegalAction(kind=ActionKind.SHANKUMINKAN, seat=3, meld=meld)
+    la = LegalAction(kind=ActionKind.KAKAN, seat=3, meld=meld)
     a = legal_action_to_action(la)
-    assert a.kind == ActionKind.SHANKUMINKAN
+    assert a.kind == ActionKind.KAKAN
     assert a.meld is meld
 
 
-def test_shankuminkan_missing_meld_raises() -> None:
-    la = LegalAction(kind=ActionKind.SHANKUMINKAN, seat=3, meld=None)
+def test_kakan_missing_meld_raises() -> None:
+    la = LegalAction(kind=ActionKind.KAKAN, seat=3, meld=None)
     try:
         legal_action_to_action(la)
     except ValueError as e:

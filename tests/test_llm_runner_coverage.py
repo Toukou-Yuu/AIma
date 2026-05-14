@@ -83,9 +83,9 @@ class TestFormatCallbackActionLabel:
         result = _format_callback_action_label(act)
         assert "暗杠" in result
 
-    def test_shankuminkan(self) -> None:
-        meld = Meld(MeldKind.SHANKUMINKAN, (MAN5, MAN5, MAN5, MAN5))
-        act = Action(kind=ActionKind.SHANKUMINKAN, seat=0, meld=meld)
+    def test_kakan(self) -> None:
+        meld = Meld(MeldKind.KAKAN, (MAN5, MAN5, MAN5, MAN5))
+        act = Action(kind=ActionKind.KAKAN, seat=0, meld=meld)
         result = _format_callback_action_label(act)
         assert "加杠" in result
 

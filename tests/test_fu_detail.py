@@ -189,15 +189,15 @@ class TestFuDetailNonPinfu:
                               self_wind=NAN, round_wind=TON)
         assert d["sets"] >= 16
 
-    def test_set_fu_with_shankuminkan(self) -> None:
+    def test_set_fu_with_kakan(self) -> None:
         # 加杠视为明杠
-        shankan_meld = Meld(kind=MeldKind.SHANKUMINKAN, tiles=(SOU9, SOU9, SOU9, SOU9),
+        shankan_meld = Meld(kind=MeldKind.KAKAN, tiles=(SOU9, SOU9, SOU9, SOU9),
                             called_tile=SOU9)
         c = Counter({PIN1: 1, PIN2: 1, PIN3: 1, MAN1: 1, MAN2: 1, MAN3: 1,
                      MAN5: 2, MAN4: 1, MAN6: 1})
         d = compute_fu_detail(c, (shankan_meld,), MAN7, for_ron=True, menzen=False, pinfu=False,
                               self_wind=NAN, round_wind=TON)
-        # shankuminkan 终末牌: +16
+        # kakan 终末牌: +16
         assert d["sets"] >= 16
 
     def test_total_rounding(self) -> None:

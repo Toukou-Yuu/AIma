@@ -49,7 +49,7 @@ class ContextEvent:
     @property
     def is_key_event(self) -> bool:
         """是否属于值得优先保留的关键事件。"""
-        if self.action_kind in {"ron", "tsumo", "open_meld", "ankan", "shankuminkan"}:
+        if self.action_kind in {"ron", "tsumo", "open_meld", "ankan", "kakan"}:
             return True
         return "立直" in self.action_text
 

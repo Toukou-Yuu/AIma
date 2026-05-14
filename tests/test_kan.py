@@ -30,7 +30,7 @@ from kernel.engine.state import GameState
 from kernel.kan import (
     apply_after_kan_rinshan_draw,
     apply_ankan,
-    apply_shankuminkan,
+    apply_kakan,
     completed_kan_rinshan_count,
 )
 from kernel.play import apply_discard
@@ -167,12 +167,12 @@ def test_no_more_dora_indicators_raises() -> None:
         apply_after_kan_rinshan_draw(intermediate, d)
 
 
-def test_shankuminkan_then_rinshan() -> None:
+def test_kakan_then_rinshan() -> None:
     b0, t = _board_with_pon_for_shankan()
     d = b0.current_seat
     four = tuple(sorted((t, t, t, t), key=lambda x: (x.rank, 1 if x.is_red else 0)))
-    sk = Meld(MeldKind.SHANKUMINKAN, four, called_tile=None)
-    b1 = apply_shankuminkan(b0, d, sk)
+    sk = Meld(MeldKind.KAKAN, four, called_tile=None)
+    b1 = apply_kakan(b0, d, sk)
     assert b1.turn_phase == TurnPhase.CALL_RESPONSE
     assert b1.call_state is not None
     assert b1.call_state.chankan_rinshan_pending is True
@@ -180,7 +180,7 @@ def test_shankuminkan_then_rinshan() -> None:
     b2 = clear_call_window(b1)
     assert b2.rinshan_draw_index == b0.rinshan_draw_index + 1
     assert b2.last_draw_was_rinshan is True
-    assert any(m.kind == MeldKind.SHANKUMINKAN for m in b2.melds[d])
+    assert any(m.kind == MeldKind.KAKAN for m in b2.melds[d])
 
 
 def _seven_pairs_tenpai_13(t: Tile) -> Counter[Tile]:
@@ -196,7 +196,7 @@ def _seven_pairs_tenpai_13(t: Tile) -> Counter[Tile]:
     return c
 
 
-def test_chankan_ron_after_shankuminkan() -> None:
+def test_chankan_ron_after_kakan() -> None:
     b0, t = _board_with_pon_for_shankan()
     d = b0.current_seat
     opp = (d + 1) % 4
@@ -229,8 +229,8 @@ def test_chankan_ron_after_shankuminkan() -> None:
         call_state=b0.call_state,
     )
     four = tuple(sorted((t, t, t, t), key=lambda x: (x.rank, 1 if x.is_red else 0)))
-    sk = Meld(MeldKind.SHANKUMINKAN, four, called_tile=None)
-    b1 = apply_shankuminkan(b_adj, d, sk)
+    sk = Meld(MeldKind.KAKAN, four, called_tile=None)
+    b1 = apply_kakan(b_adj, d, sk)
     b2 = apply_ron(b1, opp)
     assert opp in b2.call_state.ron_claimants
     assert b2.call_state.finished is True
@@ -240,8 +240,8 @@ def test_chankan_rejects_open_meld() -> None:
     b0, t = _board_with_pon_for_shankan()
     d = b0.current_seat
     four = tuple(sorted((t, t, t, t), key=lambda x: (x.rank, 1 if x.is_red else 0)))
-    sk = Meld(MeldKind.SHANKUMINKAN, four, called_tile=None)
-    b1 = apply_shankuminkan(b0, d, sk)
+    sk = Meld(MeldKind.KAKAN, four, called_tile=None)
+    b1 = apply_kakan(b0, d, sk)
     if t.suit == Suit.HONOR or not (2 <= t.rank <= 8):
         pytest.skip("需中间数牌才能构造吃")
     t_lo = Tile(t.suit, t.rank - 1, False)

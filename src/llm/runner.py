@@ -86,7 +86,7 @@ def _format_callback_action_label(action: Action) -> str:
     if action.kind == ActionKind.ANKAN and action.meld is not None:
         tiles = "".join(tile.to_code() for tile in action.meld.tiles)
         return f"{seat_prefix}暗杠 [{tiles}]".strip()
-    if action.kind == ActionKind.SHANKUMINKAN and action.meld is not None:
+    if action.kind == ActionKind.KAKAN and action.meld is not None:
         tiles = "".join(tile.to_code() for tile in action.meld.tiles)
         return f"{seat_prefix}加杠 [{tiles}]".strip()
     if action.kind == ActionKind.BEGIN_ROUND:

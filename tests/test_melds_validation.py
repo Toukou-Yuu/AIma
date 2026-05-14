@@ -105,20 +105,20 @@ class TestDaiminkanValidation:
             pass
 
 
-# --- SHANKUMINKAN validation ---
+# --- KAKAN validation ---
 
 class TestShankuminkanValidation:
     def test_called_not_in_tiles(self) -> None:
         try:
-            validate_meld_shape(Meld(MeldKind.SHANKUMINKAN, (MAN5, MAN5, MAN5, MAN5), PIN5))
-            raise AssertionError("expected ValueError for shankuminkan called not in tiles")
+            validate_meld_shape(Meld(MeldKind.KAKAN, (MAN5, MAN5, MAN5, MAN5), PIN5))
+            raise AssertionError("expected ValueError for kakan called not in tiles")
         except ValueError:
             pass
 
     def test_triplet_key_mismatch(self) -> None:
         try:
-            validate_meld_shape(Meld(MeldKind.SHANKUMINKAN, (MAN5, MAN5, PIN5, SOU5), MAN5))
-            raise AssertionError("expected ValueError for shankuminkan triplet_key mismatch")
+            validate_meld_shape(Meld(MeldKind.KAKAN, (MAN5, MAN5, PIN5, SOU5), MAN5))
+            raise AssertionError("expected ValueError for kakan triplet_key mismatch")
         except ValueError:
             pass
 

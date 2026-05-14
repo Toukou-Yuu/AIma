@@ -56,7 +56,7 @@ _ACTION_KIND_LABELS = {
     "tsumo": "自摸和了",
     "open_meld": "鸣牌",
     "ankan": "暗杠",
-    "shankuminkan": "加杠",
+    "kakan": "加杠",
     "noop": "无操作",
 }
 

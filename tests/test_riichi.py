@@ -250,7 +250,7 @@ def test_after_riichi_must_tsumogiri_via_play_layer() -> None:
         apply_discard(b, 0, other)
 
 
-def test_shankuminkan_forbidden_when_riichi() -> None:
+def test_kakan_forbidden_when_riichi() -> None:
     from tests.test_kan import _board_with_pon_for_shankan
 
     b, quad_tile = _board_with_pon_for_shankan()
@@ -280,10 +280,10 @@ def test_shankuminkan_forbidden_when_riichi() -> None:
             key=lambda x: (x.rank, 1 if x.is_red else 0),
         )
     )
-    sk = Meld(MeldKind.SHANKUMINKAN, ts, called_tile=quad_tile, from_seat=0)
+    sk = Meld(MeldKind.KAKAN, ts, called_tile=quad_tile, from_seat=0)
     gs = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
     with pytest.raises(IllegalActionError, match="riichi"):
-        apply(gs, Action(ActionKind.SHANKUMINKAN, seat=d, meld=sk))
+        apply(gs, Action(ActionKind.KAKAN, seat=d, meld=sk))
 
 
 def test_board_after_ron_clears_ippatsu() -> None:

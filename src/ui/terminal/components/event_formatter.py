@@ -46,7 +46,7 @@ class EventFormatter:
         "pon": "碰",
         "daiminkan": "大明杠",
         "ankan": "暗杠",
-        "shankuminkan": "加杠",
+        "kakan": "加杠",
     }
 
     # 流局类型映射

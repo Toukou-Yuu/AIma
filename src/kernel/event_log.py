@@ -78,7 +78,7 @@ class CallEvent(GameEvent):
 
     Attributes:
         meld: 副露
-        call_kind: 鸣牌类型 ("chi", "pon", "daiminkan", "ankan", "shankuminkan")
+        call_kind: 鸣牌类型 ("chi", "pon", "daiminkan", "ankan", "kakan")
     """
 
     meld: "Meld"

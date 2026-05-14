@@ -76,7 +76,7 @@ def _meld_to_cn(meld: Any, owner_seat: int) -> str:
         "pon": "碰",
         "daiminkan": "大明杠",
         "ankan": "暗杠",
-        "shankuminkan": "加杠",
+        "kakan": "加杠",
     }
     kind_str = kind_cn.get(meld.kind.value, meld.kind.value)
 
@@ -174,7 +174,7 @@ def action_to_natural_text(action: LegalAction, my_seat: int) -> str:
     if kind == ActionKind.ANKAN and action.meld:
         return _meld_to_cn(action.meld, action.seat)
 
-    if kind == ActionKind.SHANKUMINKAN and action.meld:
+    if kind == ActionKind.KAKAN and action.meld:
         return _meld_to_cn(action.meld, action.seat)
 
     if kind == ActionKind.RIICHI:

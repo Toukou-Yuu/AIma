@@ -205,8 +205,8 @@ class TestFinalSettlement:
         assert new_table.scores == (36500, 36500, 20000, 10000)
         assert new_table.kyoutaku == 0
 
-    def test_supply_remainder_discarded(self) -> None:
-        """供托均分余数舍弃。"""
+    def test_supply_remainder_distributed(self) -> None:
+        """供托均分余数按排序顺序依次分配（点棒守恒）。"""
         table = initial_table_snapshot(
             starting_points=25000,
             kyoutaku=1000,  # 1 根供托
@@ -216,7 +216,12 @@ class TestFinalSettlement:
 
         ranking, new_table = final_settlement(table)
 
-        # 期望：三家各得 333（1000//3），余数 1 舍弃
+        # 期望：三家各得 333（1000//3），余数 1 分给第一个（seat 0）
         assert ranking == (1, 1, 1, 4)
-        assert new_table.scores == (30333, 30333, 30333, 10000)
+        # 修复后：seat 0 = 30000 + 333 + 1 = 30334，其余 = 30000 + 333 = 30333
+        assert new_table.scores == (30334, 30333, 30333, 10000)
         assert new_table.kyoutaku == 0
+        # 验证点棒守恒
+        total_before = 30000 + 30000 + 30000 + 10000 + 1000
+        total_after = 30334 + 30333 + 30333 + 10000
+        assert total_before == total_after

@@ -32,7 +32,7 @@ _CALL_CN: dict[str, str] = {
     "pon": "碰",
     "daiminkan": "大明杠",
     "ankan": "暗杠",
-    "shankuminkan": "加杠",
+    "kakan": "加杠",
 }
 
 

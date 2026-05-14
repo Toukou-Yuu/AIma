@@ -111,7 +111,7 @@ def _natural_action_aliases(action: LegalAction) -> set[str]:
             "pon": "碰",
             "daiminkan": "大明杠",
             "ankan": "暗杠",
-            "shankuminkan": "加杠",
+            "kakan": "加杠",
         }
         kind_text = kind_alias_map.get(meld.kind.value, meld.kind.value)
         tile_text = "".join(_tile_to_cn_text(t) for t in meld.tiles)

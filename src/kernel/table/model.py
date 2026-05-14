@@ -63,6 +63,10 @@ class TableSnapshot:
     某一时刻的场况快照（不含手牌与牌山）。
 
     ``scores`` 下标与座位 ``0..3`` 一致。
+
+    Attributes:
+        starting_dealer_seat: 起家座位（第一局的亲席），用于同分时 tie-break。
+            按照雀魂规则，同分时起家优先（离起家越近排名越高）。
     """
 
     prevailing_wind: PrevailingWind
@@ -71,16 +75,25 @@ class TableSnapshot:
     honba: int
     kyoutaku: int
     scores: tuple[int, int, int, int]
+    starting_dealer_seat: int = 0
     match_preset: MatchPreset = MatchPreset.HANCHAN
 
     def __post_init__(self) -> None:
         validate_table_snapshot(self)
 
 
+def clamp_scores(scores: tuple[int, ...]) -> tuple[int, ...]:
+    """将分数钳位到非负范围（雀魂规则：点棒不为负）。"""
+    return tuple(max(0, s) for s in scores)
+
+
 def validate_table_snapshot(snapshot: TableSnapshot) -> None:
     """校验场况不变量；失败时抛出 ``ValueError``。"""
     if not 0 <= snapshot.dealer_seat <= 3:
         msg = "dealer_seat must be 0..3"
+        raise ValueError(msg)
+    if not 0 <= snapshot.starting_dealer_seat <= 3:
+        msg = "starting_dealer_seat must be 0..3"
         raise ValueError(msg)
     if snapshot.honba < 0:
         msg = "honba must be non-negative"
@@ -91,10 +104,8 @@ def validate_table_snapshot(snapshot: TableSnapshot) -> None:
     if len(snapshot.scores) != 4:
         msg = "scores must have length 4"
         raise ValueError(msg)
-    for i, s in enumerate(snapshot.scores):
-        if s < 0:
-            msg = f"scores[{i}] must be non-negative"
-            raise ValueError(msg)
+    # 注意：分数可以为负（被击飞后结算可能出现负分），
+    # 结算时通过 clamp_scores 钳位到 0。
 
 
 def initial_table_snapshot(
@@ -106,12 +117,19 @@ def initial_table_snapshot(
     honba: int = 0,
     kyoutaku: int = 0,
     match_preset: MatchPreset = MatchPreset.HANCHAN,
+    starting_dealer_seat: int | None = None,
 ) -> TableSnapshot:
-    """生成半庄（或东风战预设）开局默认场况：四家同分、本场与供托为零。"""
+    """生成半庄（或东风战预设）开局默认场况：四家同分、本场与供托为零。
+
+    Args:
+        starting_dealer_seat: 起家座位。若为 None，则使用 dealer_seat 作为起家。
+    """
     if starting_points < 0:
         msg = "starting_points must be non-negative"
         raise ValueError(msg)
     scores = (starting_points, starting_points, starting_points, starting_points)
+    # 若未指定起家，则当前亲席即为起家
+    actual_starting_dealer = starting_dealer_seat if starting_dealer_seat is not None else dealer_seat
     return TableSnapshot(
         prevailing_wind=prevailing_wind,
         round_number=round_number,
@@ -119,5 +137,6 @@ def initial_table_snapshot(
         honba=honba,
         kyoutaku=kyoutaku,
         scores=scores,
+        starting_dealer_seat=actual_starting_dealer,
         match_preset=match_preset,
     )

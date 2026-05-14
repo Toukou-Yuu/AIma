@@ -75,7 +75,7 @@ def _count_sets_by_kind(
             ankan_keys.append(key)
         elif m.kind == MeldKind.DAIMINKAN:
             minkan_keys.append(key)
-        elif m.kind == MeldKind.SHANKUMINKAN:
+        elif m.kind == MeldKind.KAKAN:
             # 加杠视为明杠
             minkan_keys.append(key)
         # 碰也形成刻子，但这里只统计杠

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from kernel.api.meld_candidates import (
     enumerate_ankan_melds,
     enumerate_call_response_open_melds,
-    enumerate_shankuminkan_melds,
+    enumerate_kakan_melds,
 )
 from kernel.call.ron_rules import can_declare_ron
 from kernel.config import DEFAULT_CONFIG
@@ -98,7 +98,7 @@ class LegalAction:
         kind: 动作类型
         seat: 执行者座位
         tile: 打出的牌（DISCARD 时必填）
-        meld: 副露（OPEN_MELD/ANKAN/SHANKUMINKAN 时必填）
+        meld: 副露（OPEN_MELD/ANKAN/KAKAN 时必填）
         declare_riichi: 是否立直宣言（DISCARD 时可选）
     """
 
@@ -143,7 +143,7 @@ def legal_actions(state: GameState, seat: int) -> tuple[LegalAction, ...]:
         if board.turn_phase == TurnPhase.CALL_RESPONSE:
             return _legal_actions_call_response(state, seat)
 
-        # MUST_DISCARD 阶段：只能 DISCARD/TSUMO/ANKAN/SHANKUMINKAN
+        # MUST_DISCARD 阶段：只能 DISCARD/TSUMO/ANKAN/KAKAN
         if board.turn_phase == TurnPhase.MUST_DISCARD:
             return _legal_actions_must_discard(state, seat)
 
@@ -344,7 +344,7 @@ def _legal_actions_must_discard(
                 continue
         actions.append(LegalAction(kind=ActionKind.ANKAN, seat=seat, meld=m))
 
-    for m in enumerate_shankuminkan_melds(board, seat):
-        actions.append(LegalAction(kind=ActionKind.SHANKUMINKAN, seat=seat, meld=m))
+    for m in enumerate_kakan_melds(board, seat):
+        actions.append(LegalAction(kind=ActionKind.KAKAN, seat=seat, meld=m))
 
     return tuple(actions)

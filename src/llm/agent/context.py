@@ -317,7 +317,7 @@ class EpisodeContext:
             tiles = "/".join(t.to_code() for t in m.tiles) if m.tiles else "?"
             return f"暗杠{tiles}"
 
-        if kind == ActionKind.SHANKUMINKAN and action.meld:
+        if kind == ActionKind.KAKAN and action.meld:
             m = action.meld
             tiles = "/".join(t.to_code() for t in m.tiles) if m.tiles else "?"
             return f"加杠{tiles}"
@@ -366,7 +366,7 @@ class EpisodeContext:
             tiles = "/".join(t.to_code() for t in m.tiles) if m.tiles else "?"
             return f"暗杠 {tiles}"
 
-        if kind == ActionKind.SHANKUMINKAN and action.meld:
+        if kind == ActionKind.KAKAN and action.meld:
             m = action.meld
             tiles = "/".join(t.to_code() for t in m.tiles) if m.tiles else "?"
             called = m.called_tile.to_code() if m.called_tile else "?"

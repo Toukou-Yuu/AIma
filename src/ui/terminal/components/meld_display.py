@@ -15,7 +15,7 @@ _MELD_KIND_NAMES = {
     "pon": "碰",
     "daiminkan": "大明杠",
     "ankan": "暗杠",
-    "shankuminkan": "加杠",
+    "kakan": "加杠",
 }
 
 
@@ -52,7 +52,7 @@ class MeldDisplay:
         kind_name = _MELD_KIND_NAMES.get(kind_value, kind_value)
         tiles_text = tiles_to_display(meld.tiles)
 
-        if meld.kind in (MeldKind.ANKAN, MeldKind.SHANKUMINKAN):
+        if meld.kind in (MeldKind.ANKAN, MeldKind.KAKAN):
             return f"{kind_name}[{tiles_text}]"
 
         source = ""

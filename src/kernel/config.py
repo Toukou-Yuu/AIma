@@ -56,6 +56,12 @@ class MahjongConfig:
     kiriage_mangan_enabled: bool = True
 
     # ========== 其他 ==========
+    #: 一发あり：立直后下一巡内和了可计一发
+    ippatsu_enabled: bool = True
+
+    #: 西入あり：半庄战南场结束后若亲家听牌则进入西场（本项目中暂不实现）
+    west_round_enabled: bool = False
+
     #: 立直棒点数（默认 1000 点）
     riichi_stick_value: int = 1_000
 

@@ -60,28 +60,28 @@ def apply_ankan(board: BoardState, seat: int, meld: Meld) -> BoardState:
     return apply_after_kan_rinshan_draw(intermediate, seat)
 
 
-def apply_shankuminkan(board: BoardState, seat: int, meld: Meld) -> BoardState:
-    """加杠：将已有 ``PON`` 与手牌一张合成 ``SHANKUMINKAN``。"""
+def apply_kakan(board: BoardState, seat: int, meld: Meld) -> BoardState:
+    """加杠：将已有 ``PON`` 与手牌一张合成 ``KAKAN``。"""
     from kernel.deal.model import BoardState
 
     validate_meld_shape(meld)
-    if meld.kind != MeldKind.SHANKUMINKAN:
-        msg = "apply_shankuminkan requires SHANKUMINKAN meld"
+    if meld.kind != MeldKind.KAKAN:
+        msg = "apply_kakan requires KAKAN meld"
         raise ValueError(msg)
     if board.turn_phase != TurnPhase.MUST_DISCARD:
-        msg = "SHANKUMINKAN requires MUST_DISCARD"
+        msg = "KAKAN requires MUST_DISCARD"
         raise ValueError(msg)
     if seat != board.current_seat:
-        msg = "SHANKUMINKAN seat must equal current_seat"
+        msg = "KAKAN seat must equal current_seat"
         raise ValueError(msg)
     if board.last_draw_was_rinshan:
-        msg = "SHANKUMINKAN not allowed before discarding after rinshan draw"
+        msg = "KAKAN not allowed before discarding after rinshan draw"
         raise ValueError(msg)
     if board.call_state is not None:
-        msg = "SHANKUMINKAN not allowed during CALL_RESPONSE"
+        msg = "KAKAN not allowed during CALL_RESPONSE"
         raise ValueError(msg)
     if board.riichi[seat]:
-        msg = "SHANKUMINKAN not allowed after riichi (only ANKAN)"
+        msg = "KAKAN not allowed after riichi (only ANKAN)"
         raise ValueError(msg)
     k_new = triplet_key(meld.tiles[0])
     idx = -1
@@ -90,14 +90,14 @@ def apply_shankuminkan(board: BoardState, seat: int, meld: Meld) -> BoardState:
             idx = i
             break
     if idx < 0:
-        msg = "no matching PON for shankuminkan"
+        msg = "no matching PON for kakan"
         raise ValueError(msg)
     old_pon = board.melds[seat][idx]
     old_c = Counter(old_pon.tiles)
     new_c = Counter(meld.tiles)
     diff = new_c - old_c
     if sum(diff.values()) != 1:
-        msg = "shankuminkan must add exactly one hand tile to PON"
+        msg = "kakan must add exactly one hand tile to PON"
         raise ValueError(msg)
     extra = next(iter(diff.elements()))
     new_hand = remove_tile(board.hands[seat], extra)

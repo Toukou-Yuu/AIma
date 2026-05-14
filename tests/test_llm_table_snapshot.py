@@ -153,8 +153,8 @@ class TestMeldSegment:
         result = _meld_segment(m, 0, 0)
         assert "暗杠" in result
 
-    def test_shankuminkan(self) -> None:
-        m = Meld(MeldKind.SHANKUMINKAN, (MAN5, MAN5, MAN5, MAN5))
+    def test_kakan(self) -> None:
+        m = Meld(MeldKind.KAKAN, (MAN5, MAN5, MAN5, MAN5))
         result = _meld_segment(m, 0, 0)
         assert "加杠" in result
 
@@ -293,9 +293,9 @@ class TestActionWireToCn:
         )
         assert "暗杠" in result
 
-    def test_shankuminkan(self) -> None:
+    def test_kakan(self) -> None:
         result = action_wire_to_cn(
-            {"kind": "shankuminkan", "seat": 0, "meld": {"tiles": ["5m", "5m", "5m", "5m"]}},
+            {"kind": "kakan", "seat": 0, "meld": {"tiles": ["5m", "5m", "5m", "5m"]}},
             dealer_seat=0,
         )
         assert "加杠" in result

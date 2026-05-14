@@ -577,7 +577,7 @@ class TestFlowIntegration:
         # 正确计数：只计杠类型
         kan_count = sum(
             1 for m in pon_melds
-            if m.kind in (MeldKind.ANKAN, MeldKind.DAIMINKAN, MeldKind.SHANKUMINKAN)
+            if m.kind in (MeldKind.ANKAN, MeldKind.DAIMINKAN, MeldKind.KAKAN)
         )
         assert kan_count == 0
         assert is_four_kans_flow(kan_count) is False

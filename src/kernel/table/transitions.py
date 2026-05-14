@@ -104,22 +104,28 @@ def compute_match_ranking(table: TableSnapshot) -> tuple[int, ...]:
     例如：``scores = (25000, 25000, 20000, 30000)`` → ``(1, 1, 3, 0)``
     （席次 0 和 1 同分并列 1 位，席次 2 是 3 位，席次 3 是 4 位）
 
+    **Tie-break**：同分时按起家顺序排列，起家优先（距起家越近排名越高）。
+    即：``starting_dealer_seat`` 的座位为 1 位优先，其次是其下家，依此类推。
+
     算法：
     1. 按点棒降序排序席次
-    2. 同分者赋予相同顺位
+    2. 同分者按起家距离升序 tie-break
+    3. 同分者赋予相同顺位
     """
     scores = table.scores
+    starting_dealer = table.starting_dealer_seat
 
-    # 创建 (分数，席次) 列表并按分数降序排序
-    scored = [(scores[i], i) for i in range(4)]
-    scored.sort(key=lambda x: (-x[0], x[1]))  # 分数降序，席次升序（break tie）
+    # 创建 (分数，起家距离，席次) 列表并按分数降序、起家距离升序排序
+    # 起家距离 = (seat - starting_dealer) % 4，越小排名越高
+    scored = [(scores[i], (i - starting_dealer) % 4, i) for i in range(4)]
+    scored.sort(key=lambda x: (-x[0], x[1]))  # 分数降序，起家距离升序
 
     # 计算顺位
     ranking = [0] * 4
     current_rank = 1
     prev_score = None
 
-    for i, (score, seat) in enumerate(scored):
+    for i, (score, _dist, seat) in enumerate(scored):
         if prev_score is not None and score < prev_score:
             current_rank = i + 1  # 顺位 = 当前索引 +1
         ranking[seat] = current_rank
@@ -135,7 +141,7 @@ def final_settlement(
     终局最终结算：计算名次并处理终局供托。
 
     **雀魂规则**：终局时供托归 1 位家。
-    若 1 位多家并列，供托由并列者均分（向下取整，余数舍弃）。
+    若 1 位多家并列，供托由并列者均分，余数按起家顺序依次分配。
 
     返回 ``(ranking, new_table)``：
     - ``ranking``: 名次元组（``compute_match_ranking()`` 结果）
@@ -145,16 +151,26 @@ def final_settlement(
     """
     ranking = compute_match_ranking(table)
 
-    # 确定 1 位
-    first_place_rank = 1
-    first_place_seats = [i for i, r in enumerate(ranking) if r == first_place_rank]
+    # 确定 1 位（按排序顺序，用于余数分配）
+    # 需要重新排序以获取正确的顺序
+    scores = table.scores
+    starting_dealer = table.starting_dealer_seat
+    scored = [(scores[i], (i - starting_dealer) % 4, i) for i in range(4)]
+    scored.sort(key=lambda x: (-x[0], x[1]))  # 分数降序，起家距离升序
 
-    # 供托均分给 1 位
+    # 取分数最高的席位（按排序顺序）
+    first_place_score = scored[0][0]
+    first_place_seats = [seat for score, _dist, seat in scored if score == first_place_score]
+
+    # 供托均分给 1 位（余数按排序顺序依次分配）
     if first_place_seats and table.kyoutaku > 0:
-        per_person = table.kyoutaku // len(first_place_seats)
-        scores = list(table.scores)
-        for seat in first_place_seats:
-            scores[seat] += per_person
-        table = replace(table, scores=tuple(scores), kyoutaku=0)
+        n = len(first_place_seats)
+        per_person = table.kyoutaku // n
+        remainder = table.kyoutaku % n
+        scores_list = list(table.scores)
+        for idx, seat in enumerate(first_place_seats):
+            bonus = 1 if idx < remainder else 0
+            scores_list[seat] += per_person + bonus
+        table = replace(table, scores=tuple(scores_list), kyoutaku=0)
 
     return ranking, table

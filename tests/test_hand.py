@@ -124,17 +124,17 @@ def test_ankan_rejects_called() -> None:
         validate_meld_shape(m)
 
 
-def test_shankuminkan_optional_called() -> None:
+def test_kakan_optional_called() -> None:
     a = _p(5, False)
     b = _p(5, True)
     tiles = (a, a, a, b)
-    validate_meld_shape(Meld(MeldKind.SHANKUMINKAN, tiles, called_tile=None))
-    validate_meld_shape(Meld(MeldKind.SHANKUMINKAN, tiles, called_tile=b))
+    validate_meld_shape(Meld(MeldKind.KAKAN, tiles, called_tile=None))
+    validate_meld_shape(Meld(MeldKind.KAKAN, tiles, called_tile=b))
 
 
-def test_shankuminkan_rejects_bad_called() -> None:
+def test_kakan_rejects_bad_called() -> None:
     tiles = (_p(3),) * 4
-    m = Meld(MeldKind.SHANKUMINKAN, tiles, called_tile=_p(4))
+    m = Meld(MeldKind.KAKAN, tiles, called_tile=_p(4))
     with pytest.raises(ValueError, match="called_tile"):
         validate_meld_shape(m)
 

@@ -115,14 +115,14 @@ def test_must_discard_lists_ankan_when_four_in_hand() -> None:
     assert any(a.meld and a.meld.kind == MeldKind.ANKAN for a in ankan)
 
 
-def test_must_discard_lists_shankuminkan_when_pon_plus_tile() -> None:
+def test_must_discard_lists_kakan_when_pon_plus_tile() -> None:
     b, t = _board_with_pon_for_shankan()
     d = b.current_seat
     g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
     acts = legal_actions(g, d)
-    sk = [a for a in acts if a.kind == ActionKind.SHANKUMINKAN]
+    sk = [a for a in acts if a.kind == ActionKind.KAKAN]
     assert sk, "明刻加手牌一张时应枚举加杠"
-    assert any(a.meld and a.meld.kind == MeldKind.SHANKUMINKAN for a in sk)
+    assert any(a.meld and a.meld.kind == MeldKind.KAKAN for a in sk)
 
 
 def test_wire_roundtrip_open_meld() -> None:
@@ -191,12 +191,12 @@ def test_chi_stage_only_shimocha_gets_chi_actions() -> None:
     )
 
 
-def test_natural_text_roundtrip_shankuminkan() -> None:
+def test_natural_text_roundtrip_kakan() -> None:
     b, _t = _board_with_pon_for_shankan()
     d = b.current_seat
     g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
     acts = legal_actions(g, d)
-    sk = next(a for a in acts if a.kind == ActionKind.SHANKUMINKAN)
+    sk = next(a for a in acts if a.kind == ActionKind.KAKAN)
     text = action_to_natural_text(sk, d)
     assert text.startswith("加杠")
     assert find_matching_legal_action(acts, {"action": text, "why": "测试"}) == sk

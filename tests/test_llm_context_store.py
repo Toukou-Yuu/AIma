@@ -67,9 +67,9 @@ def test_is_key_event_ankan() -> None:
     assert _event(action_kind="ankan", action_text="暗杠1m").is_key_event
 
 
-def test_is_key_event_shankuminkan() -> None:
-    """shankuminkan 属于关键事件。"""
-    assert _event(action_kind="shankuminkan", action_text="加杠5m").is_key_event
+def test_is_key_event_kakan() -> None:
+    """kakan 属于关键事件。"""
+    assert _event(action_kind="kakan", action_text="加杠5m").is_key_event
 
 
 def test_is_key_event_riichi_in_text() -> None:

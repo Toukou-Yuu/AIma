@@ -62,12 +62,13 @@ def settle_ron_table(
     ura_indicators: tuple[Tile, ...] = (),
     allow_open_tanyao: bool = True,
     is_chankan: bool = False,
-    continue_dealer: bool = False,
 ) -> tuple[TableSnapshot, tuple[WinSettlementLine, ...], tuple[int, int, int, int]]:
     """
     一炮多响：每位和了者从放铳家收取完整荣和点（含本场）；供托清零并按席位数整数分给和了者。
 
     返回 ``(新场况, 和了明细行, 各家点棒本局增减)``。
+
+    注意：本场数（honba）由调用方通过 ``update_honba`` 更新。
     """
     if not ron_winners:
         msg = "ron_winners must be non-empty"
@@ -210,8 +211,7 @@ def settle_ron_table(
                 points=prev.points + share,
             )
 
-    new_honba = table.honba + 1 if continue_dealer else 0
-    new_table = replace(table, scores=tuple(scores), kyoutaku=0, honba=new_honba)
+    new_table = replace(table, scores=tuple(scores), kyoutaku=0)
     payments = tuple(new_table.scores[i] - old_scores[i] for i in range(4))
     return new_table, tuple(built), payments
 
@@ -224,11 +224,12 @@ def settle_tsumo_table(
     win_tile: Tile,
     ura_indicators: tuple[Tile, ...] = (),
     allow_open_tanyao: bool = True,
-    continue_dealer: bool = False,
 ) -> tuple[TableSnapshot, tuple[WinSettlementLine, ...], tuple[int, int, int, int]]:
     """自摸：三家点棒按子/亲公式；供托归和了者。
 
     返回 ``(新场况, 和了明细行, 各家点棒本局增减)``。
+
+    注意：本场数（honba）由调用方通过 ``update_honba`` 更新。
     """
     if not 0 <= winner <= 3:
         msg = "winner must be 0..3"
@@ -343,7 +344,6 @@ def settle_tsumo_table(
         points=points_line,
     )
 
-    new_honba = table.honba + 1 if continue_dealer else 0
-    new_table = replace(table, scores=tuple(scores), kyoutaku=0, honba=new_honba)
+    new_table = replace(table, scores=tuple(scores), kyoutaku=0)
     payments = tuple(new_table.scores[i] - old_scores[i] for i in range(4))
     return new_table, (line,), payments

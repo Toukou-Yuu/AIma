@@ -145,8 +145,8 @@ def enumerate_ankan_melds(board: BoardState, seat: int) -> tuple[Meld, ...]:
     return tuple(out)
 
 
-def enumerate_shankuminkan_melds(board: BoardState, seat: int) -> tuple[Meld, ...]:
-    """``MUST_DISCARD`` 下可加杠的 ``Meld``（立直后无；引擎与 ``apply_shankuminkan`` 一致）。"""
+def enumerate_kakan_melds(board: BoardState, seat: int) -> tuple[Meld, ...]:
+    """``MUST_DISCARD`` 下可加杠的 ``Meld``（立直后无；引擎与 ``apply_kakan`` 一致）。"""
     if board.turn_phase != TurnPhase.MUST_DISCARD:
         return ()
     if seat != board.current_seat or board.last_draw_was_rinshan or board.call_state is not None:
@@ -167,7 +167,7 @@ def enumerate_shankuminkan_melds(board: BoardState, seat: int) -> tuple[Meld, ..
             if triplet_key(extra) != k0:
                 continue
             tiles = tuple(sorted(pon.tiles + (extra,), key=_pon_sort_key))
-            m = Meld(kind=MeldKind.SHANKUMINKAN, tiles=tiles, called_tile=None, from_seat=None)
+            m = Meld(kind=MeldKind.KAKAN, tiles=tiles, called_tile=None, from_seat=None)
             try:
                 validate_meld_shape(m)
                 new_c = Counter(m.tiles)

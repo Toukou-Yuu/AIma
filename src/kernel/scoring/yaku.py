@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
+from kernel.config import DEFAULT_CONFIG, MahjongConfig
 from kernel.deal.model import BoardState
 from kernel.hand.melds import Meld, MeldKind, triplet_key
 from kernel.table.model import PrevailingWind, TableSnapshot, seat_wind_rank
@@ -146,7 +147,7 @@ def _is_sanshoku_doukou(full: Counter[Tile]) -> bool:
 def _count_kan_melds(melds: tuple[Meld, ...]) -> int:
     """副露中大明杠／暗杠／加杠的组数。"""
     return sum(
-        1 for m in melds if m.kind in (MeldKind.DAIMINKAN, MeldKind.ANKAN, MeldKind.SHANKUMINKAN)
+        1 for m in melds if m.kind in (MeldKind.DAIMINKAN, MeldKind.ANKAN, MeldKind.KAKAN)
     )
 
 
@@ -447,7 +448,7 @@ def _is_suuankou_tanki(
 ) -> bool:
     """
     四暗刻单骑：门前清四暗刻 + 单骑待牌。
-    双倍役满。
+    役满。
     仅荣和时成立（自摸时是普通四暗刻）。
     """
     if melds:
@@ -520,7 +521,7 @@ def _is_kokushi_thirteen_waits(
 ) -> bool:
     """
     国士无理十三面：十三面待牌的国士。
-    双倍役满。
+    役满。
     """
     if melds:
         return False
@@ -685,7 +686,7 @@ def _is_junsei_chuuren_poutou(
 ) -> bool:
     """
     纯正九莲宝灯：九面待牌的九莲宝灯。
-    双倍役满。
+    役满。
     条件：手牌 1112345678999 待任意同花色牌（1-9 任意）。
     """
     if melds:
@@ -720,7 +721,7 @@ def _is_suu_kantsu(melds: tuple[Meld, ...]) -> bool:
     役满。
     """
     kan_count = sum(
-        1 for m in melds if m.kind in (MeldKind.DAIMINKAN, MeldKind.ANKAN, MeldKind.SHANKUMINKAN)
+        1 for m in melds if m.kind in (MeldKind.DAIMINKAN, MeldKind.ANKAN, MeldKind.KAKAN)
     )
     return kan_count == 4
 
@@ -849,6 +850,7 @@ def non_dora_yaku_han_and_labels(
     is_hotei: bool = False,
     is_chankan: bool = False,
     is_tsumo: bool = False,
+    config: MahjongConfig = DEFAULT_CONFIG,
 ) -> tuple[int, tuple[str, ...]]:
     """
     与 ``count_yaku_han`` 相同的非ドラ役番累计，并返回简体役名列表（供事件日志）。
@@ -896,7 +898,7 @@ def non_dora_yaku_han_and_labels(
     elif board.riichi[winner]:
         han += 1
         labels.append("立直")
-    if winner in board.ippatsu_eligible:
+    if config.ippatsu_enabled and winner in board.ippatsu_eligible:
         han += 1
         labels.append("一发")
 
@@ -1042,6 +1044,7 @@ def count_yaku_han(
     is_hotei: bool = False,
     is_chankan: bool = False,
     is_tsumo: bool = False,
+    config: MahjongConfig = DEFAULT_CONFIG,
 ) -> int:
     """
     役与翻数（扩展子集）：
@@ -1082,4 +1085,5 @@ def count_yaku_han(
         is_hotei=is_hotei,
         is_chankan=is_chankan,
         is_tsumo=is_tsumo,
+        config=config,
     )[0]

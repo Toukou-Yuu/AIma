@@ -130,9 +130,9 @@ class TestActionToNaturalText:
         result = action_to_natural_text(la, 0)
         assert "暗杠" in result
 
-    def test_shankuminkan(self) -> None:
-        meld = Meld(MeldKind.SHANKUMINKAN, (MAN5, MAN5, MAN5, MAN5))
-        la = LegalAction(kind=ActionKind.SHANKUMINKAN, tile=None, seat=0, meld=meld, declare_riichi=False)
+    def test_kakan(self) -> None:
+        meld = Meld(MeldKind.KAKAN, (MAN5, MAN5, MAN5, MAN5))
+        la = LegalAction(kind=ActionKind.KAKAN, tile=None, seat=0, meld=meld, declare_riichi=False)
         result = action_to_natural_text(la, 0)
         assert "加杠" in result
 

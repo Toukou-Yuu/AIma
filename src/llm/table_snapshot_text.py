@@ -20,7 +20,7 @@ _CALL_KIND_CN: dict[str, str] = {
     "pon": "碰",
     "daiminkan": "大明杠",
     "ankan": "暗杠",
-    "shankuminkan": "加杠",
+    "kakan": "加杠",
 }
 
 _WIND_SEAT = ("东", "南", "西", "北")
@@ -68,7 +68,7 @@ def _meld_segment(m: Meld, owner_seat: int, dealer_seat: int) -> str:
     tiles_s = "".join(t.to_code() for t in m.tiles)
     if k == MeldKind.ANKAN:
         return f"暗杠[{tiles_s}]"
-    if k == MeldKind.SHANKUMINKAN:
+    if k == MeldKind.KAKAN:
         return f"加杠[{tiles_s}]"
     ds = _discarder_seat_for_meld(owner_seat, m)
     if ds is None:
@@ -329,7 +329,7 @@ def action_wire_to_cn(
         m = w.get("meld") or {}
         ts = "".join(m.get("tiles") or [])
         return f"{who} 暗杠 [{ts}]"
-    if kind == "shankuminkan":
+    if kind == "kakan":
         m = w.get("meld") or {}
         ts = "".join(m.get("tiles") or [])
         return f"{who} 加杠 [{ts}]"

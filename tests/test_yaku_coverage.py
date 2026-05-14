@@ -627,6 +627,22 @@ class TestRiichiIppatsu:
         )
         assert "一发" in labels
 
+    def test_ippatsu_disabled(self) -> None:
+        """ippatsu_enabled=False 时不计一发。"""
+        from dataclasses import replace
+        from kernel.config import MahjongConfig
+        board = _board_stub()
+        b2 = replace(board, ippatsu_eligible=frozenset({0}))
+        table = _table()
+        concealed = Counter({MAN2: 2, MAN3: 3, MAN4: 3, PIN5: 3, SOU6: 3})
+        config = MahjongConfig(ippatsu_enabled=False)
+        han, labels = non_dora_yaku_han_and_labels(
+            b2, table, 0, for_ron=True, win_tile=MAN2,
+            concealed=concealed, melds=(),
+            config=config,
+        )
+        assert "一发" not in labels
+
 
 # --- non_dora_yaku_han_and_labels: chiitoitsu sub-yaku ---
 

@@ -1244,7 +1244,7 @@ class TestAnkan:
         else:
             raise AssertionError("expected error for ANKAN without meld")
 
-    def test_shankuminkan_wrong_turn_phase(self) -> None:
+    def test_kakan_wrong_turn_phase(self) -> None:
         """非 MUST_DISCARD 阶段加杠应报错。"""
         g0 = initial_game_state()
         wall = tuple(build_deck())
@@ -1252,13 +1252,13 @@ class TestAnkan:
         ds = g1.board.current_seat
         tile = next(iter(g1.board.hands[ds].elements()))
         g2 = apply(g1, Action(ActionKind.DISCARD, seat=ds, tile=tile)).new_state
-        shankan_meld = Meld(kind=MeldKind.SHANKUMINKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=MAN1)
+        shankan_meld = Meld(kind=MeldKind.KAKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=MAN1)
         try:
-            apply(g2, Action(ActionKind.SHANKUMINKAN, seat=g2.board.current_seat, meld=shankan_meld))
+            apply(g2, Action(ActionKind.KAKAN, seat=g2.board.current_seat, meld=shankan_meld))
         except Exception:
             pass
         else:
-            raise AssertionError("expected error for SHANKUMINKAN in CALL_RESPONSE")
+            raise AssertionError("expected error for KAKAN in CALL_RESPONSE")
 
 
 # --- ANKAN 成功路径 ---
@@ -1296,12 +1296,12 @@ class TestAnkanSuccess:
         assert len(result.new_state.board.melds[0]) >= 1
 
 
-# --- SHANKUMINKAN 成功路径 ---
+# --- KAKAN 成功路径 ---
 
 class TestShankuminkanSuccess:
-    """SHANKUMINKAN 成功路径。"""
+    """KAKAN 成功路径。"""
 
-    def test_shankuminkan_success(self) -> None:
+    def test_kakan_success(self) -> None:
         """加杠成功 → 岭上摸牌 → MUST_DISCARD。"""
         from dataclasses import replace
         # 构造手牌含 1 张 + 碰副露 3 张
@@ -1327,8 +1327,8 @@ class TestShankuminkanSuccess:
             table=initial_table_snapshot(),
             board=b,
         )
-        shankan_meld = Meld(kind=MeldKind.SHANKUMINKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=MAN1)
-        result = apply(g, Action(ActionKind.SHANKUMINKAN, seat=0, meld=shankan_meld))
+        shankan_meld = Meld(kind=MeldKind.KAKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=MAN1)
+        result = apply(g, Action(ActionKind.KAKAN, seat=0, meld=shankan_meld))
         # 加杠后进入 CALL_RESPONSE（抢杠窗口）
         assert result.new_state.board.turn_phase == TurnPhase.CALL_RESPONSE
 
@@ -1539,31 +1539,31 @@ class TestMoreErrorGuards:
         else:
             raise AssertionError("expected error for ANKAN without meld")
 
-    def test_shankuminkan_requires_seat(self) -> None:
-        """SHANKUMINKAN 无 seat 应报错。"""
+    def test_kakan_requires_seat(self) -> None:
+        """KAKAN 无 seat 应报错。"""
         g0 = initial_game_state()
         wall = tuple(build_deck())
         g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=wall)).new_state
-        meld = Meld(kind=MeldKind.SHANKUMINKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=MAN1)
+        meld = Meld(kind=MeldKind.KAKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=MAN1)
         try:
-            apply(g1, Action(ActionKind.SHANKUMINKAN, meld=meld))
+            apply(g1, Action(ActionKind.KAKAN, meld=meld))
         except Exception:
             pass
         else:
-            raise AssertionError("expected error for SHANKUMINKAN without seat")
+            raise AssertionError("expected error for KAKAN without seat")
 
-    def test_shankuminkan_requires_meld(self) -> None:
-        """SHANKUMINKAN 无 meld 应报错。"""
+    def test_kakan_requires_meld(self) -> None:
+        """KAKAN 无 meld 应报错。"""
         g0 = initial_game_state()
         wall = tuple(build_deck())
         g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=wall)).new_state
         ds = g1.board.current_seat
         try:
-            apply(g1, Action(ActionKind.SHANKUMINKAN, seat=ds))
+            apply(g1, Action(ActionKind.KAKAN, seat=ds))
         except Exception:
             pass
         else:
-            raise AssertionError("expected error for SHANKUMINKAN without meld")
+            raise AssertionError("expected error for KAKAN without meld")
 
     def test_call_pass_drain_requires_no_seat(self) -> None:
         """CALL_PASS_DRAIN 有 seat 应报错。"""

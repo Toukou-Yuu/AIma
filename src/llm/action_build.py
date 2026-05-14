@@ -43,10 +43,10 @@ def legal_action_to_action(la: LegalAction) -> Action:
             msg = "ANKAN LegalAction requires meld"
             raise ValueError(msg)
         return Action(ActionKind.ANKAN, seat=la.seat, meld=la.meld)
-    if k == ActionKind.SHANKUMINKAN:
+    if k == ActionKind.KAKAN:
         if la.meld is None:
-            msg = "SHANKUMINKAN LegalAction requires meld"
+            msg = "KAKAN LegalAction requires meld"
             raise ValueError(msg)
-        return Action(ActionKind.SHANKUMINKAN, seat=la.seat, meld=la.meld)
+        return Action(ActionKind.KAKAN, seat=la.seat, meld=la.meld)
     msg = f"unsupported LegalAction.kind: {k!r}"
     raise ValueError(msg)

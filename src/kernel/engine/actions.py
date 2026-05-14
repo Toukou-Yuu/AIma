@@ -32,8 +32,8 @@ class ActionKind(Enum):
     """吃 / 碰 / 大明杠；须配合 ``meld`` 字段。"""
     ANKAN = "ankan"
     """暗杠；``IN_ROUND`` 且 ``MUST_DISCARD``、非岭上待打；须 ``meld`` 为 ``MeldKind.ANKAN``。"""
-    SHANKUMINKAN = "shankuminkan"
-    """加杠；条件同暗杠；须 ``meld`` 为 ``MeldKind.SHANKUMINKAN``。"""
+    KAKAN = "kakan"
+    """加杠；条件同暗杠；须 ``meld`` 为 ``MeldKind.KAKAN``。"""
 
 
 @dataclass(frozen=True, slots=True)

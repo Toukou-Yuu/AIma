@@ -112,10 +112,10 @@ class TestDescribeAction:
         result = ctx._describe_action(d.action)
         assert "暗杠" in result
 
-    def test_shankuminkan(self) -> None:
-        meld = Meld(MeldKind.SHANKUMINKAN, (MAN5, MAN5, MAN5, MAN5), MAN5)
+    def test_kakan(self) -> None:
+        meld = Meld(MeldKind.KAKAN, (MAN5, MAN5, MAN5, MAN5), MAN5)
         ctx = _ctx()
-        d = _decision(ActionKind.SHANKUMINKAN, meld=meld)
+        d = _decision(ActionKind.KAKAN, meld=meld)
         result = ctx._describe_action(d.action)
         assert "加杠" in result
 
@@ -162,10 +162,10 @@ class TestDescribeActionSummary:
         assert result is not None
         assert "暗杠" in result
 
-    def test_shankuminkan_summary(self) -> None:
-        meld = Meld(MeldKind.SHANKUMINKAN, (MAN5, MAN5, MAN5, MAN5), MAN5)
+    def test_kakan_summary(self) -> None:
+        meld = Meld(MeldKind.KAKAN, (MAN5, MAN5, MAN5, MAN5), MAN5)
         ctx = _ctx()
-        d = _decision(ActionKind.SHANKUMINKAN, meld=meld)
+        d = _decision(ActionKind.KAKAN, meld=meld)
         result = ctx._describe_action_summary(d.action)
         assert result is not None
         assert "加杠" in result
