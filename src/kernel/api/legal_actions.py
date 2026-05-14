@@ -5,6 +5,7 @@ K14 核心模块：枚举某席在当前局面下可执行的所有合法动作�
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 

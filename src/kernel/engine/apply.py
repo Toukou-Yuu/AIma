@@ -483,8 +483,8 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
                         )
                         hand_over_event = eb.hand_over(
                             winners=(),
-                            payments={},
-                            win_lines={},
+                            payments=(0, 0, 0, 0),
+                            win_lines=(),
                         )
                         return ApplyOutcome(
                             new_state=GameState(
