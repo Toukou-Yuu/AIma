@@ -161,6 +161,7 @@ def _merge_config(
     llm_cfg = yaml_cfg["llm"]
     yaml_defaults = {
         "seed": match_cfg["seed"],
+        "wall_file": match_cfg.get("wall_file"),
         "match_end": {
             "type": match_end_cfg["type"],
             "value": match_end_cfg["value"],
@@ -214,6 +215,13 @@ def _merge_config(
         ]
         for i in range(len(result.players), 4):
             result.players.append({"id": "default", "seat": i})
+
+    # 特殊处理 wall_file：仅支持单局，自动设置 match_end
+    if result.wall_file is not None:
+        if result.match_end.get("value", 1) > 1:
+            print("--wall-file 仅支持单局对局，请使用 --max-hands 1", file=sys.stderr)
+            sys.exit(2)
+        result.match_end = {"type": "hands", "value": 1, "allow_negative": False}
 
     return result
 
@@ -293,6 +301,7 @@ def _cmd_watch_dry_run(
     seed: int,
     delay: float,
     *,
+    wall_file: str | None = None,
     request_delay: float,
     history_budget: int,
     context_scope: str,
@@ -386,6 +395,7 @@ def _cmd_watch_dry_run(
             callback.set_player_names(player_names)
         rr = run_llm_match(
             seed=seed,
+            wall_file=Path(wall_file) if wall_file else None,
             match_end=me,
             seat_clients=seat_clients,
             dry_run=dry_run,
@@ -450,6 +460,12 @@ def main(argv: list[str] | None = None) -> int:
         help="YAML 配置文件路径（默认 configs/aima_kernel.yaml）",
     )
     p.add_argument("--seed", type=int, default=None, help="首局洗牌种子（默认 0）")
+    p.add_argument(
+        "--wall-file",
+        metavar="PATH",
+        default=None,
+        help="JSON 文件路径，包含自定义牌山（仅支持单局，自动设置 --max-hands 1）",
+    )
     p.add_argument(
         "--max-player-steps",
         type=int,
@@ -599,6 +615,7 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_watch_dry_run(
                 cfg.seed,
                 cfg.watch_delay,
+                wall_file=cfg.wall_file,
                 match_end=cfg.match_end,
                 dry_run=cfg.dry_run,
                 request_delay=cfg.request_delay,
@@ -673,6 +690,7 @@ def main(argv: list[str] | None = None) -> int:
         with simple_session_path.open("w", encoding="utf-8") as simple_fp:
             rr = run_llm_match(
                 seed=cfg.seed,
+                wall_file=Path(cfg.wall_file) if cfg.wall_file else None,
                 match_end=me,
                 seat_clients=seat_clients,
                 dry_run=cfg.dry_run,
@@ -693,6 +711,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         rr = run_llm_match(
             seed=cfg.seed,
+            wall_file=Path(cfg.wall_file) if cfg.wall_file else None,
             match_end=me,
             seat_clients=seat_clients,
             dry_run=cfg.dry_run,

@@ -6,6 +6,7 @@ import json
 import logging
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, TextIO
 
 from kernel import (
@@ -308,9 +309,59 @@ class RunResult:
         )
 
 
+def _load_wall_from_file(path: Any) -> tuple[Tile, ...]:
+    """从 JSON 文件加载并验证牌山。
+
+    Args:
+        path: JSON 文件路径（Path 对象或字符串）
+
+    Returns:
+        136 张牌的 tuple
+
+    Raises:
+        ValueError: 文件格式错误、牌码无效或牌山不合规
+    """
+    from pathlib import Path
+
+    p = Path(path) if not isinstance(path, Path) else path
+    try:
+        raw = p.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except FileNotFoundError as e:
+        raise ValueError(f"牌山文件不存在: {p}") from e
+    except json.JSONDecodeError as e:
+        raise ValueError(f"牌山文件 JSON 解析失败: {e}") from e
+
+    # 验证 format_version（可选，默认 1）
+    fv = int(data.get("format_version", 1))
+    if fv != 1:
+        raise ValueError(f"不支持牌山格式版本: {fv}，仅支持版本 1")
+
+    wall_codes = data.get("wall")
+    if not isinstance(wall_codes, list):
+        raise ValueError("牌山文件缺少 'wall' 数组字段")
+
+    if len(wall_codes) != 136:
+        raise ValueError(f"牌山必须为 136 张，当前: {len(wall_codes)}")
+
+    from kernel.deal import assert_wall_is_standard_deck
+    from kernel.replay_json import tile_from_code
+
+    try:
+        wall = tuple(tile_from_code(code) for code in wall_codes)
+    except ValueError as e:
+        raise ValueError(f"牌山包含无效牌码: {e}") from e
+
+    # 验证牌山合规性
+    assert_wall_is_standard_deck(wall)
+
+    return wall
+
+
 def run_llm_match(
     *,
     seed: int,
+    wall_file: Path | None = None,
     match_end: MatchEndCondition,
     request_delay_seconds: float,
     history_budget: int,
@@ -434,8 +485,13 @@ def run_llm_match(
         for s in range(4)
     }
     state = initial_game_state()
-    wall_seed = seed
-    wall = tuple(shuffle_deck(build_deck(), seed=wall_seed))
+    # 首局牌山：优先使用 wall_file，否则用 seed 生成
+    if wall_file is not None:
+        wall = _load_wall_from_file(wall_file)
+        wall_seed = seed
+    else:
+        wall_seed = seed
+        wall = tuple(shuffle_deck(build_deck(), seed=wall_seed))
     wall_seed += 1
 
     actions_acc: list[dict[str, Any]] = []
