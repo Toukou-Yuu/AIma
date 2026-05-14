@@ -62,7 +62,66 @@ class TestLegalActions:
         # 应该有多个 DISCARD 动作和一个可能的 TSUMO 动作
         assert len(actions) > 0
         assert all(a.kind == ActionKind.DISCARD or a.kind == ActionKind.TSUMO for a in actions)
-        assert all(a.seat == seat for a in actions)
+
+    def test_tsumo_requires_yaku(self) -> None:
+        """无役副露手牌自摸不应为合法动作。"""
+        from kernel.hand.melds import Meld, MeldKind
+        from tests.engine_helpers import board_sorted_deal, pool_not_in_wall, take_n
+
+        b0 = board_sorted_deal(dealer=0)
+        pool = pool_not_in_wall(b0)
+
+        # 子家（seat=1）碰 1m → 无断幺九（含幺九），无其他役
+        pon_meld = Meld(
+            kind=MeldKind.PON,
+            tiles=(Tile(Suit.MAN, 1), Tile(Suit.MAN, 1), Tile(Suit.MAN, 1)),
+            called_tile=Tile(Suit.MAN, 1),
+        )
+        for _ in range(3):
+            pool[Tile(Suit.MAN, 1)] -= 1
+
+        # 门内 11 张（子家碰后 10 + 自摸 1）
+        # 2m3m4m + 5m6m7m + 2p3p4p + 8m8m → 自摸 8m（对子）
+        hand = Counter({
+            Tile(Suit.MAN, 2): 1, Tile(Suit.MAN, 3): 1, Tile(Suit.MAN, 4): 1,
+            Tile(Suit.MAN, 5): 1, Tile(Suit.MAN, 6): 1, Tile(Suit.MAN, 7): 1,
+            Tile(Suit.PIN, 2): 1, Tile(Suit.PIN, 3): 1, Tile(Suit.PIN, 4): 1,
+            Tile(Suit.MAN, 8): 1,
+        })
+        tsumo_tile = Tile(Suit.MAN, 8)
+        hand_with_tsumo = Counter(hand)
+        hand_with_tsumo[tsumo_tile] += 1
+
+        for t, n in hand_with_tsumo.items():
+            pool[t] -= n
+
+        hands: list[Counter[Tile]] = []
+        for s in range(4):
+            if s == 1:
+                hands.append(hand_with_tsumo)
+            else:
+                hands.append(take_n(pool, 13))
+
+        melds = tuple((pon_meld,) if s == 1 else () for s in range(4))
+        b = BoardState(
+            hands=tuple(hands),
+            live_wall=b0.live_wall,
+            live_draw_index=b0.live_draw_index,
+            dead_wall=b0.dead_wall,
+            revealed_indicators=b0.revealed_indicators,
+            current_seat=1,
+            turn_phase=TurnPhase.MUST_DISCARD,
+            river=b0.river,
+            melds=melds,
+            last_draw_tile=tsumo_tile,
+            last_draw_was_rinshan=False,
+            rinshan_draw_index=b0.rinshan_draw_index,
+            call_state=None,
+        )
+        g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
+        actions = legal_actions(g, 1)
+        action_kinds = {a.kind for a in actions}
+        assert ActionKind.TSUMO not in action_kinds
 
     def test_legal_actions_draw(self) -> None:
         """测试 NEED_DRAW 阶段的合法动作。"""

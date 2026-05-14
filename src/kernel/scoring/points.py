@@ -16,26 +16,15 @@ def apply_kiriage_mangan(
     config: MahjongConfig = DEFAULT_CONFIG,
 ) -> int:
     """
-    切上满贯适用：3 番 110 符或 4 番 70 符以上按满贯处理。
+    切上满贯适用：子家基础点经百切后落在 [7700, 7900] 时切上为满贯 8000。
 
-    Args:
-        base: 基础点数
-        fu: 符数
-        han: 番数
-        config: 规则配置（默认使用雀魂标准配置）
-
-    Returns:
-        适用切上满贯后的点数
+    典型场景：3 番 60 符 = 7680 → 7700，4 番 30 符 = 7680 → 7700。
+    仅处理子家边界情况，满贯阶梯封顶和亲家切上由调用方负责。
     """
     if not config.kiriage_mangan_enabled:
         return base
-    # 3 番 110 符：110 * 4 * 2^(2+3) = 110 * 4 * 32 = 14080 → 满贯 8000
-    # 4 番 70 符：70 * 4 * 2^(2+4) = 70 * 4 * 64 = 17920 → 满贯 12000
-    # 5 番：8000/12000（满贯）
-    if han == 3 and fu >= 110:
+    if 7700 <= base <= 7900:
         return 8000
-    if han == 4 and fu >= 70:
-        return 12000
     return base
 
 
@@ -53,7 +42,10 @@ def child_ron_base_points(fu: int, han: int, config: MahjongConfig = DEFAULT_CON
         return 8_000
     raw = fu * 4 * (2 ** (2 + han))
     base = round_up_100(raw)
-    return apply_kiriage_mangan(base, fu, han, config)
+    base = apply_kiriage_mangan(base, fu, han, config)
+    if config.kiriage_mangan_enabled and base > 8000:
+        return 8000
+    return base
 
 
 def dealer_ron_base_points(fu: int, han: int, config: MahjongConfig = DEFAULT_CONFIG) -> int:
@@ -70,7 +62,10 @@ def dealer_ron_base_points(fu: int, han: int, config: MahjongConfig = DEFAULT_CO
         return 12_000
     raw = fu * 6 * (2 ** (2 + han))
     base = round_up_100(raw)
-    return apply_kiriage_mangan(base, fu, han, config)
+    base = apply_kiriage_mangan(base, fu, han, config)
+    if config.kiriage_mangan_enabled and base > 12000:
+        return 12000
+    return base
 
 
 def child_ron_payment_from_discarder(

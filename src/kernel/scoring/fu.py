@@ -108,6 +108,162 @@ def _count_sets_by_kind(
     }
 
 
+def _wait_type_fu(
+    concealed: Counter[Tile],
+    melds: tuple[Meld, ...],
+    win_tile: Tile,
+    *,
+    for_ron: bool,
+) -> int:
+    """
+    听牌类型加符：嵌张/单骑/边张 +2，两面/双碰 0。
+    仅在荣和时判定（自摸的听牌类型由荣和同理推导）。
+    """
+    # 构造和了前的 13 张门内
+    before = Counter(concealed)
+    if for_ron:
+        # 荣和：concealed 是 13 张，win_tile 是第 14 张
+        pass
+    else:
+        # 自摸：concealed 是 14 张（含摸到的牌），减去 win_tile 得到 13 张
+        before[win_tile] -= 1
+        if before[win_tile] == 0:
+            del before[win_tile]
+
+    wt_key = triplet_key(win_tile)
+
+    # 单骑听：win_tile 在 before 中恰好 1 张（对子听第 3 张）
+    if before.get(win_tile, 0) == 1:
+        test = Counter(before)
+        test[win_tile] -= 1
+        if test[win_tile] == 0:
+            del test[win_tile]
+        # 移除对子的一张后，剩余应恰好组成 4 - 副露组面子
+        mentsu_needed = 4 - len(melds)
+        if sum(test.values()) == mentsu_needed * 3:
+            if _can_fill_mentsu(_to_vec34(test), mentsu_needed):
+                return 2
+
+    # 顺子听：win_tile 与 before 中的牌组成顺子
+    if win_tile.suit != Suit.HONOR:
+        suit = win_tile.suit
+        rank = win_tile.rank
+
+        mentsu_needed = 4 - len(melds) - 1  # 等待的面子 + 副露
+
+        # 嵌张：1_3 → 2（中间牌）
+        if 2 <= rank <= 8:
+            low = Tile(suit, rank - 1, False)
+            high = Tile(suit, rank + 1, False)
+            if before.get(low, 0) >= 1 and before.get(high, 0) >= 1:
+                test = Counter(before)
+                test[low] -= 1
+                test[high] -= 1
+                if test[low] == 0:
+                    del test[low]
+                if test[high] == 0:
+                    del test[high]
+                if _can_form_melds_and_pair(test, mentsu_needed):
+                    return 2
+
+        # 边张：12 → 3
+        if rank == 3:
+            t1, t2 = Tile(suit, 1, False), Tile(suit, 2, False)
+            if before.get(t1, 0) >= 1 and before.get(t2, 0) >= 1:
+                test = Counter(before)
+                test[t1] -= 1
+                test[t2] -= 1
+                for t in (t1, t2):
+                    if test[t] == 0:
+                        del test[t]
+                if _can_form_melds_and_pair(test, mentsu_needed):
+                    return 2
+
+        # 边张：89 → 7
+        if rank == 7:
+            t8, t9 = Tile(suit, 8, False), Tile(suit, 9, False)
+            if before.get(t8, 0) >= 1 and before.get(t9, 0) >= 1:
+                test = Counter(before)
+                test[t8] -= 1
+                test[t9] -= 1
+                for t in (t8, t9):
+                    if test[t] == 0:
+                        del test[t]
+                if _can_form_melds_and_pair(test, mentsu_needed):
+                    return 2
+
+    return 0
+
+
+def _can_form_melds_and_pair(tiles: Counter[Tile], melds_needed: int) -> bool:
+    """检查 tiles 能否恰好分解为 melds_needed 组面子 + 1 对子。"""
+    total = sum(tiles.values())
+    if total != melds_needed * 3 + 2:
+        return False
+    vec = _to_vec34(tiles)
+    # 枚举所有可能的对子
+    for i in range(34):
+        if vec[i] >= 2:
+            vec[i] -= 2
+            if _can_fill_mentsu(vec, melds_needed):
+                vec[i] += 2
+                return True
+            vec[i] += 2
+    return False
+
+
+def _tile_to_idx(t: Tile) -> int:
+    """Tile → vec34 下标。"""
+    if t.suit == Suit.HONOR:
+        return 27 + (t.rank - 1)
+    return t.suit.value * 9 + (t.rank - 1)
+
+
+def _to_vec34(tiles: Counter[Tile]) -> list[int]:
+    """Counter[Tile] → vec34。"""
+    vec = [0] * 34
+    for t, n in tiles.items():
+        vec[_tile_to_idx(t)] = n
+    return vec
+
+
+def _can_decompose_12(tiles: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
+    """检查门内牌 + 已有副露能否分解为 4 组面子（刻子/顺子）。"""
+    mentsu_needed = 4 - len(melds)
+    return _can_fill_mentsu(_to_vec34(tiles), mentsu_needed)
+
+
+def _can_fill_mentsu(vec: list[int], needed: int) -> bool:
+    """递归检查 vec 中的牌能否恰好组成 needed 组面子。"""
+    if needed == 0:
+        return all(v == 0 for v in vec)
+    # 找第一个非零位置
+    for i in range(34):
+        if vec[i] > 0:
+            # 尝试刻子
+            if vec[i] >= 3:
+                vec[i] -= 3
+                if _can_fill_mentsu(vec, needed - 1):
+                    vec[i] += 3
+                    return True
+                vec[i] += 3
+            # 尝试顺子（仅数牌，rank <= 7）
+            if i < 27 and i % 9 <= 6 and vec[i + 1] > 0 and vec[i + 2] > 0:
+                vec[i] -= 1
+                vec[i + 1] -= 1
+                vec[i + 2] -= 1
+                if _can_fill_mentsu(vec, needed - 1):
+                    vec[i] += 1
+                    vec[i + 1] += 1
+                    vec[i + 2] += 1
+                    return True
+                vec[i] += 1
+                vec[i + 1] += 1
+                vec[i + 2] += 1
+            return False
+    return False
+
+
 def compute_fu_detail(
     concealed: Counter[Tile],
     melds: tuple[Meld, ...],
@@ -179,9 +335,14 @@ def compute_fu_detail(
     else:
         result["menzen_ron"] = 0
 
+    # 听牌类型加符（非平和时）
+    wait_fu = _wait_type_fu(concealed, melds, win_tile, for_ron=for_ron)
+    result["wait"] = wait_fu
+
     # 总计（切上到 10 的倍数）
     total = (
-        result["base"] + result["tsumo"] + result["pair"] + result["sets"] + result["menzen_ron"]
+        result["base"] + result["tsumo"] + result["pair"] + result["sets"]
+        + result["menzen_ron"] + result["wait"]
     )
     # 切上（round up to nearest 10）
     total = (total + 9) // 10 * 10
@@ -204,6 +365,15 @@ def compute_fu(*, menzen: bool, is_ron: bool, pinfu: bool) -> int:
     return 40
 
 
+def _is_chiitoitsu_14(concealed: Counter[Tile], win_tile: Tile) -> bool:
+    """检测七对子：14 张门内牌恰好 7 种各 2 张。"""
+    full = Counter(concealed)
+    full[win_tile] += 1
+    if sum(full.values()) != 14:
+        return False
+    return all(n == 2 for n in full.values())
+
+
 def compute_fu_full(
     concealed: Counter[Tile],
     melds: tuple[Meld, ...],
@@ -215,11 +385,14 @@ def compute_fu_full(
 ) -> int:
     """
     完整符计算：考虑刻子/杠子符、雀头符、自摸/门清荣和加符。
-    自动判定是否平和（通过 pinfu_eligible 由调用方传入或在此计算）。
+    自动判定是否平和或七对子。
     """
+    menzen = len(melds) == 0
+    if menzen and _is_chiitoitsu_14(concealed, win_tile):
+        return 25
+
     from kernel.win_shape.pinfu import pinfu_eligible
 
-    menzen = len(melds) == 0
     pf = pinfu_eligible(
         concealed,
         melds,

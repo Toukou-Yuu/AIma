@@ -410,6 +410,28 @@ class TestFlowIntegration:
         # TODO: 构造四个杠的场景
         pass
 
+    def test_pon_melds_not_counted_as_kans(self) -> None:
+        """4 个碰不应触发四杠流局（仅杠才计入）。"""
+        from kernel.hand.melds import Meld, MeldKind
+
+        pon_melds = [
+            Meld(kind=MeldKind.PON, tiles=(Tile(Suit.MAN, 1),) * 3, called_tile=Tile(Suit.MAN, 1)),
+            Meld(kind=MeldKind.PON, tiles=(Tile(Suit.PIN, 1),) * 3, called_tile=Tile(Suit.PIN, 1)),
+            Meld(kind=MeldKind.PON, tiles=(Tile(Suit.SOU, 1),) * 3, called_tile=Tile(Suit.SOU, 1)),
+            Meld(kind=MeldKind.PON, tiles=(Tile(Suit.HONOR, 1),) * 3, called_tile=Tile(Suit.HONOR, 1)),
+        ]
+        # 旧代码的错误计数：sum(len(melds)) = 4（把碰也算进去了）
+        wrong_count = len(pon_melds)
+        assert is_four_kans_flow(wrong_count) is True  # 旧代码会错误触发
+
+        # 正确计数：只计杠类型
+        kan_count = sum(
+            1 for m in pon_melds
+            if m.kind in (MeldKind.ANKAN, MeldKind.DAIMINKAN, MeldKind.SHANKUMINKAN)
+        )
+        assert kan_count == 0
+        assert is_four_kans_flow(kan_count) is False
+
 
 class TestFlowMangan:
     """流局满贯测试。"""

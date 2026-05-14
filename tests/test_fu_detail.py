@@ -209,6 +209,46 @@ class TestFuDetailNonPinfu:
         assert d["total"] % 10 == 0
 
 
+class TestFuDetailWaitType:
+    """听牌类型加符（+2）：嵌张/单骑/边张。"""
+
+    def test_kanchan_wait(self) -> None:
+        """嵌张听（1_3 听 2）: +2 符。"""
+        # 13 tiles: 1m 3m + 5m5m + 1p2p3p + 4p5p6p + 7p8p9p wait 2m
+        c = Counter({MAN1: 1, MAN3: 1, MAN5: 2, PIN1: 1, PIN2: 1, PIN3: 1,
+                     PIN4: 1, PIN5: 1, PIN6: 1, PIN7: 1, PIN8: 1, PIN9: 1})
+        d = compute_fu_detail(c, (), MAN2, for_ron=True, menzen=True, pinfu=False,
+                              self_wind=NAN, round_wind=TON)
+        assert d["wait"] == 2
+
+    def test_tanki_wait(self) -> None:
+        """单骑听（对子听第 3 张）: +2 符。"""
+        # 13 tiles: 5s + 1p2p3p + 4p5p6p + 7p8p9p + 1s2s3s wait 5s
+        c = Counter({SOU5: 1, PIN1: 1, PIN2: 1, PIN3: 1, PIN4: 1, PIN5: 1, PIN6: 1,
+                     PIN7: 1, PIN8: 1, PIN9: 1, SOU1: 1, SOU2: 1, SOU3: 1})
+        d = compute_fu_detail(c, (), SOU5, for_ron=True, menzen=True, pinfu=False,
+                              self_wind=NAN, round_wind=TON)
+        assert d["wait"] == 2
+
+    def test_penchan_wait(self) -> None:
+        """边张听（12 听 3）: +2 符。"""
+        # 13 tiles: 1m 2m + 5m5m + 1p2p3p + 4p5p6p + 7p8p9p wait 3m
+        c = Counter({MAN1: 1, MAN2: 1, MAN5: 2, PIN1: 1, PIN2: 1, PIN3: 1,
+                     PIN4: 1, PIN5: 1, PIN6: 1, PIN7: 1, PIN8: 1, PIN9: 1})
+        d = compute_fu_detail(c, (), MAN3, for_ron=True, menzen=True, pinfu=False,
+                              self_wind=NAN, round_wind=TON)
+        assert d["wait"] == 2
+
+    def test_ryanmen_no_wait_fu(self) -> None:
+        """两面听不加符。"""
+        # 2m3m 等 4m（两面听）: 不加符
+        c = Counter({MAN2: 1, MAN3: 1, MAN5: 2, PIN1: 1, PIN2: 1, PIN3: 1,
+                     PIN4: 1, PIN5: 1, PIN6: 1, PIN7: 1, PIN8: 1, PIN9: 1})
+        d = compute_fu_detail(c, (), MAN4, for_ron=True, menzen=True, pinfu=False,
+                              self_wind=NAN, round_wind=TON)
+        assert d.get("wait", 0) == 0
+
+
 # --- compute_fu (simplified) ---
 
 class TestComputeFu:
@@ -235,10 +275,10 @@ class TestComputeFu:
 
 class TestComputeFuFull:
     def test_pinfu_ron(self) -> None:
-        # 平和荣和: 30 符
-        c = Counter({MAN1: 1, MAN2: 1, MAN3: 1, PIN4: 1, PIN5: 1, PIN6: 1,
-                     SOU7: 1, SOU8: 1, SOU9: 1, MAN5: 2, PIN1: 1, PIN2: 1})
-        assert compute_fu_full(c, (), PIN3, for_ron=True,
+        # 平和荣和: 30 符（两面听：2m3m 等 1m 或 4m）
+        c = Counter({MAN2: 1, MAN3: 1, PIN4: 1, PIN5: 1, PIN6: 1,
+                     SOU7: 1, SOU8: 1, SOU9: 1, MAN5: 2, PIN1: 1, PIN2: 1, PIN3: 1})
+        assert compute_fu_full(c, (), MAN1, for_ron=True,
                                self_wind=NAN, round_wind=TON) == 30
 
     def test_non_pinfu(self) -> None:
@@ -249,3 +289,10 @@ class TestComputeFuFull:
                              self_wind=NAN, round_wind=TON)
         assert fu >= 40
         assert fu % 10 == 0
+
+    def test_chiitoitsu(self) -> None:
+        """七对子通过 compute_fu_full 应返回 25 符。"""
+        # 13 张门内：6 对 + 1 张单张（MAN1），荣和 MAN1 凑成第 7 对
+        c = Counter({MAN1: 1, MAN3: 2, MAN5: 2, MAN7: 2, PIN1: 2, PIN3: 2, SOU1: 2})
+        assert compute_fu_full(c, (), MAN1, for_ron=True,
+                               self_wind=NAN, round_wind=TON) == 25

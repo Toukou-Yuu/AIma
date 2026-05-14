@@ -42,18 +42,30 @@ class TestKiriageMangan:
         cfg = MahjongConfig(kiriage_mangan_enabled=False)
         assert apply_kiriage_mangan(14100, 110, 3, cfg) == 14100
 
-    def test_3han_110fu(self) -> None:
+    def test_3han_60fu(self) -> None:
+        """3番60符：基础点7700→切上满贯8000。"""
         cfg = MahjongConfig(kiriage_mangan_enabled=True)
-        assert apply_kiriage_mangan(14100, 110, 3, cfg) == 8000
+        assert apply_kiriage_mangan(7700, 60, 3, cfg) == 8000
 
-    def test_4han_70fu(self) -> None:
+    def test_4han_30fu(self) -> None:
+        """4番30符：基础点7700→切上满贯8000。"""
         cfg = MahjongConfig(kiriage_mangan_enabled=True)
-        assert apply_kiriage_mangan(17900, 70, 4, cfg) == 12000
+        assert apply_kiriage_mangan(7700, 30, 4, cfg) == 8000
+
+    def test_3han_59fu_no_trigger(self) -> None:
+        """3番59符：基础点7500，不触发切上。"""
+        cfg = MahjongConfig(kiriage_mangan_enabled=True)
+        assert apply_kiriage_mangan(7500, 59, 3, cfg) == 7500
+
+    def test_4han_29fu_no_trigger(self) -> None:
+        """4番29符：基础点7400，不触发切上。"""
+        cfg = MahjongConfig(kiriage_mangan_enabled=True)
+        assert apply_kiriage_mangan(7400, 29, 4, cfg) == 7400
 
     def test_below_threshold(self) -> None:
         cfg = MahjongConfig(kiriage_mangan_enabled=True)
-        # 3han 100fu: 不触发切上
-        assert apply_kiriage_mangan(7700, 100, 3, cfg) == 7700
+        # 3han 50fu: 不触发切上
+        assert apply_kiriage_mangan(6500, 50, 3, cfg) == 6500
 
     def test_5han_no_effect(self) -> None:
         cfg = MahjongConfig(kiriage_mangan_enabled=True)
@@ -85,8 +97,9 @@ class TestChildRonBasePoints:
         assert child_ron_base_points(30, 20) == 32000
 
     def test_raw_formula(self) -> None:
-        # 4han 30fu: 30 * 4 * 2^6 = 7680 → 7700
-        assert child_ron_base_points(30, 4) == 7700
+        # 4han 30fu: 30 * 4 * 2^6 = 7680 → 7700（禁用切上以验证原始公式）
+        cfg = MahjongConfig(kiriage_mangan_enabled=False)
+        assert child_ron_base_points(30, 4, cfg) == 7700
 
     def test_kiriage_applies(self) -> None:
         # 3han 110fu: 切上满贯 → 8000
@@ -132,16 +145,16 @@ class TestRonPayment:
     """荣和支付（含本场）。"""
 
     def test_child_win_no_honba(self) -> None:
-        # 子赢 4han 30fu: 7700 + 0
+        # 子赢 4han 30fu: 切上满贯 8000 + 0
         assert child_ron_payment_from_discarder(
             winner=1, discarder=2, dealer=0, fu=30, han=4, honba=0
-        ) == 7700
+        ) == 8000
 
     def test_child_win_with_honba(self) -> None:
-        # 子赢 4han 30fu, 2本场: 7700 + 600
+        # 子赢 4han 30fu, 2本场: 切上满贯 8000 + 600
         assert child_ron_payment_from_discarder(
             winner=1, discarder=2, dealer=0, fu=30, han=4, honba=2
-        ) == 8300
+        ) == 8600
 
     def test_dealer_win_no_honba(self) -> None:
         # 亲赢 4han 30fu: 11600 + 0

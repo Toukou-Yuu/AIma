@@ -238,20 +238,17 @@ class TestKiriageMangan:
         base = child_ron_base_points(fu=110, han=3)
         assert base == 8_000  # 切上满贯
 
-    def test_kiriage_mangan_4han_70fu(self) -> None:
-        """4 番 70 符：切上满贯 12000 点。"""
-        # 70 符：罕见情况（例：对对和 + 高符）
+    def test_mangan_cap_4han_70fu(self) -> None:
+        """4 番 70 符：满贯封顶 8000 点。"""
         base = child_ron_base_points(fu=70, han=4)
-        assert base == 12_000  # 切上满贯
+        assert base == 8_000
 
-    def test_no_kiriage_mangan_3han_100fu(self) -> None:
-        """3 番 100 符：不满贯（12800 点）。"""
+    def test_mangan_cap_3han_100fu(self) -> None:
+        """3 番 100 符：满贯封顶 8000 点。"""
         base = child_ron_base_points(fu=100, han=3)
-        # 100 * 4 * 2^(2+3) = 100 * 4 * 32 = 12800
-        assert base == 12800
+        assert base == 8000
 
-    def test_no_kiriage_mangan_4han_60fu(self) -> None:
-        """4 番 60 符：不满贯（15400 点）。"""
+    def test_mangan_cap_4han_60fu(self) -> None:
+        """4 番 60 符：满贯封顶 8000 点。"""
         base = child_ron_base_points(fu=60, han=4)
-        # 60 * 4 * 2^(2+4) = 60 * 4 * 64 = 15360 → 15400
-        assert base == 15400
+        assert base == 8000

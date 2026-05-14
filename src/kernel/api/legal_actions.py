@@ -66,6 +66,30 @@ def _legal_ron_non_dora_han(state: GameState, seat: int, win_tile: Tile) -> int:
     return nd_han
 
 
+def _legal_tsumo_non_dora_han(state: GameState, seat: int, win_tile: Tile) -> int:
+    """自摸时ドラ以外の役番（日麻：无役则不可自摸和了）。"""
+    board = state.board
+    if board is None:
+        return 0
+    table = state.table
+    nd_han, _ = non_dora_yaku_han_and_labels(
+        board,
+        table,
+        seat,
+        for_ron=False,
+        win_tile=win_tile,
+        concealed=board.hands[seat],
+        melds=board.melds[seat],
+        allow_open_tanyao=DEFAULT_CONFIG.allow_open_tanyao,
+        last_draw_was_rinshan=board.last_draw_was_rinshan,
+        is_haitei=_scoring_is_haitei(board),
+        is_hotei=False,
+        is_chankan=False,
+        is_tsumo=True,
+    )
+    return nd_han
+
+
 @dataclass(frozen=True, slots=True)
 class LegalAction:
     """一个合法动作的描述。
@@ -252,7 +276,7 @@ def _legal_actions_must_discard(
                 )
             )
 
-    # TSUMO: 检查是否可以自摸
+    # TSUMO: 检查是否可以自摸（需同时满足和了形 + 至少 1 役）
     if last_tile is not None:
         from kernel.call.win import can_tsumo_default
 
@@ -262,13 +286,14 @@ def _legal_actions_must_discard(
             last_tile,
             last_draw_was_rinshan=board.last_draw_was_rinshan,
         ):
-            actions.append(
-                LegalAction(
-                    kind=ActionKind.TSUMO,
-                    seat=seat,
-                    tile=last_tile,
+            if _legal_tsumo_non_dora_han(state, seat, last_tile) >= 1:
+                actions.append(
+                    LegalAction(
+                        kind=ActionKind.TSUMO,
+                        seat=seat,
+                        tile=last_tile,
+                    )
                 )
-            )
 
     for m in enumerate_ankan_melds(board, seat):
         actions.append(LegalAction(kind=ActionKind.ANKAN, seat=seat, meld=m))

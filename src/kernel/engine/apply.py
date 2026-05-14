@@ -28,6 +28,7 @@ from kernel.event_log import (
 from kernel.config import DEFAULT_CONFIG, MahjongConfig
 from kernel.flow import FlowKind, FlowResult, check_flow_kind, settle_flow
 from kernel.flow.model import TenpaiResult
+from kernel.hand.melds import MeldKind
 from kernel.hand.multiset import remove_tile
 from kernel.kan import apply_ankan, apply_shankuminkan
 from kernel.play import apply_discard, apply_draw, board_after_tsumo_win
@@ -814,7 +815,10 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
             )
 
             # 计算杠总数并检测四杠流局
-            kan_count = sum(len(melds) for melds in new_board.melds)
+            kan_count = sum(
+                1 for melds in new_board.melds for m in melds
+                if m.kind in (MeldKind.ANKAN, MeldKind.DAIMINKAN, MeldKind.SHANKUMINKAN)
+            )
             flow_result = check_flow_kind(new_board, kan_count=kan_count)
             if flow_result is not None and flow_result.kind == FlowKind.FOUR_KANS:
                 # 四杠流局：进入 FLOWN 状态
@@ -870,7 +874,10 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
             )
 
             # 计算杠总数并检测四杠流局
-            kan_count = sum(len(melds) for melds in new_board.melds)
+            kan_count = sum(
+                1 for melds in new_board.melds for m in melds
+                if m.kind in (MeldKind.ANKAN, MeldKind.DAIMINKAN, MeldKind.SHANKUMINKAN)
+            )
             flow_result = check_flow_kind(new_board, kan_count=kan_count)
             if flow_result is not None and flow_result.kind == FlowKind.FOUR_KANS:
                 # 四杠流局：进入 FLOWN 状态
