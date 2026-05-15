@@ -58,23 +58,23 @@ class SettingsScreen(BaseScreen):
 
                 # 鸣牌与役
                 yield Static(Text("鸣牌与役", style="bold bright_green"), classes="section-title")
-                yield Checkbox("食断开启（副露后断幺九可成役）", value=self._config.allow_open_tanyao, id="chk-open-tanyao")
-                yield Checkbox("一炮多响开启（多家同时荣和）", value=self._config.allow_multiple_ron, id="chk-multiple-ron")
+                yield Checkbox("食断", value=self._config.allow_open_tanyao, id="chk-open-tanyao")
+                yield Checkbox("一炮多响", value=self._config.allow_multiple_ron, id="chk-multiple-ron")
 
                 # 宝牌
                 yield Static(Text("宝牌", style="bold bright_green"), classes="section-title")
-                yield Checkbox("赤牌（三赤：5m/5p/5s）", value=self._config.red_dora_enabled, id="chk-red-dora")
-                yield Checkbox("里宝牌（立直和了翻开里宝）", value=self._config.ura_dora_enabled, id="chk-ura-dora")
+                yield Checkbox("赤牌", value=self._config.red_dora_enabled, id="chk-red-dora")
+                yield Checkbox("里宝牌", value=self._config.ura_dora_enabled, id="chk-ura-dora")
 
                 # 满贯规则
                 yield Static(Text("满贯规则", style="bold bright_green"), classes="section-title")
-                yield Checkbox("流局满贯（荒牌流局时听牌且全舍牌幺九）", value=self._config.flow_mangan_enabled, id="chk-flow-mangan")
-                yield Checkbox("切上满贯（3番70符/4番40符按满贯）", value=self._config.kiriage_mangan_enabled, id="chk-kiriage-mangan")
+                yield Checkbox("流局满贯", value=self._config.flow_mangan_enabled, id="chk-flow-mangan")
+                yield Checkbox("切上满贯", value=self._config.kiriage_mangan_enabled, id="chk-kiriage-mangan")
 
                 # 其他规则
                 yield Static(Text("其他规则", style="bold bright_green"), classes="section-title")
-                yield Checkbox("一发开启（立直后下一巡内和了）", value=self._config.ippatsu_enabled, id="chk-ippatsu")
-                yield Checkbox("西入（半庄南场后亲家听牌进西场）", value=self._config.west_round_enabled, id="chk-west-round")
+                yield Checkbox("一发", value=self._config.ippatsu_enabled, id="chk-ippatsu")
+                yield Checkbox("西入", value=self._config.west_round_enabled, id="chk-west-round")
                 yield Input(value=str(self._config.riichi_stick_value), placeholder="立直棒点数", id="input-riichi-stick")
                 yield Input(value=str(self._config.honba_value), placeholder="本场费", id="input-honba-value")
 
