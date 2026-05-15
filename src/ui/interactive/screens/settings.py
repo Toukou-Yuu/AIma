@@ -7,7 +7,7 @@ from rich.table import Table
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Button, Checkbox, Input, Static
+from textual.widgets import Button, Checkbox, Input, RadioSet, RadioButton, Static
 
 from kernel.config import MahjongConfig
 from kernel.config_manager import KernelConfigManager
@@ -34,16 +34,17 @@ class SettingsScreen(BaseScreen):
             with VerticalScroll(classes="form-pane"):
                 # 对局形式
                 yield Static(Text("对局形式", style="bold bright_green"), classes="section-title")
-                yield Checkbox(
-                    "半庄战（东+南各4局）",
-                    value=self._config.match_length == "hanchan",
-                    id="chk-hanchan",
-                )
-                yield Checkbox(
-                    "东风战（仅东场4局）",
-                    value=self._config.match_length == "tonpuusen",
-                    id="chk-tonpuusen",
-                )
+                with RadioSet(id="radio-match-length"):
+                    yield RadioButton(
+                        "半庄战（东+南各4局）",
+                        value=self._config.match_length == "hanchan",
+                        id="radio-hanchan",
+                    )
+                    yield RadioButton(
+                        "东风战（仅东场4局）",
+                        value=self._config.match_length == "tonpuusen",
+                        id="radio-tonpuusen",
+                    )
                 yield Input(
                     value=str(self._config.starting_points),
                     placeholder="起配点",
@@ -118,6 +119,20 @@ class SettingsScreen(BaseScreen):
         self._apply_checkbox_to_config(event.checkbox.id, event.checkbox.value)
         self._refresh_preview()
 
+    def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
+        """RadioSet 变化时更新对局形式配置。"""
+        self._modified = True
+        if event.radio_set.id == "radio-match-length":
+            # event.pressed 是当前选中的 RadioButton
+            if event.pressed.id == "radio-hanchan":
+                self._update_config_field("match_length", "hanchan")
+            elif event.pressed.id == "radio-tonpuusen":
+                self._update_config_field("match_length", "tonpuusen")
+                # 东风战强制场风圈数为 1
+                self._update_config_field("round_wind_count", 1)
+                self.query_one("#input-round-wind-count", Input).value = "1"
+        self._refresh_preview()
+
     def on_input_changed(self, event: Input.Changed) -> None:
         """Input 变化时更新配置。"""
         self._modified = True
@@ -129,57 +144,19 @@ class SettingsScreen(BaseScreen):
         if checkbox_id is None:
             return
 
-        # 对局形式特殊处理
-        if checkbox_id == "chk-hanchan" and value:
-            self._config = MahjongConfig(
-                match_length="hanchan",
-                starting_points=self._config.starting_points,
-                round_wind_count=self._config.round_wind_count,
-                allow_open_tanyao=self._config.allow_open_tanyao,
-                allow_multiple_ron=self._config.allow_multiple_ron,
-                red_dora_enabled=self._config.red_dora_enabled,
-                ura_dora_enabled=self._config.ura_dora_enabled,
-                flow_mangan_enabled=self._config.flow_mangan_enabled,
-                kiriage_mangan_enabled=self._config.kiriage_mangan_enabled,
-                ippatsu_enabled=self._config.ippatsu_enabled,
-                west_round_enabled=self._config.west_round_enabled,
-                riichi_stick_value=self._config.riichi_stick_value,
-                honba_value=self._config.honba_value,
-            )
-        elif checkbox_id == "chk-tonpuusen" and value:
-            self._config = MahjongConfig(
-                match_length="tonpuusen",
-                starting_points=self._config.starting_points,
-                round_wind_count=1,
-                allow_open_tanyao=self._config.allow_open_tanyao,
-                allow_multiple_ron=self._config.allow_multiple_ron,
-                red_dora_enabled=self._config.red_dora_enabled,
-                ura_dora_enabled=self._config.ura_dora_enabled,
-                flow_mangan_enabled=self._config.flow_mangan_enabled,
-                kiriage_mangan_enabled=self._config.kiriage_mangan_enabled,
-                ippatsu_enabled=self._config.ippatsu_enabled,
-                west_round_enabled=self._config.west_round_enabled,
-                riichi_stick_value=self._config.riichi_stick_value,
-                honba_value=self._config.honba_value,
-            )
-            # 更新 round_wind_count 输入框
-            self.query_one("#input-round-wind-count", Input).value = "1"
-        elif checkbox_id == "chk-open-tanyao":
-            self._update_config_field("allow_open_tanyao", value)
-        elif checkbox_id == "chk-multiple-ron":
-            self._update_config_field("allow_multiple_ron", value)
-        elif checkbox_id == "chk-red-dora":
-            self._update_config_field("red_dora_enabled", value)
-        elif checkbox_id == "chk-ura-dora":
-            self._update_config_field("ura_dora_enabled", value)
-        elif checkbox_id == "chk-flow-mangan":
-            self._update_config_field("flow_mangan_enabled", value)
-        elif checkbox_id == "chk-kiriage-mangan":
-            self._update_config_field("kiriage_mangan_enabled", value)
-        elif checkbox_id == "chk-ippatsu":
-            self._update_config_field("ippatsu_enabled", value)
-        elif checkbox_id == "chk-west-round":
-            self._update_config_field("west_round_enabled", value)
+        field_mapping = {
+            "chk-open-tanyao": "allow_open_tanyao",
+            "chk-multiple-ron": "allow_multiple_ron",
+            "chk-red-dora": "red_dora_enabled",
+            "chk-ura-dora": "ura_dora_enabled",
+            "chk-flow-mangan": "flow_mangan_enabled",
+            "chk-kiriage-mangan": "kiriage_mangan_enabled",
+            "chk-ippatsu": "ippatsu_enabled",
+            "chk-west-round": "west_round_enabled",
+        }
+
+        if checkbox_id in field_mapping:
+            self._update_config_field(field_mapping[checkbox_id], value)
 
     def _apply_input_to_config(self, input_id: str | None, value: str) -> None:
         """将 Input 值应用到配置。"""
@@ -192,12 +169,30 @@ class SettingsScreen(BaseScreen):
             return
 
         if input_id == "input-starting-points":
+            if int_value < 1000:
+                self.set_status("起配点必须 >= 1000", style="red")
+                return
+            if int_value > 50000:
+                self.set_status("起配点必须 <= 50000", style="red")
+                return
             self._update_config_field("starting_points", int_value)
         elif input_id == "input-round-wind-count":
             self._update_config_field("round_wind_count", int_value)
         elif input_id == "input-riichi-stick":
+            if int_value < 100:
+                self.set_status("立直棒点数必须 >= 100", style="red")
+                return
+            if int_value > 5000:
+                self.set_status("立直棒点数必须 <= 5000", style="red")
+                return
             self._update_config_field("riichi_stick_value", int_value)
         elif input_id == "input-honba-value":
+            if int_value < 0:
+                self.set_status("本场费必须 >= 0", style="red")
+                return
+            if int_value > 1000:
+                self.set_status("本场费必须 <= 1000", style="red")
+                return
             self._update_config_field("honba_value", int_value)
 
     def _update_config_field(self, field: str, value: bool | int) -> None:
@@ -236,7 +231,11 @@ class SettingsScreen(BaseScreen):
 
     def _save_config(self) -> None:
         """保存配置到 YAML。"""
-        KernelConfigManager.save(self._config)
+        try:
+            KernelConfigManager.save(self._config)
+        except Exception as e:
+            self.set_status(f"保存失败: {e}", style="red")
+            return
 
     def _reset_to_default(self) -> None:
         """重置为默认配置。"""
@@ -244,8 +243,8 @@ class SettingsScreen(BaseScreen):
         self._modified = True
 
         # 更新所有控件值
-        self.query_one("#chk-hanchan", Checkbox).value = True
-        self.query_one("#chk-tonpuusen", Checkbox).value = False
+        radio_set = self.query_one("#radio-match-length", RadioSet)
+        radio_set.query_one("#radio-hanchan", RadioButton).value = True
         self.query_one("#input-starting-points", Input).value = "25000"
         self.query_one("#input-round-wind-count", Input).value = "2"
         self.query_one("#chk-open-tanyao", Checkbox).value = True
