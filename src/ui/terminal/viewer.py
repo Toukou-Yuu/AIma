@@ -41,7 +41,7 @@ from ui.terminal.components.tiles import localize_tile_codes
 
 if TYPE_CHECKING:
     from kernel.engine.state import GameState
-    from llm.agent.token_budget import PromptDiagnostics
+    from llm.agent.models.diagnostics import PromptDiagnostics
     from llm.runner import RunResult
 
 

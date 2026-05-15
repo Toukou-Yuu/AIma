@@ -1,6 +1,6 @@
 """llm.agent.context 覆盖缺口测试。
 
-覆盖：_describe_action / _describe_action_summary (各种 ActionKind),
+覆盖：describe_action / describe_action_summary (各种 ActionKind),
 record_decision 完整路径, build_hand_summary (各 stats 条件),
 build_recent_public_summary, _clip_ledger_message, _build_history_summary_message。"""
 
@@ -18,6 +18,7 @@ from llm.agent.context import EpisodeContext
 from llm.agent.core import Decision
 from llm.agent.message_ledger import LedgerMessage
 from llm.agent.memory import EpisodeStats
+from llm.agent.services.action_descriptor import describe_action, describe_action_summary
 
 MAN1 = Tile(Suit.MAN, 1)
 MAN2 = Tile(Suit.MAN, 2)
@@ -57,72 +58,72 @@ class TestDescribeAction:
     def test_discard(self) -> None:
         ctx = _ctx()
         d = _decision(ActionKind.DISCARD, tile=MAN1)
-        result = ctx._describe_action(d.action)
+        result = describe_action(d.action)
         assert "打" in result
         assert "1m" in result
 
     def test_discard_with_riichi(self) -> None:
         ctx = _ctx()
         d = _decision(ActionKind.DISCARD, tile=MAN1, declare_riichi=True)
-        result = ctx._describe_action(d.action)
+        result = describe_action(d.action)
         assert "立直" in result
 
     def test_ron(self) -> None:
         ctx = _ctx()
         d = _decision(ActionKind.RON)
-        result = ctx._describe_action(d.action)
+        result = describe_action(d.action)
         assert "荣和" in result
 
     def test_tsumo(self) -> None:
         ctx = _ctx()
         d = _decision(ActionKind.TSUMO)
-        result = ctx._describe_action(d.action)
+        result = describe_action(d.action)
         assert "自摸" in result
 
     def test_pass_call(self) -> None:
         ctx = _ctx()
         d = _decision(ActionKind.PASS_CALL)
-        result = ctx._describe_action(d.action)
+        result = describe_action(d.action)
         assert "跳过" in result
 
     def test_draw(self) -> None:
         ctx = _ctx()
         d = _decision(ActionKind.DRAW)
-        result = ctx._describe_action(d.action)
+        result = describe_action(d.action)
         assert "摸牌" in result
 
     def test_open_meld_chi(self) -> None:
         meld = Meld(MeldKind.CHI, (MAN1, MAN2, MAN3), MAN2)
         ctx = _ctx()
         d = _decision(ActionKind.OPEN_MELD, meld=meld)
-        result = ctx._describe_action(d.action)
+        result = describe_action(d.action)
         assert "吃" in result
 
     def test_open_meld_pon(self) -> None:
         meld = Meld(MeldKind.PON, (TON, TON, TON), TON)
         ctx = _ctx()
         d = _decision(ActionKind.OPEN_MELD, meld=meld)
-        result = ctx._describe_action(d.action)
+        result = describe_action(d.action)
         assert "碰" in result
 
     def test_ankan(self) -> None:
         meld = Meld(MeldKind.ANKAN, (MAN5, MAN5, MAN5, MAN5))
         ctx = _ctx()
         d = _decision(ActionKind.ANKAN, meld=meld)
-        result = ctx._describe_action(d.action)
+        result = describe_action(d.action)
         assert "暗杠" in result
 
     def test_kakan(self) -> None:
         meld = Meld(MeldKind.KAKAN, (MAN5, MAN5, MAN5, MAN5), MAN5)
         ctx = _ctx()
         d = _decision(ActionKind.KAKAN, meld=meld)
-        result = ctx._describe_action(d.action)
+        result = describe_action(d.action)
         assert "加杠" in result
 
     def test_fallback_value(self) -> None:
         ctx = _ctx()
         la = LegalAction(kind=ActionKind.BEGIN_ROUND, tile=None, seat=0, meld=None, declare_riichi=False)
-        result = ctx._describe_action(la)
+        result = describe_action(la)
         assert result == "begin_round"
 
 
@@ -132,17 +133,17 @@ class TestDescribeActionSummary:
     def test_ron(self) -> None:
         ctx = _ctx()
         d = _decision(ActionKind.RON)
-        assert ctx._describe_action_summary(d.action) == "荣和"
+        assert describe_action_summary(d.action) == "荣和"
 
     def test_tsumo(self) -> None:
         ctx = _ctx()
         d = _decision(ActionKind.TSUMO)
-        assert ctx._describe_action_summary(d.action) == "自摸"
+        assert describe_action_summary(d.action) == "自摸"
 
     def test_discard_riichi(self) -> None:
         ctx = _ctx()
         d = _decision(ActionKind.DISCARD, tile=MAN1, declare_riichi=True)
-        result = ctx._describe_action_summary(d.action)
+        result = describe_action_summary(d.action)
         assert result is not None
         assert "立直" in result
 
@@ -150,7 +151,7 @@ class TestDescribeActionSummary:
         meld = Meld(MeldKind.CHI, (MAN1, MAN2, MAN3), MAN2)
         ctx = _ctx()
         d = _decision(ActionKind.OPEN_MELD, meld=meld)
-        result = ctx._describe_action_summary(d.action)
+        result = describe_action_summary(d.action)
         assert result is not None
         assert "吃" in result
 
@@ -158,7 +159,7 @@ class TestDescribeActionSummary:
         meld = Meld(MeldKind.ANKAN, (MAN5, MAN5, MAN5, MAN5))
         ctx = _ctx()
         d = _decision(ActionKind.ANKAN, meld=meld)
-        result = ctx._describe_action_summary(d.action)
+        result = describe_action_summary(d.action)
         assert result is not None
         assert "暗杠" in result
 
@@ -166,19 +167,19 @@ class TestDescribeActionSummary:
         meld = Meld(MeldKind.KAKAN, (MAN5, MAN5, MAN5, MAN5), MAN5)
         ctx = _ctx()
         d = _decision(ActionKind.KAKAN, meld=meld)
-        result = ctx._describe_action_summary(d.action)
+        result = describe_action_summary(d.action)
         assert result is not None
         assert "加杠" in result
 
     def test_non_key_returns_none(self) -> None:
         ctx = _ctx()
         d = _decision(ActionKind.DISCARD, tile=MAN1, declare_riichi=False)
-        assert ctx._describe_action_summary(d.action) is None
+        assert describe_action_summary(d.action) is None
 
     def test_pass_returns_none(self) -> None:
         ctx = _ctx()
         d = _decision(ActionKind.PASS_CALL)
-        assert ctx._describe_action_summary(d.action) is None
+        assert describe_action_summary(d.action) is None
 
 
 # --- record_decision ---
@@ -263,6 +264,7 @@ class TestBuildRecentPublicSummary:
         journal.start_hand(1, (ev,))
         ctx = _ctx()
         ctx.match_journal = journal
+        ctx._history._match_journal = journal  # 同步到子组件
         result = ctx.build_recent_public_summary(history_budget=5, compression_level="none")
         assert len(result) > 0
 

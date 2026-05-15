@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from llm.agent.prompt import PromptProjector
+from llm.agent.semantic_compaction import SemanticCompactor
 
 
 def _make_projector(**attrs):
@@ -57,21 +58,21 @@ class TestBuildArchiveVariants:
         assert len(result) == 1
 
 
-# --- _should_semantic_compact ---
+# --- _should_semantic_compact (moved to SemanticCompactor) ---
 
 class TestShouldSemanticCompact:
     def test_not_autocompact_returns_false(self) -> None:
-        """compression_level != autocompact → False（L157-158）。"""
-        p = _make_projector(compression_level="none")
+        """compression_level != autocompact → False。"""
+        compactor = SemanticCompactor(compression_level="none", prompt_budget_tokens=4000)
 
         class FakePlan:
             diagnostics = None
 
-        assert p._should_semantic_compact(FakePlan(), None) is False
+        assert compactor.should_compact(FakePlan(), None) is False
 
     def test_client_none_returns_false(self) -> None:
-        """compaction_client=None → False（L159-160）。"""
-        p = _make_projector(compression_level="autocompact")
+        """compaction_client=None → False。"""
+        compactor = SemanticCompactor(compression_level="autocompact", prompt_budget_tokens=4000)
 
         class FakePlan:
             class FakeDiag:
@@ -79,26 +80,26 @@ class TestShouldSemanticCompact:
                 trimmed_blocks = []
             diagnostics = FakeDiag()
 
-        assert p._should_semantic_compact(FakePlan(), None) is False
+        assert compactor.should_compact(FakePlan(), None) is False
 
 
-# --- _build_semantic_compacted_history ---
+# --- _build_semantic_compacted_history (moved to SemanticCompactor) ---
 
 class TestBuildSemanticCompactedHistory:
     def test_client_none_returns_empty(self) -> None:
-        """compaction_client=None → []（L172）。"""
+        """compaction_client=None → []。"""
         from llm.agent.context import EpisodeContext
-        p = _make_projector(compression_level="autocompact")
+        compactor = SemanticCompactor(compression_level="autocompact", prompt_budget_tokens=4000)
         ctx = EpisodeContext(seat=0)
-        result = p._build_semantic_compacted_history(ctx, compaction_client=None)
+        result = compactor.compact_history(ctx, compaction_client=None)
         assert result == []
 
     def test_short_history_returns_empty(self) -> None:
-        """turn_indexes <= 2 → []（L175）。"""
+        """turn_indexes <= 2 → []。"""
         from llm.agent.context import EpisodeContext
-        p = _make_projector(compression_level="autocompact")
+        compactor = SemanticCompactor(compression_level="autocompact", prompt_budget_tokens=4000)
         ctx = EpisodeContext(seat=0)
-        result = p._build_semantic_compacted_history(ctx, compaction_client=None)
+        result = compactor.compact_history(ctx, compaction_client=None)
         assert result == []
 
 
