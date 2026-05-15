@@ -12,6 +12,7 @@ from kernel.api.legal_actions import LegalAction
 from kernel.api.observation import Observation
 from kernel.engine.actions import ActionKind
 from kernel.engine.phase import GamePhase
+from kernel.event_log import RoundBeginEvent
 from kernel.hand.melds import Meld, MeldKind
 from kernel.tiles.model import Suit, Tile
 from llm.agent.context import EpisodeContext
@@ -418,3 +419,159 @@ class TestRecordRiichi:
         ctx.record_riichi()
         assert ctx.episode_stats.riichi_count == 1
         assert ctx.match_stats.riichi_count == 1
+
+
+# --- property setter 测试 ---
+
+class TestPropertySetters:
+    """测试 EpisodeContext 各属性的 setter。"""
+
+    def test_seat_setter(self) -> None:
+        ctx = _ctx(seat=0)
+        ctx.seat = 3
+        assert ctx.seat == 3
+        assert ctx._state.seat == 3
+
+    def test_match_id_setter(self) -> None:
+        ctx = _ctx()
+        ctx.match_id = "test-match-123"
+        assert ctx.match_id == "test-match-123"
+
+    def test_hand_number_setter(self) -> None:
+        ctx = _ctx()
+        ctx.hand_number = 5
+        assert ctx.hand_number == 5
+
+    def test_episode_stats_setter(self) -> None:
+        from llm.agent.memory import EpisodeStats
+        ctx = _ctx()
+        new_stats = EpisodeStats("", 0)
+        new_stats.wins = 3
+        ctx.episode_stats = new_stats
+        assert ctx.episode_stats.wins == 3
+
+    def test_match_stats_setter(self) -> None:
+        from llm.agent.stats import MatchStats
+        ctx = _ctx()
+        new_stats = MatchStats()
+        new_stats.wins = 5
+        ctx.match_stats = new_stats
+        assert ctx.match_stats.wins == 5
+
+    def test_match_history_archive_setter(self) -> None:
+        ctx = _ctx()
+        archive = ("第1局摘要", "第2局摘要", "第3局摘要")
+        ctx.match_history_archive = archive
+        assert ctx.match_history_archive == archive
+
+
+# --- project_history / project_public_history 测试 ---
+
+class TestProjectHistoryMethods:
+    """测试 project_history 和 project_public_history 方法。"""
+
+    def test_project_history_delegates(self) -> None:
+        """project_history 委托到 _history 返回字符串。"""
+        ctx = _ctx()
+        result = ctx.project_history(
+            detailed=False,
+            history_budget=4,
+            compression_level="none",
+        )
+        assert isinstance(result, str)
+
+    def test_project_history_empty(self) -> None:
+        """空历史时返回空字符串。"""
+        ctx = _ctx()
+        result = ctx.project_history(
+            detailed=False,
+            history_budget=0,
+            compression_level="none",
+        )
+        assert result == ""
+
+    def test_project_public_history_no_journal(self) -> None:
+        """无 match_journal 时返回空字符串。"""
+        ctx = _ctx()
+        result = ctx.project_public_history(
+            detailed=False,
+            history_budget=5,
+            compression_level="none",
+        )
+        assert result == ""
+
+    def test_project_public_history_with_journal(self) -> None:
+        """有 match_journal 时返回非空内容。"""
+        from llm.agent.event_journal import MatchJournal
+        journal = MatchJournal()
+        ev = RoundBeginEvent(seat=None, sequence=0, dealer_seat=0, dora_indicator=MAN5, seeds=(0, 1, 2, 3))
+        journal.start_hand(1, (ev,))
+        ctx = _ctx()
+        ctx.match_journal = journal
+        ctx._history._match_journal = journal
+        result = ctx.project_public_history(
+            detailed=False,
+            history_budget=5,
+            compression_level="none",
+        )
+        assert isinstance(result, str)
+
+
+# --- compression_level 测试 ---
+
+class TestCompressionLevels:
+    """测试各种 compression_level 对历史投影的影响。"""
+
+    def test_none_compression_keeps_all(self) -> None:
+        """compression_level="none" 保留所有消息。"""
+        ctx = _ctx()
+        ctx.append_user_message("a", turn_index=1)
+        ctx.append_user_message("b", turn_index=2)
+        result = ctx.project_message_history(
+            history_budget=10,
+            compression_level="none",
+        )
+        assert len(result) == 2
+
+    def test_snip_compression_keeps_recent(self) -> None:
+        """compression_level="snip" 只保留最近 N 轮次。"""
+        ctx = _ctx()
+        for i in range(1, 6):
+            ctx.append_user_message(f"t{i}", turn_index=i)
+        result = ctx.project_message_history(
+            history_budget=2,
+            compression_level="snip",
+        )
+        # 只保留 turn_index 4, 5 的消息
+        assert len(result) == 2
+
+    def test_micro_compression_clips_content(self) -> None:
+        """compression_level="micro" 裁剪消息内容。"""
+        ctx = _ctx()
+        ctx.append_user_message("x" * 500, turn_index=1)
+        result = ctx.project_message_history(
+            history_budget=1,
+            compression_level="micro",
+        )
+        assert len(result) == 1
+        # 被裁剪后内容不超过 320 字符
+        assert len(result[0].content) <= 320
+        assert result[0].compression_state == "micro"
+
+    def test_project_match_history_zero_budget(self) -> None:
+        """archive_budget <= 0 时返回空字符串。"""
+        ctx = _ctx()
+        result = ctx.project_match_history(
+            archive_budget=0,
+            compression_level="none",
+        )
+        assert result == ""
+
+    def test_project_match_history_negative_budget(self) -> None:
+        """archive_budget < 0 时返回空字符串。"""
+        ctx = _ctx()
+        result = ctx.project_match_history(
+            archive_budget=-1,
+            compression_level="none",
+        )
+        assert result == ""

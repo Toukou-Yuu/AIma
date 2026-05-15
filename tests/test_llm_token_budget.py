@@ -13,6 +13,7 @@ from llm.agent.models.prompt_block import (
     PromptBlockVariant,
 )
 from llm.agent.token_budget import PromptBudgetPlanner, TokenEstimateService
+from llm.protocol import ChatMessage
 from llm.wire import tile_from_code
 
 
@@ -233,3 +234,72 @@ def test_match_journal_projects_public_history_and_archive() -> None:
 
     assert "本场已完成 1 局" in archived
     assert "第1局开始" in archived
+
+
+# --- TokenEstimateService CJK/Unicode 范围测试 ---
+
+class TestTokenEstimateServiceCJKRanges:
+    """测试 TokenEstimateService 对各种 CJK/Unicode 范围的识别。"""
+
+    def test_cjk_extension_a(self) -> None:
+        """CJK Extension A (U+3400-U+4DBF) 应被识别为 CJK-like。"""
+        estimator = TokenEstimateService()
+        # 㐀 = U+3400, 䶮 = U+4DAF
+        result = estimator.estimate_text("㐀䶮")
+        assert result > 0  # 每个 CJK Extension A 字符估算为 2 token
+
+    def test_japanese_hiragana(self) -> None:
+        """日文平假名 (U+3040-U+30FF) 应被识别为 CJK-like。"""
+        estimator = TokenEstimateService()
+        result = estimator.estimate_text("あいうえお")
+        assert result > 0
+
+    def test_japanese_katakana(self) -> None:
+        """日文片假名也应被识别为 CJK-like。"""
+        estimator = TokenEstimateService()
+        result = estimator.estimate_text("アイウエオ")
+        assert result > 0
+
+    def test_korean_syllables(self) -> None:
+        """韩文音节 (U+AC00-U+D7AF) 应被识别为 CJK-like。"""
+        estimator = TokenEstimateService()
+        # 한글 = 韩文
+        result = estimator.estimate_text("한글")
+        assert result > 0
+
+
+class TestTokenEstimateServiceEdgeCases:
+    """测试 TokenEstimateService 边缘场景。"""
+
+    def test_empty_string_returns_zero(self) -> None:
+        """空字符串应返回 0 token。"""
+        estimator = TokenEstimateService()
+        assert estimator.estimate_text("") == 0
+
+    def test_estimate_messages_empty_list(self) -> None:
+        """空消息列表应返回 0 token。"""
+        estimator = TokenEstimateService()
+        assert estimator.estimate_messages([]) == 0
+
+    def test_estimate_messages_single(self) -> None:
+        """单条消息应正确估算。"""
+        estimator = TokenEstimateService()
+        messages = [ChatMessage(role="user", content="hello")]
+        result = estimator.estimate_messages(messages)
+        assert result == estimator.estimate_text("hello")
+
+    def test_estimate_messages_multiple(self) -> None:
+        """多条消息应正确汇总估算。"""
+        estimator = TokenEstimateService()
+        messages = [
+            ChatMessage(role="system", content="You are helpful."),
+            ChatMessage(role="user", content="你好"),
+            ChatMessage(role="assistant", content="Hello!"),
+        ]
+        result = estimator.estimate_messages(messages)
+        expected = (
+            estimator.estimate_text("You are helpful.")
+            + estimator.estimate_text("你好")
+            + estimator.estimate_text("Hello!")
+        )
+        assert result == expected
