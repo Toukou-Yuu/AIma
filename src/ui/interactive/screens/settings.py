@@ -58,8 +58,8 @@ class SettingsScreen(BaseScreen):
 
                 # 鸣牌与役
                 yield Static(Text("鸣牌与役", style="bold bright_green"), classes="section-title")
-                yield Checkbox("食断あり（副露后断幺九可役）", value=self._config.allow_open_tanyao, id="chk-open-tanyao")
-                yield Checkbox("一炮多响あり（多家同时荣和）", value=self._config.allow_multiple_ron, id="chk-multiple-ron")
+                yield Checkbox("食断开启（副露后断幺九可成役）", value=self._config.allow_open_tanyao, id="chk-open-tanyao")
+                yield Checkbox("一炮多响开启（多家同时荣和）", value=self._config.allow_multiple_ron, id="chk-multiple-ron")
 
                 # 宝牌
                 yield Static(Text("宝牌", style="bold bright_green"), classes="section-title")
@@ -73,7 +73,7 @@ class SettingsScreen(BaseScreen):
 
                 # 其他规则
                 yield Static(Text("其他规则", style="bold bright_green"), classes="section-title")
-                yield Checkbox("一发あり（立直后下一巡内和了）", value=self._config.ippatsu_enabled, id="chk-ippatsu")
+                yield Checkbox("一发开启（立直后下一巡内和了）", value=self._config.ippatsu_enabled, id="chk-ippatsu")
                 yield Checkbox("西入（半庄南场后亲家听牌进西场）", value=self._config.west_round_enabled, id="chk-west-round")
                 yield Input(value=str(self._config.riichi_stick_value), placeholder="立直棒点数", id="input-riichi-stick")
                 yield Input(value=str(self._config.honba_value), placeholder="本场费", id="input-honba-value")
@@ -100,14 +100,14 @@ class SettingsScreen(BaseScreen):
             ("对局形式", self._config.match_length),
             ("起配点", str(self._config.starting_points)),
             ("场风圈数", str(self._config.round_wind_count)),
-            ("食断", "あり" if self._config.allow_open_tanyao else "なし"),
-            ("一炮多响", "あり" if self._config.allow_multiple_ron else "なし"),
-            ("赤牌", "あり" if self._config.red_dora_enabled else "なし"),
-            ("里宝牌", "あり" if self._config.ura_dora_enabled else "なし"),
-            ("流局满贯", "あり" if self._config.flow_mangan_enabled else "なし"),
-            ("切上满贯", "あり" if self._config.kiriage_mangan_enabled else "なし"),
-            ("一发", "あり" if self._config.ippatsu_enabled else "なし"),
-            ("西入", "あり" if self._config.west_round_enabled else "なし"),
+            ("食断", "开启" if self._config.allow_open_tanyao else "关闭"),
+            ("一炮多响", "开启" if self._config.allow_multiple_ron else "关闭"),
+            ("赤牌", "开启" if self._config.red_dora_enabled else "关闭"),
+            ("里宝牌", "开启" if self._config.ura_dora_enabled else "关闭"),
+            ("流局满贯", "开启" if self._config.flow_mangan_enabled else "关闭"),
+            ("切上满贯", "开启" if self._config.kiriage_mangan_enabled else "关闭"),
+            ("一发", "开启" if self._config.ippatsu_enabled else "关闭"),
+            ("西入", "开启" if self._config.west_round_enabled else "关闭"),
             ("立直棒", f"{self._config.riichi_stick_value}点"),
             ("本场费", f"{self._config.honba_value}点/场"),
         ]
