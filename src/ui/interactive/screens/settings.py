@@ -176,6 +176,7 @@ class SettingsScreen(BaseScreen):
                 self.set_status("起配点必须 <= 50000", style="red")
                 return
             self._update_config_field("starting_points", int_value)
+            self.set_status("")  # 清除警告
         elif input_id == "input-round-wind-count":
             self._update_config_field("round_wind_count", int_value)
         elif input_id == "input-riichi-stick":
@@ -186,6 +187,7 @@ class SettingsScreen(BaseScreen):
                 self.set_status("立直棒点数必须 <= 5000", style="red")
                 return
             self._update_config_field("riichi_stick_value", int_value)
+            self.set_status("")  # 清除警告
         elif input_id == "input-honba-value":
             if int_value < 0:
                 self.set_status("本场费必须 >= 0", style="red")
@@ -194,6 +196,7 @@ class SettingsScreen(BaseScreen):
                 self.set_status("本场费必须 <= 1000", style="red")
                 return
             self._update_config_field("honba_value", int_value)
+            self.set_status("")  # 清除警告
 
     def _update_config_field(self, field: str, value: bool | int) -> None:
         """更新配置字段（创建新实例）。"""

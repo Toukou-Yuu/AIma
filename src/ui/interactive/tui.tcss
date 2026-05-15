@@ -71,10 +71,13 @@ VerticalScroll.detail-pane {
 }
 
 .form-pane {
-    width: 42;
+    width: auto;
+    max-width: 60;
     height: 1fr;
     overflow-y: auto;
     min-height: 0;
+    padding-left: 1;
+    padding-right: 2;
 }
 
 .section-title {
