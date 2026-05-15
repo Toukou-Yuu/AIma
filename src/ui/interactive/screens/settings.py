@@ -224,8 +224,8 @@ class SettingsScreen(BaseScreen):
             title="未保存的更改",
             subtitle="返回将丢失当前修改",
             options=[
-                ("discard", "放弃更改并返回"),
-                ("continue", "继续编辑"),
+                ("放弃更改并返回", "discard"),
+                ("继续编辑", "continue"),
             ],
         )
         result = await self.app.push_screen(picker)
