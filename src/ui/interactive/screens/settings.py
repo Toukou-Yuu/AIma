@@ -204,11 +204,11 @@ class SettingsScreen(BaseScreen):
 
         self._config = replace(self._config, **{field: value})
 
-    async def on_button_pressed(self, event: Button.Pressed) -> None:
+    def on_button_pressed(self, event: Button.Pressed) -> None:
         """按钮点击处理。"""
         if event.button.id == "btn-back":
             if self._modified:
-                await self._confirm_discard_changes()
+                self._confirm_discard_changes()
             else:
                 self.open_home()
         elif event.button.id == "btn-apply":
@@ -218,7 +218,7 @@ class SettingsScreen(BaseScreen):
         elif event.button.id == "btn-reset":
             self._reset_to_default()
 
-    async def _confirm_discard_changes(self) -> None:
+    def _confirm_discard_changes(self) -> None:
         """未保存更改时弹出确认。"""
         picker = OptionPickerScreen(
             title="未保存的更改",
@@ -228,7 +228,10 @@ class SettingsScreen(BaseScreen):
                 ("继续编辑", "continue"),
             ],
         )
-        result = await self.app.push_screen_wait(picker)
+        self.app.push_screen(picker, callback=self._handle_discard_choice)
+
+    def _handle_discard_choice(self, result: str | None) -> None:
+        """处理用户的选择。"""
         if result == "discard":
             self.open_home()
 
