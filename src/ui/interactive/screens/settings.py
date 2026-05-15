@@ -228,7 +228,7 @@ class SettingsScreen(BaseScreen):
                 ("继续编辑", "continue"),
             ],
         )
-        result = await self.app.push_screen(picker)
+        result = await self.app.push_screen_wait(picker)
         if result == "discard":
             self.open_home()
 
