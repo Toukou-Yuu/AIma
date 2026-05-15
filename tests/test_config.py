@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from kernel.config import MahjongConfig, get_config_for_preset
+from kernel.config import MahjongConfig, get_default_config
+from kernel.config_manager import KernelConfigManager
 
 
 class TestMahjongConfig:
@@ -22,15 +23,27 @@ class TestMahjongConfig:
         assert cfg.is_hanchan() is False
 
 
-class TestGetConfigForPreset:
-    def test_tonpuusen(self) -> None:
-        cfg = get_config_for_preset("tonpuusen")
-        assert cfg.is_tonpuusen() is True
+class TestGetDefaultConfig:
+    """get_default_config 测试。"""
 
-    def test_default(self) -> None:
-        cfg = get_config_for_preset("default")
+    def test_returns_mahjong_config(self) -> None:
+        """返回 MahjongConfig 实例。"""
+        cfg = get_default_config()
+        assert isinstance(cfg, MahjongConfig)
         assert cfg.is_hanchan() is True
 
-    def test_unknown(self) -> None:
-        cfg = get_config_for_preset("unknown")
-        assert cfg.is_hanchan() is True
+    def test_consistent_on_multiple_calls(self) -> None:
+        """多次调用返回一致配置（缓存生效）。"""
+        KernelConfigManager.reset_cache()
+        cfg1 = get_default_config()
+        cfg2 = get_default_config()
+        assert cfg1 == cfg2
+
+    def test_values_match_yaml(self) -> None:
+        """配置值与 YAML 一致。"""
+        cfg = get_default_config()
+        assert cfg.starting_points == 25000
+        assert cfg.riichi_stick_value == 1000
+        assert cfg.honba_value == 300
+        assert cfg.allow_open_tanyao is True
+        assert cfg.allow_multiple_ron is True

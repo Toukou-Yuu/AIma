@@ -18,6 +18,7 @@ from ui.interactive.screens.base import BaseScreen
 _HOME_ACTIONS = (
     ("quick", "demo演示", "无需 API Key，直接观看一场 dry-run 对局"),
     ("match", "开始对局", "选择四位玩家、局数与观战方式"),
+    ("settings", "游戏设置", "调整内核规则配置（食断、切上满贯等）"),
     ("profile", "角色管理", "查看角色卡片、创建角色、补充 ASCII 形象"),
     ("replay", "牌谱回放", "浏览最近牌谱并进入动态回放"),
     ("quit", "退出", "关闭全屏终端应用"),
@@ -123,6 +124,10 @@ class HomeScreen(BaseScreen):
             from ui.interactive.screens.match import MatchSetupScreen
 
             self.app.switch_screen(MatchSetupScreen())
+        elif action_id == "settings":
+            from ui.interactive.screens.settings import SettingsScreen
+
+            self.app.switch_screen(SettingsScreen())
         elif action_id == "profile":
             from ui.interactive.screens.profile import ProfileBrowserScreen
 

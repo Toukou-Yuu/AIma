@@ -2,9 +2,11 @@
 
 from ui.interactive.screens.home import HomeScreen
 from ui.interactive.screens.match import QuickStartScreen
+from ui.interactive.screens.settings import SettingsScreen
 
 __all__ = [
     "HomeScreen",
     "QuickStartScreen",
+    "SettingsScreen",
 ]
 

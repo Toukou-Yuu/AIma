@@ -7,7 +7,7 @@ from collections import Counter
 import pytest
 
 from kernel import (
-    RIICHI_STICK_POINTS,
+    get_riichi_stick_points,
     Action,
     ActionKind,
     BoardState,
@@ -185,8 +185,9 @@ def test_apply_riichi_updates_table_and_river() -> None:
         gs,
         Action(ActionKind.DISCARD, seat=0, tile=t7, declare_riichi=True),
     )
-    assert out.new_state.table.kyoutaku == RIICHI_STICK_POINTS
-    assert out.new_state.table.scores[0] == st.scores[0] - RIICHI_STICK_POINTS
+    riichi_points = get_riichi_stick_points()
+    assert out.new_state.table.kyoutaku == riichi_points
+    assert out.new_state.table.scores[0] == st.scores[0] - riichi_points
     nb = out.new_state.board
     assert nb is not None
     assert nb.riichi[0] is True

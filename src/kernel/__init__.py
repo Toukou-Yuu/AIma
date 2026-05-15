@@ -41,8 +41,8 @@ from kernel.hand import (
 )
 from kernel.play import apply_discard, apply_draw
 from kernel.table import (
-    DEFAULT_STARTING_POINTS,
-    RIICHI_STICK_POINTS,
+    get_default_starting_points,
+    get_riichi_stick_points,
     MatchPreset,
     PrevailingWind,
     RoundNumber,
@@ -71,7 +71,7 @@ __all__ = [
     "BoardState",
     "RiverEntry",
     "TurnPhase",
-    "DEFAULT_STARTING_POINTS",
+    "get_default_starting_points",
     "DEAD_INDICATOR_STOCK",
     "DEAD_WALL_SIZE",
     "DeadWall",
@@ -91,7 +91,7 @@ __all__ = [
     "MeldKind",
     "Observation",
     "PrevailingWind",
-    "RIICHI_STICK_POINTS",
+    "get_riichi_stick_points",
     "RINSHAN_COUNT",
     "RoundNumber",
     "Suit",

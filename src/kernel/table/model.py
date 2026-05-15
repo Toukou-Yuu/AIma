@@ -10,12 +10,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from kernel.config import DEFAULT_CONFIG
+from kernel.config import get_default_config
 
-# 四麻默认起配（§11）；三麻等变体由上层传入 ``starting_points``。
-DEFAULT_STARTING_POINTS = DEFAULT_CONFIG.starting_points
-# 立直棒单根点数（§7）；供托增减可与根数相乘后写入 ``kyoutaku``。
-RIICHI_STICK_POINTS = DEFAULT_CONFIG.riichi_stick_value
+
+def get_default_starting_points() -> int:
+    """获取起配点（动态从配置加载）。"""
+    return get_default_config().starting_points
+
+
+def get_riichi_stick_points() -> int:
+    """获取立直棒点数（动态从配置加载）。"""
+    return get_default_config().riichi_stick_value
 
 
 class PrevailingWind(Enum):
@@ -111,7 +116,7 @@ def validate_table_snapshot(snapshot: TableSnapshot) -> None:
 def initial_table_snapshot(
     *,
     dealer_seat: int = 0,
-    starting_points: int = DEFAULT_STARTING_POINTS,
+    starting_points: int | None = None,
     prevailing_wind: PrevailingWind = PrevailingWind.EAST,
     round_number: RoundNumber = RoundNumber.ONE,
     honba: int = 0,
@@ -122,8 +127,11 @@ def initial_table_snapshot(
     """生成半庄（或东风战预设）开局默认场况：四家同分、本场与供托为零。
 
     Args:
+        starting_points: 起配点。若为 None，则从配置加载默认值。
         starting_dealer_seat: 起家座位。若为 None，则使用 dealer_seat 作为起家。
     """
+    if starting_points is None:
+        starting_points = get_default_starting_points()
     if starting_points < 0:
         msg = "starting_points must be non-negative"
         raise ValueError(msg)

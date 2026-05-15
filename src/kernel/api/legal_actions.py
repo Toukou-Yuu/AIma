@@ -15,7 +15,7 @@ from kernel.api.meld_candidates import (
     enumerate_kakan_melds,
 )
 from kernel.call.ron_rules import can_declare_ron
-from kernel.config import DEFAULT_CONFIG
+from kernel.config import get_default_config
 from kernel.board import BoardState, TurnPhase
 from kernel.engine.actions import ActionKind
 from kernel.engine.state import GameState
@@ -48,6 +48,7 @@ def _legal_ron_non_dora_han(state: GameState, seat: int, win_tile: Tile) -> int:
         return 0
     table = state.table
     discard_seat = cs.discard_seat
+    config = get_default_config()
     nd_han, _ = non_dora_yaku_han_and_labels(
         board,
         table,
@@ -56,7 +57,7 @@ def _legal_ron_non_dora_han(state: GameState, seat: int, win_tile: Tile) -> int:
         win_tile=win_tile,
         concealed=board.hands[seat],
         melds=board.melds[seat],
-        allow_open_tanyao=DEFAULT_CONFIG.allow_open_tanyao,
+        allow_open_tanyao=config.allow_open_tanyao,
         last_draw_was_rinshan=False,
         is_haitei=_scoring_is_haitei(board),
         is_hotei=_scoring_is_hotei(board, discard_seat),
@@ -72,6 +73,7 @@ def _legal_tsumo_non_dora_han(state: GameState, seat: int, win_tile: Tile) -> in
     if board is None:
         return 0
     table = state.table
+    config = get_default_config()
     nd_han, _ = non_dora_yaku_han_and_labels(
         board,
         table,
@@ -80,7 +82,7 @@ def _legal_tsumo_non_dora_han(state: GameState, seat: int, win_tile: Tile) -> in
         win_tile=win_tile,
         concealed=board.hands[seat],
         melds=board.melds[seat],
-        allow_open_tanyao=DEFAULT_CONFIG.allow_open_tanyao,
+        allow_open_tanyao=config.allow_open_tanyao,
         last_draw_was_rinshan=board.last_draw_was_rinshan,
         is_haitei=_scoring_is_haitei(board),
         is_hotei=False,
@@ -291,9 +293,10 @@ def _legal_actions_must_discard(
             if not melds:
                 # 检查立直条件：门清、听牌、有足够点数
                 from kernel.hand.multiset import remove_tile
-                from kernel.table.model import RIICHI_STICK_POINTS
+                from kernel.table.model import get_riichi_stick_points
 
-                if state.table.scores[seat] >= RIICHI_STICK_POINTS:
+                riichi_points = get_riichi_stick_points()
+                if state.table.scores[seat] >= riichi_points:
                     try:
                         hand_after = remove_tile(concealed, tile)
                         if is_tenpai_default(hand_after, melds):

@@ -153,19 +153,18 @@ def _merge_config(
     CLI 参数使用 None 作为 sentinel：None 表示"未设置"，使用 YAML 默认值；
     非 None 表示"用户显式设置"，使用 CLI 值。
     """
-    match_cfg = yaml_cfg["match"]
-    match_end_cfg = match_cfg["match_end"]
+    kernel_cfg = yaml_cfg["kernel"]
     debug_cfg = yaml_cfg["debug"]
     logging_cfg = yaml_cfg["logging"]
     watch_cfg = yaml_cfg["watch"]
     llm_cfg = yaml_cfg["llm"]
     yaml_defaults = {
-        "seed": match_cfg["seed"],
-        "wall_file": match_cfg.get("wall_file"),
+        "seed": kernel_cfg["seed"],
+        "wall_file": kernel_cfg.get("wall_file"),
         "match_end": {
-            "type": match_end_cfg["type"],
-            "value": match_end_cfg["value"],
-            "allow_negative": match_end_cfg["allow_negative"],
+            "type": kernel_cfg["match_end"]["type"],
+            "value": kernel_cfg["match_end"]["value"],
+            "allow_negative": kernel_cfg["match_end"]["allow_negative"],
         },
         "dry_run": debug_cfg["dry_run"],
         "log_json": logging_cfg["json"],
@@ -181,7 +180,7 @@ def _merge_config(
         "prompt_format": llm_cfg["prompt_format"],
         "session_audit": logging_cfg["session_audit"],
         "show_reason": watch_cfg["show_reason"],
-        "players": match_cfg.get("players") or yaml_cfg.get("players"),
+        "players": yaml_cfg.get("players"),
         "enable_conversation_logging": llm_cfg["conversation_logging"]["enabled"],
     }
 

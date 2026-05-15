@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kernel.config import DEFAULT_CONFIG, MahjongConfig
+from kernel.config import get_default_config, MahjongConfig
 
 
 def round_up_100(x: int) -> int:
@@ -13,7 +13,7 @@ def apply_kiriage_mangan(
     base: int,
     fu: int,
     han: int,
-    config: MahjongConfig = DEFAULT_CONFIG,
+    config: MahjongConfig | None = None,
 ) -> int:
     """
     切上满贯适用：子家基础点经百切后落在 [7700, 7900] 时切上为满贯 8000。
@@ -21,6 +21,7 @@ def apply_kiriage_mangan(
     典型场景：3 番 60 符 = 7680 → 7700，4 番 30 符 = 7680 → 7700。
     仅处理子家边界情况，满贯阶梯封顶和亲家切上由调用方负责。
     """
+    config = config or get_default_config()
     if not config.kiriage_mangan_enabled:
         return base
     if 7700 <= base <= 7900:
@@ -28,8 +29,9 @@ def apply_kiriage_mangan(
     return base
 
 
-def child_ron_base_points(fu: int, han: int, config: MahjongConfig = DEFAULT_CONFIG) -> int:
+def child_ron_base_points(fu: int, han: int, config: MahjongConfig | None = None) -> int:
     """子荣和：点棒公式 ``fu * 4 * 2^(2+han)`` 再切上，受满贯阶梯限制。"""
+    config = config or get_default_config()
     if han >= 13:
         return 32_000
     if han >= 11:
@@ -48,8 +50,9 @@ def child_ron_base_points(fu: int, han: int, config: MahjongConfig = DEFAULT_CON
     return base
 
 
-def dealer_ron_base_points(fu: int, han: int, config: MahjongConfig = DEFAULT_CONFIG) -> int:
+def dealer_ron_base_points(fu: int, han: int, config: MahjongConfig | None = None) -> int:
     """亲荣和（子点亲）：``fu * 6 * 2^(2+han)`` 系，阶梯同量级按常见表取整。"""
+    config = config or get_default_config()
     if han >= 13:
         return 48_000
     if han >= 11:
@@ -75,9 +78,10 @@ def child_ron_payment_from_discarder(
     fu: int,
     han: int,
     honba: int,
-    config: MahjongConfig = DEFAULT_CONFIG,
+    config: MahjongConfig | None = None,
 ) -> int:
     """单家和了者从放铳家应收点数（含本场 300/本）。"""
+    config = config or get_default_config()
     is_dealer_win = winner == dealer
     if is_dealer_win:
         base = dealer_ron_base_points(fu, han, config)

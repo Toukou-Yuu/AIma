@@ -611,7 +611,7 @@ def test_textual_profile_home_returns_without_hanging() -> None:
         app = AImaTextualApp()
         async with app.run_test(headless=True, size=(140, 45)) as pilot:
             await pilot.pause()
-            app.screen.query_one("#home-actions").highlighted = 2
+            app.screen.query_one("#home-actions").highlighted = 3
             await pilot.click("#action-open")
             await pilot.pause()
             await pilot.click("#profile-home")
@@ -629,7 +629,7 @@ def test_textual_profile_browser_has_no_redundant_detail_button() -> None:
         app = AImaTextualApp()
         async with app.run_test(headless=True, size=(140, 45)) as pilot:
             await pilot.pause()
-            app.screen.query_one("#home-actions").highlighted = 2
+            app.screen.query_one("#home-actions").highlighted = 3
             await pilot.click("#action-open")
             await pilot.pause()
             assert type(app.screen).__name__ == "ProfileBrowserScreen"
@@ -666,7 +666,7 @@ def test_textual_create_profile_template_picker_updates_summary() -> None:
         app = AImaTextualApp()
         async with app.run_test(headless=True, size=(140, 45)) as pilot:
             await pilot.pause()
-            app.screen.query_one("#home-actions").highlighted = 2
+            app.screen.query_one("#home-actions").highlighted = 3
             await pilot.click("#action-open")
             await pilot.pause()
             await pilot.click("#profile-create")
@@ -693,7 +693,7 @@ def test_textual_add_ascii_profile_picker_updates_target() -> None:
         app = AImaTextualApp()
         async with app.run_test(headless=True, size=(140, 45)) as pilot:
             await pilot.pause()
-            app.screen.query_one("#home-actions").highlighted = 2
+            app.screen.query_one("#home-actions").highlighted = 3
             await pilot.click("#action-open")
             await pilot.pause()
             assert any(

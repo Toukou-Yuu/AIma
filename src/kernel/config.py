@@ -87,20 +87,7 @@ class MahjongConfig:
         return self.match_length == "tonpuusen"
 
 
-# 默认配置实例（雀魂友人桌标准规则）
-DEFAULT_CONFIG = MahjongConfig.default()
-
-
-def get_config_for_preset(preset_name: str) -> MahjongConfig:
-    """
-    根据预设名称获取配置。
-
-    Args:
-        preset_name: 预设名称 ("hanchan", "tonpuusen", "default")
-
-    Returns:
-        对应的 MahjongConfig 实例
-    """
-    if preset_name == "tonpuusen":
-        return MahjongConfig.tonpuusen()
-    return MahjongConfig.default()
+def get_default_config() -> MahjongConfig:
+    """获取默认内核配置（从 YAML 加载，带缓存）。"""
+    from kernel.config_manager import KernelConfigManager
+    return KernelConfigManager.get_default()

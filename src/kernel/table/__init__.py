@@ -1,8 +1,8 @@
 """牌桌场况（场风、局序、亲、本场、供托、点棒）；不含状态机与局流推进。"""
 
 from kernel.table.model import (
-    DEFAULT_STARTING_POINTS,
-    RIICHI_STICK_POINTS,
+    get_default_starting_points,
+    get_riichi_stick_points,
     MatchPreset,
     PrevailingWind,
     RoundNumber,
@@ -20,10 +20,10 @@ from kernel.table.transitions import (
 )
 
 __all__ = [
-    "DEFAULT_STARTING_POINTS",
+    "get_default_starting_points",
+    "get_riichi_stick_points",
     "MatchPreset",
     "PrevailingWind",
-    "RIICHI_STICK_POINTS",
     "RoundNumber",
     "TableSnapshot",
     "advance_round",

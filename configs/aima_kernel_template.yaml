@@ -6,6 +6,68 @@
 #
 # 注意：aima_kernel.yaml 已被 gitignore，不会提交到仓库
 
+# ==================== 内核规则配置 ====================
+kernel:
+  # === 对局形式 ===
+  # match_length: 对局长度，hanchan（半庄战，东+南各4局）或 tonpuusen（东风战，仅东场4局）
+  match_length: hanchan
+
+  # starting_points: 起配点（雀魂标准 25000）
+  starting_points: 25000
+
+  # round_wind_count: 场风圈数（东场=1，东+南场=2）
+  round_wind_count: 2
+
+  # === 鸣牌与役 ===
+  # allow_open_tanyao: 食断あり，副露后断幺九可算役
+  allow_open_tanyao: true
+
+  # allow_multiple_ron: 一炮多响あり，多家同时荣和
+  allow_multiple_ron: true
+
+  # === 宝牌 ===
+  # red_dora_enabled: 赤牌あり，三赤（5m/5p/5s 各1张赤牌）
+  red_dora_enabled: true
+
+  # ura_dora_enabled: 里宝牌あり，立直和了时翻开里宝指示牌
+  ura_dora_enabled: true
+
+  # === 满贯规则 ===
+  # flow_mangan_enabled: 流局满贯あり，荒牌流局时听牌且全舍牌幺九、未被鸣走则按满贯结算
+  flow_mangan_enabled: true
+
+  # kiriage_mangan_enabled: 切上满贯あり，3番70符或4番40符按满贯计算
+  kiriage_mangan_enabled: true
+
+  # === 其他规则 ===
+  # ippatsu_enabled: 一发あり，立直后下一巡内和了可计一发
+  ippatsu_enabled: true
+
+  # west_round_enabled: 西入あり，半庄战南场结束后若亲家听牌则进入西场（本项目暂不实现）
+  west_round_enabled: false
+
+  # riichi_stick_value: 立直棒点数（雀魂标准 1000）
+  riichi_stick_value: 1000
+
+  # honba_value: 本场费（雀魂标准 300点/场）
+  honba_value: 300
+
+  # === 对局控制 ===
+  # seed: 随机种子，null 表示随机生成，指定数值可复现牌山
+  seed: null
+
+  # wall_file: 自定义牌山 JSON 文件路径（仅支持单局），null 表示随机生成
+  wall_file: null
+
+  # match_end: 对局结束条件
+  match_end:
+    # type: 结束类型，hands（固定局数）、rounds（固定轮数）、points（点数阈值）
+    type: hands
+    # value: 结束值，hands=局数，rounds=轮数，points=点数阈值
+    value: 8
+    # allow_negative: 是否允许负分继续（雀魂标准 false）
+    allow_negative: false
+
 # ==================== LLM 服务配置 ====================
 llm:
   # Prompt 格式选择：natural（中文自然语言）或 json（结构化）
@@ -139,13 +201,6 @@ logging:
   session: null
   session_audit: false
 
-# ==================== 对局默认设置 ====================
-match:
-  seed: 42
-  match_end:
-    type: hands
-    value: 8
-    allow_negative: false
 
 # ==================== 观战设置 ====================
 watch:

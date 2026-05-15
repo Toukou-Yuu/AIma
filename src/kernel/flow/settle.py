@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from kernel.config import DEFAULT_CONFIG, MahjongConfig
+from kernel.config import get_default_config, MahjongConfig
 from kernel.board import BoardState
 from kernel.flow.model import TenpaiResult
 from kernel.riichi.tenpai import is_tenpai_default
@@ -117,7 +117,7 @@ def settle_flow_mangan(
     table: TableSnapshot,
     board: BoardState,
     tenpai_result: TenpaiResult,
-    config: MahjongConfig = DEFAULT_CONFIG,
+    config: MahjongConfig | None = None,
 ) -> TableSnapshot:
     """
     流し満貫（流局满贯）结算：满足「幺九舍牌且未被鸣牌」且听牌者，按**满贯自摸**分摊。
@@ -131,10 +131,11 @@ def settle_flow_mangan(
         table: 牌桌快照
         board: 牌局状态
         tenpai_result: 听牌结果
-        config: 规则配置（默认使用雀魂标准配置）
+        config: 规则配置（默认从配置加载）
 
     返回：结算后的 TableSnapshot。
     """
+    config = config or get_default_config()
     if not config.flow_mangan_enabled:
         return table
 
@@ -217,7 +218,7 @@ def settle_flow(
     table: TableSnapshot,
     board: "BoardState",
     winner_seat: int | None = None,
-    config: MahjongConfig = DEFAULT_CONFIG,
+    config: MahjongConfig | None = None,
 ) -> tuple[TableSnapshot, TenpaiResult]:
     """
     流局综合结算。
@@ -237,8 +238,9 @@ def settle_flow(
         table: 牌桌快照
         board: 牌局状态
         winner_seat: 和了者（若本局有和了）
-        config: 规则配置（默认使用雀魂标准配置）
+        config: 规则配置（默认从配置加载）
     """
+    config = config or get_default_config()
     # 1. 计算听牌结果
     tenpai_result = compute_tenpai_result(board)
 

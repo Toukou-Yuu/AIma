@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from kernel.config import DEFAULT_CONFIG, MahjongConfig
+from kernel.config import get_default_config, MahjongConfig
 from kernel.board import BoardState
 from kernel.hand.melds import Meld, MeldKind, triplet_key
 from kernel.table.model import PrevailingWind, TableSnapshot, seat_wind_rank
@@ -871,13 +871,14 @@ def non_dora_yaku_han_and_labels(
     is_hotei: bool = False,
     is_chankan: bool = False,
     is_tsumo: bool = False,
-    config: MahjongConfig = DEFAULT_CONFIG,
+    config: MahjongConfig | None = None,
 ) -> tuple[int, tuple[str, ...]]:
     """
     与 ``count_yaku_han`` 相同的非ドラ役番累计，并返回简体役名列表（供事件日志）。
 
     一般形路径中染手／一杯口系／三色同刻／三杠子 等与 ``count_yaku_han`` 文档一致。
     """
+    config = config or get_default_config()
     full = _full_tile_counter(concealed, melds, win_tile, for_ron=for_ron)
     labels: list[str] = []
 
@@ -1065,7 +1066,7 @@ def count_yaku_han(
     is_hotei: bool = False,
     is_chankan: bool = False,
     is_tsumo: bool = False,
-    config: MahjongConfig = DEFAULT_CONFIG,
+    config: MahjongConfig | None = None,
 ) -> int:
     """
     役与翻数（扩展子集）：
@@ -1092,6 +1093,7 @@ def count_yaku_han(
 
     不含ドラ、不含本场。
     """
+    config = config or get_default_config()
     return non_dora_yaku_han_and_labels(
         board,
         table,

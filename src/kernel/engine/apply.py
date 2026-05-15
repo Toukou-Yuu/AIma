@@ -23,14 +23,14 @@ from kernel.engine.phase import GamePhase
 from kernel.engine.settlement import settle_ron, settle_tsumo
 from kernel.engine.state import GameState
 from kernel.event_log import GameEvent
-from kernel.config import DEFAULT_CONFIG, MahjongConfig
+from kernel.config import get_default_config, MahjongConfig
 from kernel.flow import FlowKind
 from kernel.hand.multiset import remove_tile
 from kernel.kan import apply_ankan, apply_kakan
 from kernel.play import apply_discard, apply_draw
 from kernel.board import TurnPhase, shimocha_seat
 from kernel.riichi.tenpai import is_tenpai_default
-from kernel.table.model import RIICHI_STICK_POINTS
+from kernel.table.model import get_riichi_stick_points
 from kernel.table.transitions import advance_round, final_settlement, should_match_end
 from kernel.wall import split_wall
 from kernel.wall.split import split_wall as deal_split_wall
@@ -74,8 +74,9 @@ def _create_event_builder(state: GameState) -> EventBuilder:
 _CALL_PASS_DRAIN_MAX = 64
 
 
-def _outcome_pass_call(state: GameState, seat: int, config: MahjongConfig = DEFAULT_CONFIG) -> ApplyOutcome:
+def _outcome_pass_call(state: GameState, seat: int, config: MahjongConfig | None = None) -> ApplyOutcome:
     """执行单次 ``PASS_CALL``（含荣和收集结束时的结算与事件）。"""
+    config = config or get_default_config()
     phase = state.phase
     board = state.board
     if board is None:
@@ -157,8 +158,9 @@ def _call_response_active_seat(board: BoardState) -> int | None:
     return None
 
 
-def _apply_call_pass_drain(state: GameState, config: MahjongConfig = DEFAULT_CONFIG) -> ApplyOutcome:
+def _apply_call_pass_drain(state: GameState, config: MahjongConfig | None = None) -> ApplyOutcome:
     """连续执行「当前先序席仅可过」的 ``PASS_CALL``，直至否则或离开应答。"""
+    config = config or get_default_config()
     # 延迟导入，避免 ``apply`` ↔ ``legal_actions`` 与 ``engine.__init__`` 形成环
     from kernel.api.legal_actions import legal_actions
 
@@ -202,7 +204,7 @@ def _apply_call_pass_drain(state: GameState, config: MahjongConfig = DEFAULT_CON
     )
 
 
-def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONFIG) -> ApplyOutcome:
+def apply(state: GameState, action: Action, config: MahjongConfig | None = None) -> ApplyOutcome:
     """
     唯一推荐的状态推进接口。
 
@@ -217,6 +219,7 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
       岭上则 ``can_tsumo_default`` 按 15 张路径）→ ``HAND_OVER`` 并结算点棒。
     其余组合抛 ``IllegalActionError``。
     """
+    config = config or get_default_config()
     _validate_action_seat(action)
     phase = state.phase
     kind = action.kind
@@ -421,6 +424,7 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
                 msg = "DISCARD requires tile"
                 raise IllegalActionError(msg)
             seat = action.seat
+            riichi_points = get_riichi_stick_points()
             if action.declare_riichi:
                 if board.riichi[seat]:
                     msg = "already riichi"
@@ -428,7 +432,7 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
                 if board.melds[seat]:
                     msg = "riichi requires menzen"
                     raise IllegalActionError(msg)
-                if state.table.scores[seat] < RIICHI_STICK_POINTS:
+                if state.table.scores[seat] < riichi_points:
                     msg = "insufficient points for riichi stick"
                     raise IllegalActionError(msg)
                 try:
@@ -459,14 +463,15 @@ def apply(state: GameState, action: Action, config: MahjongConfig = DEFAULT_CONF
                 declare_riichi=action.declare_riichi,
             )
 
+            riichi_points = get_riichi_stick_points()
             new_table = state.table
             if action.declare_riichi:
                 scores = list(state.table.scores)
-                scores[seat] -= RIICHI_STICK_POINTS
+                scores[seat] -= riichi_points
                 new_table = replace(
                     state.table,
                     scores=tuple(scores),
-                    kyoutaku=state.table.kyoutaku + RIICHI_STICK_POINTS,
+                    kyoutaku=state.table.kyoutaku + riichi_points,
                 )
 
             # 检测四家立直流局
