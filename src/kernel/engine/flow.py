@@ -60,6 +60,33 @@ def detect_flow_exhausted(board: BoardState) -> FlowResult | None:
     return check_flow_kind(board, riichi_state=tuple(board.riichi))
 
 
+def detect_flow_four_winds(board: BoardState) -> FlowResult | None:
+    """
+    检测四风连打流局。
+
+    条件：
+    - 首巡（每家恰好 1 张舍牌）
+    - 无副露（所有 melds 为空）
+    - 前 4 张舍牌为相同风牌（东/南/西/北）
+
+    在 NEED_DRAW 阶段摸牌前检测。返回 FlowResult 或 None。
+    """
+    # 检查首巡：每家恰好 1 张舍牌
+    for seat_discards in board.all_discards_per_seat:
+        if len(seat_discards) != 1:
+            return None
+
+    # 检查无副露
+    for seat_melds in board.melds:
+        if len(seat_melds) > 0:
+            return None
+
+    # 按座位顺序收集前 4 张舍牌
+    first_4_river = [board.all_discards_per_seat[s][0] for s in range(4)]
+
+    return check_flow_kind(board, first_4_river=first_4_river)
+
+
 def apply_flow_transition(
     state: GameState,
     flow_result: FlowResult,

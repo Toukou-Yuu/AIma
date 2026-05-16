@@ -18,13 +18,14 @@ from kernel.engine.flow import (
     detect_flow_after_kan,
     detect_flow_after_riichi,
     detect_flow_exhausted,
+    detect_flow_four_winds,
 )
 from kernel.engine.phase import GamePhase
 from kernel.engine.settlement import settle_ron, settle_tsumo
 from kernel.engine.state import GameState
 from kernel.event_log import GameEvent
 from kernel.config import get_default_config, MahjongConfig
-from kernel.flow import FlowKind
+from kernel.flow import FlowKind, FlowResult
 from kernel.hand.multiset import remove_tile
 from kernel.kan import apply_ankan, apply_kakan
 from kernel.play import apply_discard, apply_draw
@@ -385,6 +386,18 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                 msg = "DRAW seat must match current_seat when provided"
                 raise IllegalActionError(msg)
 
+            # 检测四风连打流局（首巡无副露 + 四家第一舍为同风牌）
+            four_winds_flow = detect_flow_four_winds(board)
+            if four_winds_flow is not None:
+                eb = _create_event_builder(state)
+                flown_state, flow_event = apply_flow_transition(
+                    state, four_winds_flow, eb
+                )
+                return ApplyOutcome(
+                    new_state=flown_state,
+                    events=(flow_event,),
+                )
+
             # 检测牌山耗尽：触发荒牌流局而非抛出错误
             exhausted_flow = detect_flow_exhausted(board)
             if exhausted_flow is not None:
@@ -482,32 +495,6 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                     scores=tuple(scores),
                     kyoutaku=state.table.kyoutaku + riichi_points,
                 )
-
-            # 检测四家立直流局
-            if action.declare_riichi:
-                new_riichi_state = list(board.riichi)
-                new_riichi_state[seat] = True
-                flow_result = detect_flow_after_riichi(
-                    new_board,
-                    riichi_state=tuple(new_riichi_state),
-                )
-                if flow_result is not None and flow_result.kind == FlowKind.FOUR_RIICHI:
-                    # 四家立直流局：进入 FLOWN 状态
-                    flown_state, flow_event = apply_flow_transition(
-                        GameState(
-                            phase=GamePhase.IN_ROUND,
-                            table=new_table,
-                            board=new_board,
-                            ron_winners=None,
-                            event_sequence=eb._sequence,
-                        ),
-                        flow_result,
-                        eb,
-                    )
-                    return ApplyOutcome(
-                        new_state=flown_state,
-                        events=(discard_event, flow_event),
-                    )
 
             return ApplyOutcome(
                 new_state=GameState(
@@ -668,6 +655,60 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                     event_sequence=eb._sequence,
                 ),
                 events=(kan_event,),
+            )
+        if kind == ActionKind.DECLARE_NINE_NINE:
+            if board.turn_phase != TurnPhase.MUST_DISCARD:
+                msg = "DECLARE_NINE_NINE requires MUST_DISCARD"
+                raise IllegalActionError(msg)
+            if action.seat is None:
+                msg = "DECLARE_NINE_NINE requires seat"
+                raise IllegalActionError(msg)
+            if action.seat != board.current_seat:
+                msg = "DECLARE_NINE_NINE seat must equal current_seat"
+                raise IllegalActionError(msg)
+            seat = action.seat
+
+            # 验证九种九牌条件
+            from kernel.flow import check_nine_nine_declaration
+
+            if board.last_draw_tile is None:
+                msg = "DECLARE_NINE_NINE requires last_draw_tile"
+                raise IllegalActionError(msg)
+            if not check_nine_nine_declaration(board.hands[seat]):
+                msg = "not nine_nine declaration condition"
+                raise IllegalActionError(msg)
+            # 检查是否首巡：亲家配牌后（无舍牌）或子家配牌后（只有庄家一张舍牌）
+            total_discards = sum(len(river) for river in board.rivers)
+            dealer_seat = state.table.dealer_seat
+            is_first_turn = total_discards == 0 or (
+                total_discards == 1 and len(board.rivers[dealer_seat]) == 1
+            )
+            if not is_first_turn:
+                msg = "not first turn for nine_nine declaration"
+                raise IllegalActionError(msg)
+            # 检查是否无副露
+            no_melds = all(len(m) == 0 for m in board.melds)
+            if not no_melds:
+                msg = "nine_nine declaration requires no melds"
+                raise IllegalActionError(msg)
+
+            # 九种九牌流局：进入 FLOWN 状态
+            eb = _create_event_builder(state)
+            flow_result = FlowResult(kind=FlowKind.NINE_NINE)
+            flown_state, flow_event = apply_flow_transition(
+                GameState(
+                    phase=GamePhase.IN_ROUND,
+                    table=state.table,
+                    board=board,
+                    ron_winners=None,
+                    event_sequence=eb._sequence,
+                ),
+                flow_result,
+                eb,
+            )
+            return ApplyOutcome(
+                new_state=flown_state,
+                events=(flow_event,),
             )
         if kind in (
             ActionKind.PASS_CALL,

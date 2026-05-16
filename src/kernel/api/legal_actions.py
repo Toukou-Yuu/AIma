@@ -19,6 +19,7 @@ from kernel.config import get_default_config
 from kernel.board import BoardState, TurnPhase
 from kernel.engine.actions import ActionKind
 from kernel.engine.state import GameState
+from kernel.flow import check_nine_nine_declaration
 from kernel.hand.melds import Meld
 from kernel.riichi.tenpai import is_tenpai_default
 from kernel.scoring.yaku import non_dora_yaku_han_and_labels
@@ -274,6 +275,19 @@ def _legal_actions_must_discard(
     concealed = board.hands[seat]
     melds = board.melds[seat]
     last_tile = board.last_draw_tile
+
+    # 九种九牌：首巡、无副露、9 种以上幺九牌
+    if last_tile is not None and check_nine_nine_declaration(concealed):
+        # 检查是否首巡：亲家配牌后（无舍牌）或子家配牌后（只有庄家一张舍牌）
+        total_discards = sum(len(river) for river in board.all_discards_per_seat)
+        dealer_seat = state.table.dealer_seat
+        is_first_turn = total_discards == 0 or (
+            total_discards == 1 and len(board.all_discards_per_seat[dealer_seat]) == 1
+        )
+        # 检查是否无副露
+        no_melds = all(len(m) == 0 for m in board.melds)
+        if is_first_turn and no_melds:
+            actions.append(LegalAction(kind=ActionKind.DECLARE_NINE_NINE, seat=seat))
 
     # 已立直：只能摸切（打出上一张自摸），与 ``play.apply_discard`` 一致
     if board.riichi[seat]:

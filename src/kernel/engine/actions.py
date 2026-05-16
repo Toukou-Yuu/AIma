@@ -34,6 +34,8 @@ class ActionKind(Enum):
     """暗杠；``IN_ROUND`` 且 ``MUST_DISCARD``、非岭上待打；须 ``meld`` 为 ``MeldKind.ANKAN``。"""
     KAKAN = "kakan"
     """加杠；条件同暗杠；须 ``meld`` 为 ``MeldKind.KAKAN``。"""
+    DECLARE_NINE_NINE = "declare_nine_nine"
+    """九种九牌流局宣言；须在 ``MUST_DISCARD`` 且满足首巡无副露 + 9 种以上幺九牌。"""
 
 
 @dataclass(frozen=True, slots=True)
