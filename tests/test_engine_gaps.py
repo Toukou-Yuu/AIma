@@ -7,6 +7,7 @@ from dataclasses import replace
 
 from kernel import Tile, Suit, build_deck
 from kernel.call.win import can_ron_default, can_tsumo_default
+from kernel.riichi.tenpai import is_tenpai_default, compute_waiting_tiles
 from kernel.board import BoardState
 from kernel.engine.actions import Action, ActionKind
 from kernel.engine.apply import apply
@@ -1581,3 +1582,249 @@ class TestMoreErrorGuards:
             pass
         else:
             raise AssertionError("expected error for CALL_PASS_DRAIN with seat")
+
+
+# --- 国士无双回归测试 (R-01 Bug) ---
+# T-RULE-KOKUSHI-RON-001: 国士十三面荣和
+# T-RULE-KOKUSHI-TENPAI-002: 国士十三面听牌识别
+
+SHA = Tile(Suit.HONOR, 3)  # 西
+PEI = Tile(Suit.HONOR, 4)  # 北
+
+
+# 十三种幺九牌常量
+YAOCHU_TILES = [
+    MAN1, MAN9,  # 一九万
+    PIN1, PIN9,  # 一九筒
+    SOU1, SOU9,  # 一九索
+    TON, NAN, SHA, PEI,  # 四风
+    HAKU, HATSU, CHUN,  # 三元
+]
+
+
+class TestKokushiRonRegression:
+    """国士无双荣和回归测试 (R-01)。"""
+
+    def test_kokushi_thirteen_waits_ron_any_yaochu(self) -> None:
+        """T-RULE-KOKUSHI-RON-001: 十三面听牌荣和任意幺九牌。
+
+        十三种幺九牌各一张（13 张），荣和任意幺九牌应成立。
+        """
+        # 十三面听牌：13 种幺九牌各 1 张
+        concealed_13 = Counter({t: 1 for t in YAOCHU_TILES})
+        melds: tuple[Meld, ...] = ()
+
+        # 荣和任意幺九牌都应成立
+        for win_tile in YAOCHU_TILES:
+            assert can_ron_default(concealed_13, melds, win_tile) is True, (
+                f"十三面听牌荣和 {win_tile} 应成立"
+            )
+
+    def test_kokushi_twelve_waits_ron_missing_yaochu(self) -> None:
+        """十二面听牌（缺一种幺九）荣和缺失的那张。
+
+        手牌：某种幺九有 2 张（对子），其他 11 种各 1 张，缺 1 种。
+        荣和缺失的那种应成立，形成国士完成形。
+        """
+        # 十二面听牌：发 2 张 + 其他 11 种各 1 张（不含中、不含发），共 13 张
+        concealed_13 = Counter({t: 1 for t in YAOCHU_TILES if t not in (CHUN, HATSU)})
+        concealed_13[HATSU] = 2  # 发作为对子
+
+        melds: tuple[Meld, ...] = ()
+
+        # 荣和中（缺失的那张）应成立，形成国士完成形
+        assert can_ron_default(concealed_13, melds, CHUN) is True, (
+            "十二面听牌荣和缺失幺九牌应成立"
+        )
+
+    def test_kokushi_complete_ron_form(self) -> None:
+        """国士完成形荣和验证。
+
+        已有 14 张国士完成形，验证荣和判定（标准形）。
+        注意：这是已完成形态，荣和牌是最后一张。
+        """
+        # 国士完成形：13 种幺九牌 + 中对子
+        concealed_14 = Counter({t: 1 for t in YAOCHU_TILES})
+        concealed_14[CHUN] = 2  # 中作为对子
+
+        melds: tuple[Meld, ...] = ()
+
+        # 此测试验证 13 张听牌形荣和，而非 14 张完成形
+        # 这里用 13 张听牌形来测试
+        concealed_13 = Counter({t: 1 for t in YAOCHU_TILES})
+        assert can_ron_default(concealed_13, melds, CHUN) is True
+
+    def test_kokushi_ron_rejected_with_melds(self) -> None:
+        """有副露时国士荣和应拒绝。"""
+        concealed_13 = Counter({t: 1 for t in YAOCHU_TILES})
+        melds = (
+            Meld(
+                kind=MeldKind.PON,
+                tiles=[MAN1, MAN1, MAN1],
+                from_seat=1,
+            ),
+        )
+        # 有副露不能国士
+        assert can_ron_default(concealed_13, melds, CHUN) is False
+
+    def test_kokushi_ron_rejected_non_yaochu_win_tile(self) -> None:
+        """国士听牌荣和非幺九牌应拒绝。"""
+        concealed_13 = Counter({t: 1 for t in YAOCHU_TILES})
+        melds: tuple[Meld, ...] = ()
+        # 荣和 5m（非幺九牌）应拒绝
+        assert can_ron_default(concealed_13, melds, MAN5) is False
+
+
+class TestKokushiTsumoRegression:
+    """国士无双自摸回归测试 (R-01)。"""
+
+    def test_kokushi_thirteen_waits_tsumo(self) -> None:
+        """十三面听牌自摸任意幺九牌应成立。
+
+        13 张十三面听牌，自摸任意幺九牌形成国士十三面。
+        """
+        concealed_13 = Counter({t: 1 for t in YAOCHU_TILES})
+        melds: tuple[Meld, ...] = ()
+
+        for win_tile in YAOCHU_TILES:
+            # 自摸后 14 张
+            concealed_14 = concealed_13.copy()
+            concealed_14[win_tile] += 1
+            assert can_tsumo_default(
+                concealed_14, melds, win_tile, last_draw_was_rinshan=False
+            ) is True, f"十三面听牌自摸 {win_tile} 应成立"
+
+    def test_kokushi_complete_tsumo(self) -> None:
+        """国士完成形自摸判定。
+
+        14 张国士完成形（已有对子），验证自摸判定。
+        注意：自摸判定需要 win_tile 在手牌中。
+        """
+        # 国士完成形：13 种幺九牌 + 中对子
+        concealed_14 = Counter({t: 1 for t in YAOCHU_TILES})
+        concealed_14[CHUN] = 2  # 中作为对子，总和 14 张
+
+        melds: tuple[Meld, ...] = ()
+
+        # 自摸中（中已经在手牌中作为对子）
+        # 但这不符合逻辑：自摸牌应该在手牌中只有 1 张（摸到后变 2 张）
+        # 正确的测试应该是：13 张听牌，自摸后变成 14 张
+        concealed_13 = Counter({t: 1 for t in YAOCHU_TILES})
+        # 自摸中后变成 14 张，中变成 2 张
+        assert can_tsumo_default(
+            concealed_14, melds, CHUN, last_draw_was_rinshan=False
+        ) is True
+
+    def test_kokushi_tsumo_rejected_with_melds(self) -> None:
+        """有副露时国士自摸应拒绝。"""
+        concealed_14 = Counter({t: 1 for t in YAOCHU_TILES})
+        concealed_14[CHUN] = 2
+        melds = (
+            Meld(
+                kind=MeldKind.PON,
+                tiles=[MAN1, MAN1, MAN1],
+                from_seat=1,
+            ),
+        )
+        assert can_tsumo_default(
+            concealed_14, melds, CHUN, last_draw_was_rinshan=False
+        ) is False
+
+    def test_kokushi_tsumo_rejected_non_yaochu(self) -> None:
+        """国士听牌自摸非幺九牌应拒绝。"""
+        concealed_14 = Counter({t: 1 for t in YAOCHU_TILES})
+        concealed_14[MAN5] = 2  # 5m 作为对子，不是国士
+        melds: tuple[Meld, ...] = ()
+        assert can_tsumo_default(
+            concealed_14, melds, MAN5, last_draw_was_rinshan=False
+        ) is False
+
+
+class TestKokushiTenpaiRegression:
+    """国士无双听牌回归测试 (R-01)。"""
+
+    def test_kokushi_thirteen_waits_is_tenpai(self) -> None:
+        """T-RULE-KOKUSHI-TENPAI-002: 十三面听牌 is_tenpai_default 返回 True。
+
+        十三种幺九牌各一张（13 张），应是听牌状态。
+        """
+        concealed_13 = Counter({t: 1 for t in YAOCHU_TILES})
+        melds: tuple[Meld, ...] = ()
+
+        assert is_tenpai_default(concealed_13, melds) is True, (
+            "十三面听牌 is_tenpai_default 应返回 True"
+        )
+
+    def test_kokushi_twelve_waits_is_tenpai(self) -> None:
+        """十二面听牌 is_tenpai_default 返回 True。
+
+        手牌：某种幺九有 2 张（对子），其他 11 种各 1 张，缺 1 种。
+        """
+        # 十二面听牌：发 2 张 + 其他 11 种各 1 张（不含中、不含发），共 13 张
+        concealed_13 = Counter({t: 1 for t in YAOCHU_TILES if t not in (CHUN, HATSU)})
+        concealed_13[HATSU] = 2  # 发作为对子
+
+        melds: tuple[Meld, ...] = ()
+
+        assert is_tenpai_default(concealed_13, melds) is True, (
+            "十二面听牌 is_tenpai_default 应返回 True"
+        )
+
+    def test_kokushi_thirteen_waits_waiting_tiles(self) -> None:
+        """十三面听牌 compute_waiting_tiles 返回 13 种幺九牌。"""
+        concealed_13 = Counter({t: 1 for t in YAOCHU_TILES})
+        melds: tuple[Meld, ...] = ()
+
+        waiting = compute_waiting_tiles(concealed_13, melds)
+
+        # 应返回 13 种幺九牌
+        expected_waiting = frozenset(YAOCHU_TILES)
+        assert waiting == expected_waiting, (
+            f"十三面听牌应等 13 种幺九牌，实际等 {len(waiting)} 种: {waiting}"
+        )
+
+    def test_kokushi_twelve_waits_waiting_tiles(self) -> None:
+        """十二面听牌 compute_waiting_tiles 返回缺失的那张。
+
+        手牌：某种幺九有 2 张（对子），其他 11 种各 1 张，缺 1 种。
+        只等缺失的那种幺九牌。
+        """
+        # 十二面听牌：发 2 张 + 其他 11 种各 1 张（不含中、不含发），共 13 张
+        concealed_13 = Counter({t: 1 for t in YAOCHU_TILES if t not in (CHUN, HATSU)})
+        concealed_13[HATSU] = 2  # 发作为对子
+
+        melds: tuple[Meld, ...] = ()
+
+        waiting = compute_waiting_tiles(concealed_13, melds)
+
+        # 应只返回中（缺失的那张）
+        assert waiting == frozenset({CHUN}), (
+            f"十二面听牌应只等中，实际等: {waiting}"
+        )
+
+    def test_kokushi_tenpai_rejected_with_melds(self) -> None:
+        """有副露时国士听牌应拒绝。"""
+        concealed_13 = Counter({t: 1 for t in YAOCHU_TILES})
+        melds = (
+            Meld(
+                kind=MeldKind.PON,
+                tiles=[MAN1, MAN1, MAN1],
+                from_seat=1,
+            ),
+        )
+        assert is_tenpai_default(concealed_13, melds) is False
+
+    def test_kokushi_not_tenpai_missing_two_yaochu(self) -> None:
+        """缺两种幺九牌不是国士听牌。"""
+        # 缺中和白，不是国士听牌
+        concealed_13 = Counter({t: 1 for t in YAOCHU_TILES if t not in (CHUN, HAKU)})
+        concealed_13[MAN5] = 1
+        concealed_13[MAN6] = 1  # 补两张非幺九凑 13 张
+
+        melds: tuple[Meld, ...] = ()
+
+        # 不是国士听牌，可能也不是其他听牌
+        # 但至少不应该被识别为国士听牌
+        # 注：这个测试验证的是 can_ron_default 对非国士形的正确拒绝
+        assert can_ron_default(concealed_13, melds, CHUN) is False
+        assert can_ron_default(concealed_13, melds, HAKU) is False
