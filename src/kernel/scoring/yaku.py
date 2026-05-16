@@ -36,6 +36,14 @@ def prevailing_wind_tile(pw: PrevailingWind) -> Tile:
     return Tile(Suit.HONOR, 2)
 
 
+def _is_menzen(melds: tuple[Meld, ...]) -> bool:
+    """门清判定：ANKAN 不破门清，仅 CHI/PON/DAIMINKAN/KAKAN 破门清。"""
+    return not any(
+        m.kind in (MeldKind.CHI, MeldKind.PON, MeldKind.DAIMINKAN, MeldKind.KAKAN)
+        for m in melds
+    )
+
+
 def _is_tanyao(full: Counter[Tile], *, allow_open: bool, has_melds: bool) -> bool:
     if has_melds and not allow_open:
         return False
@@ -930,7 +938,7 @@ def non_dora_yaku_han_and_labels(
     if _is_chiitoitsu(full, melds):
         han += 2
         labels.append("七对子")
-        menzen_c7 = len(melds) == 0
+        menzen_c7 = _is_menzen(melds)
         if _is_chinitsu_full(full):
             han += 6 if menzen_c7 else 5
             labels.append("清一色(门清)" if menzen_c7 else "清一色")
@@ -942,9 +950,13 @@ def non_dora_yaku_han_and_labels(
             labels.append("断幺九")
         han += _yakuhai_han_chiitoitsu_pairs(full, round_wind_tile=rw, seat_wind_tile=sw)
         labels.extend(_yakuhai_labels_chiitoitsu_pairs(full, round_wind_tile=rw, seat_wind_tile=sw))
+        # 门前清自摸和：门清自摸时加 1 番
+        if menzen_c7 and is_tsumo:
+            han += 1
+            labels.append("门前清自摸和")
         return han, tuple(labels)
 
-    menzen = len(melds) == 0
+    menzen = _is_menzen(melds)
     if _is_chinitsu_full(full):
         han += 6 if menzen else 5
         labels.append("清一色(门清)" if menzen else "清一色")
@@ -1013,21 +1025,21 @@ def non_dora_yaku_han_and_labels(
         labels.append("对对和")
 
     if _is_sanshoku_same_rank(concealed, melds, win_tile, for_ron=for_ron):
-        menzen = len(melds) == 0
+        menzen = _is_menzen(melds)
         han += 3 if menzen else 2
         labels.append("三色同顺(门清)" if menzen else "三色同顺")
 
     if _is_ikkitsukan(concealed, melds, win_tile, for_ron=for_ron):
-        menzen = len(melds) == 0
+        menzen = _is_menzen(melds)
         han += 3 if menzen else 2
         labels.append("一气通贯(门清)" if menzen else "一气通贯")
 
     if _is_chanta(full, concealed, melds, win_tile, for_ron=for_ron, with_jun=True):
-        menzen = len(melds) == 0
+        menzen = _is_menzen(melds)
         han += 4 if menzen else 3
         labels.append("纯全带幺九(门清)" if menzen else "纯全带幺九")
     elif _is_chanta(full, concealed, melds, win_tile, for_ron=for_ron, with_jun=False):
-        menzen = len(melds) == 0
+        menzen = _is_menzen(melds)
         han += 2 if menzen else 1
         labels.append("混全带幺九(门清)" if menzen else "混全带幺九")
 
@@ -1047,6 +1059,11 @@ def non_dora_yaku_han_and_labels(
     if dragon_triplets == 2 and dragon_pairs >= 1:
         han += 2
         labels.append("小三元")
+
+    # 门前清自摸和：门清自摸时加 1 番（役满不叠加）
+    if menzen and is_tsumo and han < 13:
+        han += 1
+        labels.append("门前清自摸和")
 
     return han, tuple(labels)
 
