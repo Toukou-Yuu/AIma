@@ -29,7 +29,7 @@ from kernel.hand.multiset import remove_tile
 from kernel.kan import apply_ankan, apply_kakan
 from kernel.play import apply_discard, apply_draw
 from kernel.board import TurnPhase, shimocha_seat
-from kernel.riichi.tenpai import is_tenpai_default
+from kernel.riichi.tenpai import is_tenpai_default, _is_menzen
 from kernel.table.model import get_riichi_stick_points
 from kernel.table.transitions import advance_round, final_settlement, should_match_end
 from kernel.wall import split_wall
@@ -384,10 +384,21 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
             if seat != board.current_seat:
                 msg = "DRAW seat must match current_seat when provided"
                 raise IllegalActionError(msg)
-            try:
-                new_board = apply_draw(board, seat)
-            except ValueError as e:
-                raise IllegalActionError(str(e)) from e
+
+            # 检测牌山耗尽：触发荒牌流局而非抛出错误
+            exhausted_flow = detect_flow_exhausted(board)
+            if exhausted_flow is not None:
+                # 牌山已耗尽，无法摸牌 → 荒牌流局
+                eb = _create_event_builder(state)
+                flown_state, flow_event = apply_flow_transition(
+                    state, exhausted_flow, eb
+                )
+                return ApplyOutcome(
+                    new_state=flown_state,
+                    events=(flow_event,),
+                )
+
+            new_board = apply_draw(board, seat)
 
             # 生成 DrawTileEvent
             eb = _create_event_builder(state)
@@ -400,8 +411,6 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                 is_rinshan=is_rinshan,
                 wall_remaining=wall_remaining,
             )
-
-            # 荒牌检测不在 DRAW 时触发，留给 DISCARD 处理（给玩家自摸机会）
 
             return ApplyOutcome(
                 new_state=GameState(
@@ -429,7 +438,7 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                 if board.riichi[seat]:
                     msg = "already riichi"
                     raise IllegalActionError(msg)
-                if board.melds[seat]:
+                if not _is_menzen(board.melds[seat]):
                     msg = "riichi requires menzen"
                     raise IllegalActionError(msg)
                 if state.table.scores[seat] < riichi_points:
@@ -499,25 +508,6 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                         new_state=flown_state,
                         events=(discard_event, flow_event),
                     )
-
-            # 检测荒牌流局（弃牌后牌山已空，下家无法摸牌）
-            exhausted_flow = detect_flow_exhausted(new_board)
-            if exhausted_flow is not None and exhausted_flow.kind == FlowKind.EXHAUSTED:
-                flown_state, flow_event = apply_flow_transition(
-                    GameState(
-                        phase=GamePhase.IN_ROUND,
-                        table=new_table,
-                        board=new_board,
-                        ron_winners=None,
-                        event_sequence=eb._sequence,
-                    ),
-                    exhausted_flow,
-                    eb,
-                )
-                return ApplyOutcome(
-                    new_state=flown_state,
-                    events=(discard_event, flow_event),
-                )
 
             return ApplyOutcome(
                 new_state=GameState(

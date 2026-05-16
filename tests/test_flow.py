@@ -7,7 +7,7 @@ from collections import Counter
 from kernel.deal import build_board_after_split
 from kernel.deal.model import LIVE_WALL_AFTER_DEAL, BoardState
 from kernel.engine.actions import Action, ActionKind
-from kernel.engine.apply import IllegalActionError, apply
+from kernel.engine.apply import IllegalActionError, apply, ApplyOutcome
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import initial_game_state
 from kernel.flow.model import FlowKind, TenpaiResult
@@ -387,7 +387,7 @@ class TestFlowIntegration:
         assert board is not None
 
         # 持续摸打直到流局
-        max_iterations = len(board.live_wall) + 10
+        max_iterations = len(board.live_wall) + 20
         for i in range(max_iterations):
             if state_out.new_state.phase == GamePhase.FLOWN:
                 assert state_out.new_state.flow_result is not None
@@ -395,33 +395,47 @@ class TestFlowIntegration:
                 assert state_out.new_state.tenpai_result is not None
                 break
 
-            # 摸牌
-            draw_action = Action(kind=ActionKind.DRAW)
-            try:
-                state_out = apply(state_out.new_state, draw_action)
-            except IllegalActionError:
-                break
-
-            if state_out.new_state.phase != GamePhase.IN_ROUND:
-                break
-
-            # 打牌（简单打出一张安全牌）
+            from kernel.board import TurnPhase
             current_board = state_out.new_state.board
             if current_board is None:
                 break
 
-            hand = current_board.hands[current_board.current_seat]
-            if hand:
-                discard_tile = next(iter(hand.keys()))
-                discard_action = Action(
-                    kind=ActionKind.DISCARD,
-                    seat=current_board.current_seat,
-                    tile=discard_tile,
-                )
+            # 根据当前 turn_phase 选择动作
+            if current_board.turn_phase == TurnPhase.CALL_RESPONSE:
+                # R-05 修复后：处理 CALL_RESPONSE 阶段（弃牌后荣和窗口）
+                from tests.call_helpers import clear_call_window_state
+                cleared_state = clear_call_window_state(state_out.new_state)
+                from dataclasses import replace
+                state_out = replace(state_out, new_state=cleared_state)
+                continue
+
+            if current_board.turn_phase == TurnPhase.MUST_DISCARD:
+                # 打牌（简单打出一张安全牌）
+                hand = current_board.hands[current_board.current_seat]
+                if hand:
+                    discard_tile = next(iter(hand.keys()))
+                    discard_action = Action(
+                        kind=ActionKind.DISCARD,
+                        seat=current_board.current_seat,
+                        tile=discard_tile,
+                    )
+                    try:
+                        state_out = apply(state_out.new_state, discard_action)
+                    except IllegalActionError:
+                        break
+                continue
+
+            if current_board.turn_phase == TurnPhase.NEED_DRAW:
+                # 摸牌
+                draw_action = Action(kind=ActionKind.DRAW)
                 try:
-                    state_out = apply(state_out.new_state, discard_action)
+                    state_out = apply(state_out.new_state, draw_action)
                 except IllegalActionError:
                     break
+                continue
+
+            # 其他阶段：退出
+            break
 
     def test_four_riichi_flow_integration(self) -> None:
         """四家立直流局集成测试。"""
@@ -461,12 +475,24 @@ class TestFlowIntegration:
                     assert rb is not None
                     assert rb.turn_phase == TurnPhase.MUST_DISCARD, \
                         f"海底摸牌后应为 MUST_DISCARD，实际 {rb.turn_phase}"
-                    # 打出一张牌 → 应触发荒牌
+                    # 打出一张牌 → 应进入 CALL_RESPONSE（荣和窗口）
                     tile = next(iter(rb.hands[rb.current_seat].elements()))
                     result2 = apply(result.new_state, Action(
                         kind=ActionKind.DISCARD, seat=rb.current_seat, tile=tile,
                     ))
-                    assert result2.new_state.phase == GamePhase.FLOWN
+                    # R-05 修复后：河底弃牌应开放荣和窗口，而非直接流局
+                    assert result2.new_state.phase == GamePhase.IN_ROUND
+                    assert result2.new_state.board is not None
+                    assert result2.new_state.board.turn_phase == TurnPhase.CALL_RESPONSE
+                    # 全 pass 后 → NEED_DRAW → DRAW 失败 → FLOWN
+                    from tests.call_helpers import clear_call_window_state
+                    state_after_pass = clear_call_window_state(result2.new_state)
+                    assert state_after_pass.phase == GamePhase.IN_ROUND
+                    assert state_after_pass.board is not None
+                    assert state_after_pass.board.turn_phase == TurnPhase.NEED_DRAW
+                    # 下次 DRAW 应触发荒牌流局
+                    draw_result = apply(state_after_pass, Action(kind=ActionKind.DRAW))
+                    assert draw_result.new_state.phase == GamePhase.FLOWN
                     return
                 state = apply(state, Action(kind=ActionKind.DRAW)).new_state
             elif board.turn_phase == TurnPhase.MUST_DISCARD:

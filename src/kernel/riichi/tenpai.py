@@ -5,8 +5,16 @@ from __future__ import annotations
 from collections import Counter
 
 from kernel.call.win import can_ron_default
-from kernel.hand.melds import Meld
+from kernel.hand.melds import Meld, MeldKind
 from kernel.tiles.model import Suit, Tile
+
+
+def _is_menzen(melds: tuple[Meld, ...]) -> bool:
+    """门前清判定：无副露或仅有暗杠时为门前清。"""
+    for m in melds:
+        if m.kind != MeldKind.ANKAN:
+            return False
+    return True
 
 
 def _iter_ron_candidate_tiles() -> tuple[Tile, ...]:
@@ -29,7 +37,7 @@ def is_tenpai_seven_pairs(
     """
     门清、13 张时是否为七对子听牌：恰 7 种牌，其中 6 种对子、1 种单骑待ち。
     """
-    if melds:
+    if not _is_menzen(melds):
         return False
     if sum(concealed_13.values()) != 13:
         return False

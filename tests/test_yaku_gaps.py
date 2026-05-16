@@ -10,7 +10,6 @@ from kernel.scoring.yaku import (
     _has_same_suit_sequences,
     _is_tanyao,
     prevailing_wind_tile,
-    _yakuhai_han_chiitoitsu_pairs,
     _yakuhai_han_triplets,
 )
 from kernel.table.model import PrevailingWind
@@ -119,27 +118,6 @@ class TestYakuhaiHanTriplets:
         # 对子不够刻子
         keys = Counter({(Suit.HONOR, 5): 2})
         assert _yakuhai_han_triplets(keys, round_wind_tile=TON, seat_wind_tile=NAN) == 0
-
-
-# --- _yakuhai_han_chiitoitsu_pairs ---
-
-class TestYakuhaiHanChiitoitsuPairs:
-    def test_dragon_pair(self) -> None:
-        full = Counter({HAKU: 2, MAN2: 2, MAN3: 2, PIN4: 2, SOU5: 2, PIN6: 2, MAN7: 2})
-        assert _yakuhai_han_chiitoitsu_pairs(full, round_wind_tile=TON, seat_wind_tile=NAN) == 1
-
-    def test_round_wind_pair(self) -> None:
-        full = Counter({TON: 2, MAN2: 2, MAN3: 2, PIN4: 2, SOU5: 2, PIN6: 2, MAN7: 2})
-        assert _yakuhai_han_chiitoitsu_pairs(full, round_wind_tile=TON, seat_wind_tile=NAN) == 1
-
-    def test_double_wind_pair(self) -> None:
-        # 场风==自风，同一对子计 2 番
-        full = Counter({TON: 2, MAN2: 2, MAN3: 2, PIN4: 2, SOU5: 2, PIN6: 2, MAN7: 2})
-        assert _yakuhai_han_chiitoitsu_pairs(full, round_wind_tile=TON, seat_wind_tile=TON) == 2
-
-    def test_no_yakuhai(self) -> None:
-        full = Counter({MAN1: 2, MAN2: 2, MAN3: 2, PIN4: 2, SOU5: 2, PIN6: 2, MAN7: 2})
-        assert _yakuhai_han_chiitoitsu_pairs(full, round_wind_tile=TON, seat_wind_tile=NAN) == 0
 
 
 # --- _has_same_suit_sequences ---

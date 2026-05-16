@@ -4,8 +4,18 @@ from __future__ import annotations
 
 from collections import Counter
 
+from kernel.hand.melds import MeldKind
 from kernel.tiles.model import Tile
 from kernel.win_shape.std import concealed_to_vec34
+
+
+def _is_menzen(melds: tuple[object, ...]) -> bool:
+    """门前清判定：无副露或仅有暗杠时为门前清。"""
+    for m in melds:
+        # 假设 m 为 Meld 对象，具有 kind 属性
+        if hasattr(m, "kind") and m.kind != MeldKind.ANKAN:
+            return False
+    return True
 
 
 def _first_nonzero(v: list[int]) -> int | None:
@@ -135,7 +145,7 @@ def menzen_peikou_level(
     for_ron: bool,
 ) -> int:
     """门清且标准形时的一杯口／二杯口等级；有副露或非 14 张则 0。"""
-    if len(melds) != 0:
+    if not _is_menzen(melds):
         return 0
     c: Counter[Tile] = concealed.copy()
     if for_ron:

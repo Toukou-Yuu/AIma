@@ -7,6 +7,15 @@ from collections import Counter
 from kernel.hand.melds import Meld, MeldKind, triplet_key
 from kernel.tiles.model import Suit, Tile
 
+
+def _is_menzen(melds: tuple[Meld, ...]) -> bool:
+    """门前清判定：无副露或仅有暗杠时为门前清。"""
+    for m in melds:
+        if m.kind != MeldKind.ANKAN:
+            return False
+    return True
+
+
 # 基础符：非平和
 FU_BASE = 20
 
@@ -387,7 +396,7 @@ def compute_fu_full(
     完整符计算：考虑刻子/杠子符、雀头符、自摸/门清荣和加符。
     自动判定是否平和或七对子。
     """
-    menzen = len(melds) == 0
+    menzen = _is_menzen(melds)
     if menzen and _is_chiitoitsu_14(concealed, win_tile):
         return 25
 

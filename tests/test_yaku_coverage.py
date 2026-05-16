@@ -20,8 +20,6 @@ from kernel.scoring.yaku import (
     _is_suuankou_tanki,
     _is_tenhou,
     _is_toitoi,
-    _yakuhai_han_chiitoitsu_pairs,
-    _yakuhai_labels_chiitoitsu_pairs,
     _yakuhai_labels_for_triplets,
     non_dora_yaku_han_and_labels,
 )
@@ -186,34 +184,6 @@ class TestCountYakuhaiTriplets:
         assert _count_yakuhai_triplets(
             full, round_wind_tile=TON, seat_wind_tile=TON
         ) == 2
-
-
-# --- _yakuhai_han_chiitoitsu_pairs ---
-
-class TestYakuhaiHanChiitoitsuPairs:
-    def test_double_wind_pair(self) -> None:
-        full = Counter({TON: 2, MAN2: 2, MAN3: 2, MAN4: 2, PIN1: 2, PIN2: 2, PIN3: 2})
-        assert _yakuhai_han_chiitoitsu_pairs(
-            full, round_wind_tile=TON, seat_wind_tile=TON
-        ) == 2
-
-    def test_seat_wind_pair_only(self) -> None:
-        full = Counter({NAN: 2, MAN2: 2, MAN3: 2, MAN4: 2, PIN1: 2, PIN2: 2, PIN3: 2})
-        assert _yakuhai_han_chiitoitsu_pairs(
-            full, round_wind_tile=TON, seat_wind_tile=NAN
-        ) == 1
-
-    def test_round_wind_pair_only(self) -> None:
-        full = Counter({TON: 2, MAN2: 2, MAN3: 2, MAN4: 2, PIN1: 2, PIN2: 2, PIN3: 2})
-        assert _yakuhai_han_chiitoitsu_pairs(
-            full, round_wind_tile=TON, seat_wind_tile=NAN
-        ) == 1
-
-    def test_dragon_pair(self) -> None:
-        full = Counter({HAKU: 2, MAN2: 2, MAN3: 2, MAN4: 2, PIN1: 2, PIN2: 2, PIN3: 2})
-        assert _yakuhai_han_chiitoitsu_pairs(
-            full, round_wind_tile=TON, seat_wind_tile=NAN
-        ) == 1
 
 
 # --- _is_suuankou_tanki ---
@@ -397,30 +367,6 @@ class TestYakuhaiLabelsForTriplets:
         assert "白刻" in labels
         assert "发刻" in labels
         assert "中刻" in labels
-
-
-# --- _yakuhai_labels_chiitoitsu_pairs ---
-
-class TestYakuhaiLabelsChiitoitsuPairs:
-    def test_double_wind_pair_label(self) -> None:
-        full = Counter({TON: 2})
-        labels = _yakuhai_labels_chiitoitsu_pairs(full, round_wind_tile=TON, seat_wind_tile=TON)
-        assert labels == ["连风对"]
-
-    def test_round_wind_pair_label(self) -> None:
-        full = Counter({TON: 2})
-        labels = _yakuhai_labels_chiitoitsu_pairs(full, round_wind_tile=TON, seat_wind_tile=NAN)
-        assert labels == ["场风对"]
-
-    def test_seat_wind_pair_label(self) -> None:
-        full = Counter({NAN: 2})
-        labels = _yakuhai_labels_chiitoitsu_pairs(full, round_wind_tile=TON, seat_wind_tile=NAN)
-        assert labels == ["自风对"]
-
-    def test_dragon_pair_label(self) -> None:
-        full = Counter({HAKU: 2})
-        labels = _yakuhai_labels_chiitoitsu_pairs(full, round_wind_tile=TON, seat_wind_tile=NAN)
-        assert labels == ["白对"]
 
 
 # --- non_dora_yaku_han_and_labels: yakuman paths ---

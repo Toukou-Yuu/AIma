@@ -37,11 +37,11 @@ def prevailing_wind_tile(pw: PrevailingWind) -> Tile:
 
 
 def _is_menzen(melds: tuple[Meld, ...]) -> bool:
-    """门清判定：ANKAN 不破门清，仅 CHI/PON/DAIMINKAN/KAKAN 破门清。"""
-    return not any(
-        m.kind in (MeldKind.CHI, MeldKind.PON, MeldKind.DAIMINKAN, MeldKind.KAKAN)
-        for m in melds
-    )
+    """门前清判定：无副露或仅有暗杠时为门前清。"""
+    for m in melds:
+        if m.kind != MeldKind.ANKAN:
+            return False
+    return True
 
 
 def _is_tanyao(full: Counter[Tile], *, allow_open: bool, has_melds: bool) -> bool:
@@ -76,27 +76,6 @@ def _yakuhai_han_triplets(
         h += 1
     for rank in (5, 6, 7):
         if keys[(Suit.HONOR, rank)] >= 3:
-            h += 1
-    return h
-
-
-def _yakuhai_han_chiitoitsu_pairs(
-    full: Counter[Tile],
-    *,
-    round_wind_tile: Tile,
-    seat_wind_tile: Tile,
-) -> int:
-    """七对子：役牌对子各计 1 番；场风与自风相同时为连风对子 2 番。"""
-    if round_wind_tile == seat_wind_tile and full[round_wind_tile] == 2:
-        return 2
-    h = 0
-    if full[round_wind_tile] == 2:
-        h += 1
-    if full[seat_wind_tile] == 2:
-        h += 1
-    for rank in (5, 6, 7):
-        tt = Tile(Suit.HONOR, rank)
-        if full[tt] == 2:
             h += 1
     return h
 
@@ -844,26 +823,6 @@ def _yakuhai_labels_for_triplets(
     return out
 
 
-def _yakuhai_labels_chiitoitsu_pairs(
-    full: Counter[Tile],
-    *,
-    round_wind_tile: Tile,
-    seat_wind_tile: Tile,
-) -> list[str]:
-    if round_wind_tile == seat_wind_tile and full.get(round_wind_tile, 0) == 2:
-        return ["连风对"]
-    out: list[str] = []
-    if full.get(round_wind_tile, 0) == 2:
-        out.append("场风对")
-    if full.get(seat_wind_tile, 0) == 2:
-        out.append("自风对")
-    for rank, name in ((5, "白"), (6, "发"), (7, "中")):
-        tt = Tile(Suit.HONOR, rank)
-        if full.get(tt, 0) == 2:
-            out.append(f"{name}对")
-    return out
-
-
 def non_dora_yaku_han_and_labels(
     board: BoardState,
     table: TableSnapshot,
@@ -948,9 +907,7 @@ def non_dora_yaku_han_and_labels(
         if _is_tanyao(full, allow_open=allow_open_tanyao, has_melds=False):
             han += 1
             labels.append("断幺九")
-        han += _yakuhai_han_chiitoitsu_pairs(full, round_wind_tile=rw, seat_wind_tile=sw)
-        labels.extend(_yakuhai_labels_chiitoitsu_pairs(full, round_wind_tile=rw, seat_wind_tile=sw))
-        # 门前清自摸和：门清自摸时加 1 番
+        # 门前清自摸和：门清自摸时加 1 番（役满不叠加）
         if menzen_c7 and is_tsumo:
             han += 1
             labels.append("门前清自摸和")
@@ -1056,14 +1013,13 @@ def non_dora_yaku_han_and_labels(
     triplet_keys = _triplet_key_counts(full)
     dragon_triplets = sum(1 for rank in (5, 6, 7) if triplet_keys[(Suit.HONOR, rank)] >= 3)
     dragon_pairs = sum(1 for rank in (5, 6, 7) if 2 <= triplet_keys[(Suit.HONOR, rank)] < 3)
-    if dragon_triplets == 2 and dragon_pairs >= 1:
-        han += 2
-        labels.append("小三元")
-
     # 门前清自摸和：门清自摸时加 1 番（役满不叠加）
     if menzen and is_tsumo and han < 13:
         han += 1
         labels.append("门前清自摸和")
+    if dragon_triplets == 2 and dragon_pairs >= 1:
+        han += 2
+        labels.append("小三元")
 
     return han, tuple(labels)
 

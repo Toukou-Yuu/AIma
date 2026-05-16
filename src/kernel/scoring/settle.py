@@ -17,6 +17,7 @@ from kernel.scoring.yaku import (
     is_kokushi_thirteen_waits,
     prevailing_wind_tile,
     non_dora_yaku_han_and_labels,
+    _is_menzen,
 )
 from kernel.table.model import TableSnapshot, seat_wind_rank
 from kernel.tiles.model import Suit, Tile
@@ -67,7 +68,7 @@ def settle_ron_table(
         if not 0 <= w <= 3:
             msg = "winner seat must be 0..3"
             raise ValueError(msg)
-        menzen = len(board.melds[w]) == 0
+        menzen = _is_menzen(board.melds[w])
         rw = prevailing_wind_tile(table.prevailing_wind)
         sw = Tile(Suit.HONOR, seat_wind_rank(table.dealer_seat, w))
 
@@ -217,7 +218,7 @@ def settle_tsumo_table(
         raise ValueError(msg)
 
     old_scores = table.scores
-    menzen = len(board.melds[winner]) == 0
+    menzen = _is_menzen(board.melds[winner])
     rw = prevailing_wind_tile(table.prevailing_wind)
     sw = Tile(Suit.HONOR, seat_wind_rank(table.dealer_seat, winner))
 
