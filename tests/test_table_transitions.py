@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from kernel.deal import build_board_after_split
+from kernel.engine.actions import Action, ActionKind
+from kernel.engine.apply import apply
+from kernel.engine.phase import GamePhase
+from kernel.engine.state import GameState
+from kernel.flow.model import TenpaiResult
 from kernel.table.model import MatchPreset, PrevailingWind, RoundNumber, initial_table_snapshot
 from kernel.table.transitions import (
     advance_round,
@@ -11,6 +17,8 @@ from kernel.table.transitions import (
     final_settlement,
     should_match_end,
 )
+from kernel.tiles.deck import build_deck
+from kernel.wall.split import split_wall
 
 
 class TestAdvanceRound:
@@ -225,3 +233,156 @@ class TestFinalSettlement:
         total_before = 30000 + 30000 + 30000 + 10000 + 1000
         total_after = 30334 + 30333 + 30333 + 10000
         assert total_before == total_after
+
+
+class TestR09DealerWinAtSouth4ShouldContinue:
+    """R-09 回归测试：南四局亲家和了应连庄而非终局。
+
+    Root cause: should_match_end() 在检查 continue_dealer 之前被调用。
+    Expected: 亲家和了 → 连庄（dealer_seat 不变）→ 下一局 IN_ROUND。
+    """
+
+    def test_dealer_win_at_south4_hand_over_should_continue(self) -> None:
+        """南四局亲家和了后 HAND_OVER → NOOP → IN_ROUND（连庄）。"""
+        # 构造南四局场况
+        table = initial_table_snapshot(
+            match_preset=MatchPreset.HANCHAN,
+            prevailing_wind=PrevailingWind.SOUTH,
+            round_number=RoundNumber.FOUR,
+            dealer_seat=0,
+            honba=2,
+        )
+
+        # 构造 HAND_OVER 状态：亲家（seat 0）荣和
+        state = GameState(
+            phase=GamePhase.HAND_OVER,
+            table=table,
+            board=None,  # HAND_OVER 不需要 board
+            ron_winners=frozenset({0}),  # 亲家和了
+        )
+
+        # 准备牌山用于下一局
+        wall = tuple(build_deck())
+
+        # 执行 NOOP 推进
+        outcome = apply(state, Action(kind=ActionKind.NOOP, wall=wall))
+
+        # 验证：应连庄（IN_ROUND），而非终局（MATCH_END）
+        assert outcome.new_state.phase == GamePhase.IN_ROUND
+        assert outcome.new_state.table.dealer_seat == 0  # 亲席不变
+        assert outcome.new_state.table.prevailing_wind == PrevailingWind.SOUTH  # 场风不变
+        assert outcome.new_state.table.round_number == RoundNumber.FOUR  # 局序不变
+        # honba 由 settlement 计算，此处不验证
+
+    def test_dealer_win_at_south4_not_match_end(self) -> None:
+        """验证：南四局亲家和了后，advance_round(continue_dealer=True) 正确。"""
+        table = initial_table_snapshot(
+            match_preset=MatchPreset.HANCHAN,
+            prevailing_wind=PrevailingWind.SOUTH,
+            round_number=RoundNumber.FOUR,
+            dealer_seat=0,
+            honba=0,
+        )
+
+        # 直接验证 advance_round 连庄行为
+        new_table = advance_round(table, continue_dealer=True)
+
+        # 连庄：亲席、场风、局序不变
+        assert new_table.dealer_seat == 0
+        assert new_table.prevailing_wind == PrevailingWind.SOUTH
+        assert new_table.round_number == RoundNumber.FOUR
+
+
+class TestR09DealerTenpaiAtSouth4FlowShouldContinue:
+    """R-09 回归测试：南四局亲家听牌流局应连庄而非终局。
+
+    Root cause: advance_after_flow() 中 should_match_end() 在检查 continue_dealer 之前被调用。
+    Expected: 亲家听牌 → 连庄（dealer_seat 不变）→ 下一局 IN_ROUND。
+    """
+
+    def test_dealer_tenpai_at_south4_flow_should_continue(self) -> None:
+        """南四局亲家听牌流局后 FLOWN → NOOP → IN_ROUND（连庄）。"""
+        # 构造南四局场况
+        table = initial_table_snapshot(
+            match_preset=MatchPreset.HANCHAN,
+            prevailing_wind=PrevailingWind.SOUTH,
+            round_number=RoundNumber.FOUR,
+            dealer_seat=0,
+            honba=1,
+        )
+
+        # 构造 FLOWN 状态：亲家（seat 0）听牌
+        state = GameState(
+            phase=GamePhase.FLOWN,
+            table=table,
+            board=None,  # FLOWN 不需要 board
+            tenpai_result=TenpaiResult(tenpai_seats=frozenset({0})),  # 亲家听牌
+        )
+
+        # 准备牌山用于下一局
+        wall = tuple(build_deck())
+
+        # 执行 NOOP 推进
+        outcome = apply(state, Action(kind=ActionKind.NOOP, wall=wall))
+
+        # 验证：应连庄（IN_ROUND），而非终局（MATCH_END）
+        assert outcome.new_state.phase == GamePhase.IN_ROUND
+        assert outcome.new_state.table.dealer_seat == 0  # 亲席不变
+        assert outcome.new_state.table.prevailing_wind == PrevailingWind.SOUTH  # 场风不变
+        assert outcome.new_state.table.round_number == RoundNumber.FOUR  # 局序不变
+
+    def test_dealer_noten_at_south4_flow_should_end(self) -> None:
+        """南四局亲家不听牌流局应终局（对照组）。"""
+        # 构造南四局场况
+        table = initial_table_snapshot(
+            match_preset=MatchPreset.HANCHAN,
+            prevailing_wind=PrevailingWind.SOUTH,
+            round_number=RoundNumber.FOUR,
+            dealer_seat=0,
+            honba=0,
+        )
+
+        # 构造 FLOWN 状态：亲家（seat 0）不听牌（其他家听牌）
+        state = GameState(
+            phase=GamePhase.FLOWN,
+            table=table,
+            board=None,
+            tenpai_result=TenpaiResult(tenpai_seats=frozenset({1, 2})),  # 非亲家听牌
+        )
+
+        # 准备牌山
+        wall = tuple(build_deck())
+
+        # 执行 NOOP 推进
+        outcome = apply(state, Action(kind=ActionKind.NOOP, wall=wall))
+
+        # 验证：应终局（MATCH_END），而非连庄
+        assert outcome.new_state.phase == GamePhase.MATCH_END
+
+    def test_child_win_at_south4_hand_over_should_change_dealer(self) -> None:
+        """南四局子家和了后应亲流（对照组，验证 continue_dealer=False 路径）。"""
+        # 构造南四局场况
+        table = initial_table_snapshot(
+            match_preset=MatchPreset.HANCHAN,
+            prevailing_wind=PrevailingWind.SOUTH,
+            round_number=RoundNumber.FOUR,
+            dealer_seat=0,
+            honba=0,
+        )
+
+        # 构造 HAND_OVER 状态：子家（seat 1）荣和
+        state = GameState(
+            phase=GamePhase.HAND_OVER,
+            table=table,
+            board=None,
+            ron_winners=frozenset({1}),  # 子家和了
+        )
+
+        # 准备牌山
+        wall = tuple(build_deck())
+
+        # 执行 NOOP 推进
+        outcome = apply(state, Action(kind=ActionKind.NOOP, wall=wall))
+
+        # 验证：应终局（MATCH_END），因为南四局亲流后终局
+        assert outcome.new_state.phase == GamePhase.MATCH_END

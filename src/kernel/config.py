@@ -68,6 +68,9 @@ class MahjongConfig:
     #: 本场费（默认 300 点/场）
     honba_value: int = 300
 
+    #: 国士无双抢暗杠：允许国士无双十三面听牌抢暗杠的幺九牌
+    allow_kokushi_rob_ankan: bool = True
+
     @classmethod
     def default(cls) -> "MahjongConfig":
         """返回雀魂友人桌标准配置（v1.1）。"""

@@ -7,7 +7,12 @@ from kernel.call.transitions import (
     apply_ron,
     board_after_ron_winners,
 )
-from kernel.call.win import can_ron_default, can_ron_seven_pairs
+from kernel.call.win import (
+    can_ron_default,
+    can_ron_seven_pairs,
+    get_kokushi_waiting_tiles,
+    is_kokushi_thirteen_waits_waiting,
+)
 
 __all__ = [
     "apply_open_meld",
@@ -17,5 +22,7 @@ __all__ = [
     "can_declare_ron",
     "can_ron_default",
     "can_ron_seven_pairs",
+    "get_kokushi_waiting_tiles",
+    "is_kokushi_thirteen_waits_waiting",
     "require_can_declare_ron",
 ]

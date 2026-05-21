@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from kernel.hand.melds import Meld, meld_tile_count
+from kernel.hand.melds import Meld, MeldKind, meld_tile_count
 from kernel.tiles.model import Suit, Tile
 from kernel.win_shape.std import can_win_standard_form, can_win_standard_form_concealed_total
 
@@ -30,6 +30,64 @@ _YAOCHU_TILES: tuple[Tile, ...] = (
 def _is_yaochu(tile: Tile) -> bool:
     """判断牌是否为幺九牌（老幺或字牌）。"""
     return tile in _YAOCHU_TILES
+
+
+def is_kokushi_thirteen_waits_waiting(
+    concealed: Counter[Tile], melds: tuple[Meld, ...]
+) -> bool:
+    """
+    国士无双十三面听牌判定。
+
+    十三面听牌条件：
+    - 门前清（无副露，或仅有暗杠）
+    - 手牌 13 张
+    - 恰好 12 种幺九牌各 1 张
+    - 有一张万能牌（必须是非幺九牌，不能是重复的幺九牌）
+    - 如果万能牌是重复的幺九牌，则是十二面听牌而非十三面
+
+    Returns True if this is specifically 13-wait kokushi tenpai.
+    """
+    # 门前清限定（暗杠可以）
+    for m in melds:
+        if m.kind != MeldKind.ANKAN:
+            return False
+
+    # 必须有 13 张手牌
+    if sum(concealed.values()) != 13:
+        return False
+
+    # 检查幺九牌分布
+    yaochu_kinds = sum(1 for t in _YAOCHU_TILES if concealed.get(t, 0) >= 1)
+
+    # 十三面听牌：恰好 12 种幺九牌各 1 张
+    if yaochu_kinds != 12:
+        return False
+
+    # 确保这 12 种幺九牌都只有 1 张
+    for t in _YAOCHU_TILES:
+        if concealed.get(t, 0) > 1:
+            # 有重复的幺九牌，这是十二面听牌而非十三面
+            return False
+
+    # 检查万能牌（手牌中非这 12 种幺九牌的牌）
+    for tile in concealed:
+        if not _is_yaochu(tile):
+            # 有非幺九牌，这是十三面听牌（万能牌）
+            return True
+
+    # 如果所有牌都是幺九牌，且 12 种各 1 张，那么第 13 张牌是什么？
+    # 实际上这种情况不存在，因为 sum(concealed) == 13 且 yaochu_kinds == 12
+    # 所以必然有一张牌不属于这 12 种幺九牌
+    return False
+
+
+def get_kokushi_waiting_tiles(concealed: Counter[Tile]) -> frozenset[Tile]:
+    """
+    获取国士十三面听牌缺失的幺九牌（等待牌）。
+
+    前置条件：is_kokushi_thirteen_waits_waiting() 为 True。
+    """
+    return frozenset(t for t in _YAOCHU_TILES if concealed.get(t, 0) == 0)
 
 
 def _seat_concealed_plus_meld_tiles(

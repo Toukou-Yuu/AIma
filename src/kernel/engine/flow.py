@@ -161,8 +161,14 @@ def advance_after_flow(
     from kernel.deal import assert_wall_is_standard_deck, build_board_after_split
     from kernel.wall.split import split_wall as deal_split_wall
 
-    # 检查是否终局
-    if should_match_end(table):
+    # 先判断是否连庄（亲家听牌）
+    continue_dealer = tenpai_result is not None and dealer_seat in tenpai_result.tenpai_seats
+
+    if continue_dealer:
+        # 连庄：不判断终局，直接推进
+        new_table = advance_round(table, continue_dealer=True)
+    elif should_match_end(table):
+        # 亲流 + 终局条件满足：终局
         ranking, final_table = final_settlement(table)
         end_ev = event_builder.match_end(
             ranking=ranking,
@@ -177,12 +183,9 @@ def advance_after_flow(
             tenpai_result=tenpai_result,
             event_sequence=event_builder._sequence,
         ), (end_ev,)
-
-    # 未终局：判断是否连庄
-    # 连庄条件：亲家听牌
-    continue_dealer = tenpai_result is not None and dealer_seat in tenpai_result.tenpai_seats
-
-    new_table = advance_round(table, continue_dealer=continue_dealer)
+    else:
+        # 亲流但未达终局条件：推进下一局
+        new_table = advance_round(table, continue_dealer=False)
 
     # 重新开局配牌
     if wall is None:

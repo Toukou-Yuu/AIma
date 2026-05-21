@@ -34,7 +34,7 @@ from kernel.riichi.tenpai import is_tenpai_default, _is_menzen
 from kernel.table.model import get_riichi_stick_points
 from kernel.table.transitions import advance_round, final_settlement, should_match_end
 from kernel.wall import split_wall
-from kernel.wall.split import split_wall as deal_split_wall
+from kernel.wall.split import split_wall as deal_split_wall, total_wall_remaining
 
 if TYPE_CHECKING:
     from kernel.hand.melds import Meld
@@ -417,7 +417,11 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
             eb = _create_event_builder(state)
             drawn_tile = new_board.last_draw_tile
             is_rinshan = new_board.last_draw_was_rinshan
-            wall_remaining = len(new_board.live_wall) // 2  # 简化：剩余摸牌数
+            wall_remaining = total_wall_remaining(
+                len(new_board.live_wall),
+                new_board.live_draw_index,
+                new_board.rinshan_draw_index,
+            )
             draw_event = eb.draw_tile(
                 seat=seat,
                 tile=drawn_tile,
@@ -724,8 +728,16 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
     # HAND_OVER 阶段：和了后等待下一局或终局
     if phase == GamePhase.HAND_OVER:
         if kind == ActionKind.NOOP:
-            # 检查和了后是否终局
-            if should_match_end(state.table):
+            # 先判断是否连庄（亲家和了）
+            continue_dealer = (
+                state.ron_winners is not None and state.table.dealer_seat in state.ron_winners
+            )
+
+            if continue_dealer:
+                # 连庄：不判断终局，直接推进
+                new_table = advance_round(state.table, continue_dealer=True)
+            elif should_match_end(state.table):
+                # 亲流 + 终局条件满足：终局
                 ranking, final_table = final_settlement(state.table)
                 eb = _create_event_builder(state)
                 end_ev = eb.match_end(
@@ -743,46 +755,44 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                     events=(end_ev,),
                 )
             else:
-                # 未终局：判断是否连庄
-                continue_dealer = (
-                    state.ron_winners is not None and state.table.dealer_seat in state.ron_winners
-                )
-                new_table = advance_round(state.table, continue_dealer=continue_dealer)
-                # 重新开局配牌
-                w = action.wall if action.wall is not None else None
-                if w is None:
-                    msg = "NEXT_ROUND requires wall"
-                    raise IllegalActionError(msg)
-                try:
-                    assert_wall_is_standard_deck(w)
-                except ValueError as e:
-                    raise IllegalActionError(str(e)) from e
-                try:
-                    split = deal_split_wall(w)
-                    board = build_board_after_split(split, new_table.dealer_seat)
-                except ValueError as e:
-                    raise IllegalActionError(str(e)) from e
+                # 亲流但未达终局条件：推进下一局
+                new_table = advance_round(state.table, continue_dealer=False)
 
-                # 生成新局的 RoundBeginEvent
-                eb = _create_event_builder(state)
-                dora_ind = board.revealed_indicators[0] if board.revealed_indicators else None
-                seeds = tuple(s * 13 for s in range(4))
-                round_begin_event = eb.round_begin(
-                    dealer_seat=new_table.dealer_seat,
-                    dora_indicator=dora_ind,
-                    seeds=seeds,
-                )
+            # 重新开局配牌
+            w = action.wall if action.wall is not None else None
+            if w is None:
+                msg = "NEXT_ROUND requires wall"
+                raise IllegalActionError(msg)
+            try:
+                assert_wall_is_standard_deck(w)
+            except ValueError as e:
+                raise IllegalActionError(str(e)) from e
+            try:
+                split = deal_split_wall(w)
+                board = build_board_after_split(split, new_table.dealer_seat)
+            except ValueError as e:
+                raise IllegalActionError(str(e)) from e
 
-                return ApplyOutcome(
-                    new_state=GameState(
-                        phase=GamePhase.IN_ROUND,
-                        table=new_table,
-                        board=board,
-                        ron_winners=None,
-                        event_sequence=eb._sequence,
-                    ),
-                    events=(round_begin_event,),
-                )
+            # 生成新局的 RoundBeginEvent
+            eb = _create_event_builder(state)
+            dora_ind = board.revealed_indicators[0] if board.revealed_indicators else None
+            seeds = tuple(s * 13 for s in range(4))
+            round_begin_event = eb.round_begin(
+                dealer_seat=new_table.dealer_seat,
+                dora_indicator=dora_ind,
+                seeds=seeds,
+            )
+
+            return ApplyOutcome(
+                new_state=GameState(
+                    phase=GamePhase.IN_ROUND,
+                    table=new_table,
+                    board=board,
+                    ron_winners=None,
+                    event_sequence=eb._sequence,
+                ),
+                events=(round_begin_event,),
+            )
         msg = f"action {kind.value} not allowed in phase {phase.value}"
         raise IllegalActionError(msg)
 

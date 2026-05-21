@@ -67,6 +67,13 @@ class WallSplit:
             raise ValueError(msg)
 
 
+def total_wall_remaining(live_wall_length: int, live_draw_index: int, rinshan_draw_index: int) -> int:
+    """总剩余可摸张数（本墙 + 岭上）。"""
+    live_remaining = live_wall_length - live_draw_index
+    rinshan_remaining = RINSHAN_COUNT - rinshan_draw_index
+    return live_remaining + rinshan_remaining
+
+
 def split_wall(wall: Sequence[Tile]) -> WallSplit:
     """
     将长度为 136 的牌山切成「本墙 + 王牌」。

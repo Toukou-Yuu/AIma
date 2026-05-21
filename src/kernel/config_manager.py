@@ -88,6 +88,7 @@ class KernelConfigManager:
             west_round_enabled=kernel_data["west_round_enabled"],
             riichi_stick_value=kernel_data["riichi_stick_value"],
             honba_value=kernel_data["honba_value"],
+            allow_kokushi_rob_ankan=kernel_data.get("allow_kokushi_rob_ankan", True),
         )
 
     @classmethod

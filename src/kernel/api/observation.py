@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Literal
 
 from kernel.engine.phase import GamePhase
 from kernel.tiles.model import Tile
+from kernel.wall.split import total_wall_remaining
 
 if TYPE_CHECKING:
     from collections.abc import Counter
@@ -178,7 +179,11 @@ def observation(
     # 剩余牌数（仅全知模式）
     wall_remaining = None
     if mode == "debug" and board is not None:
-        wall_remaining = len(board.live_wall)
+        wall_remaining = total_wall_remaining(
+            len(board.live_wall),
+            board.live_draw_index,
+            board.rinshan_draw_index,
+        )
 
     # 王牌信息（仅全知模式）
     dead_wall = None
