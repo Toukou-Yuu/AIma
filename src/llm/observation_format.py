@@ -177,9 +177,6 @@ def action_to_natural_text(action: LegalAction, my_seat: int) -> str:
     if kind == ActionKind.KAKAN and action.meld:
         return _meld_to_cn(action.meld, action.seat)
 
-    if kind == ActionKind.RIICHI:
-        return "立直宣言"
-
     return kind.value
 
 
