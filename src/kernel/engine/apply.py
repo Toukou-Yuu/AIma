@@ -714,10 +714,10 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                 msg = "not nine_nine declaration condition"
                 raise IllegalActionError(msg)
             # 检查是否首巡：亲家配牌后（无舍牌）或子家配牌后（只有庄家一张舍牌）
-            total_discards = sum(len(river) for river in board.rivers)
+            total_discards = sum(len(discards) for discards in board.all_discards_per_seat)
             dealer_seat = state.table.dealer_seat
             is_first_turn = total_discards == 0 or (
-                total_discards == 1 and len(board.rivers[dealer_seat]) == 1
+                total_discards == 1 and len(board.all_discards_per_seat[dealer_seat]) == 1
             )
             if not is_first_turn:
                 msg = "not first turn for nine_nine declaration"

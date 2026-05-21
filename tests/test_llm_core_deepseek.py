@@ -1,6 +1,14 @@
-"""llm.agent.core decide() 覆盖测试。"""
+"""llm.agent.core decide() 覆盖测试。
+
+注意：此测试需要真实 API 调用，默认跳过。
+运行方式：RUN_LIVE_LLM_TESTS=1 pytest tests/test_llm_core_deepseek.py -v
+"""
 
 from __future__ import annotations
+
+import os
+
+import pytest
 
 from kernel import ActionKind, initial_game_state, apply, build_deck, shuffle_deck, legal_actions
 from kernel.engine.actions import Action
@@ -14,12 +22,21 @@ from llm.agent.stats import PlayerStats
 from llm.config import LLMClientConfig
 from llm.protocol import build_client
 
+# 跳过条件：未设置环境变量
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_LIVE_LLM_TESTS") != "1",
+    reason="需要真实 API 调用，设置 RUN_LIVE_LLM_TESTS=1 运行",
+)
+
 
 def _deepseek_client():
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    if not api_key:
+        pytest.skip("需要设置 DEEPSEEK_API_KEY 环境变量")
     cfg = LLMClientConfig(
         provider="openai",
-        api_key="sk-467c7001b0024712b3c004b1c956e7dd",
-        base_url="https://api.deepseek.com/",
+        api_key=api_key,
+        base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/"),
         model="deepseek-v4-flash",
         timeout_sec=30,
         max_context=4096,

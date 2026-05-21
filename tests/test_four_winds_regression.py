@@ -1,10 +1,14 @@
-"""回归测试 R-08: 四风连打未完整接线。
+"""回归测试 R-08: 四风连打接线验证。
 
-Root cause: `is_four_winds_flow()` 检测存在但未被调用，_finish_call_all_passed 无中途流局检测。
+当前状态 (2026-05-21):
+- `is_four_winds_flow()` 已在 apply.py DRAW 分支正确调用 (line 422-426)
+- 但检测时机在下一家 DRAW 动作而非 CALL_RESPONSE 结束后立即检测
+- 这是 H-05/P1-05 问题：API 语义不自然
+
 Expected behavior:
 - 首巡 + 无副露 + 四家第一舍为同一种风牌 → 四风连打流局
 - 第四张风牌弃牌后应进入 CALL_RESPONSE（荣和窗口优先）
-- 若荣和窗口全部 pass → FLOWN with FlowKind.FOUR_WINDS
+- 若荣和窗口全部 pass → 应立即 FLOWN (当前在下一家 DRAW 时才检测)
 - 若荣和被宣言 → HAND_OVER（不触发四风连打）
 
 测试要求：
@@ -13,8 +17,8 @@ Expected behavior:
 3. 荣和窗口全部 pass → FLOWN with FlowKind.FOUR_WINDS
 4. 荣和被宣言 → HAND_OVER（无四风连打）
 
-注意：当前 is_four_winds_flow 存在但未在 apply 或 flow 模块中正确调用。
-      此测试文档化这一缺失。
+注意：当前检测时机在 DRAW 分支而非 CALL_RESPONSE 结束后。
+      此测试文档化这一时机问题（H-05/P1-05）。
 """
 
 from __future__ import annotations
@@ -144,22 +148,19 @@ class TestFourWindsActionWiring:
     """四风连打动作接线测试（当前缺失）。"""
 
     def test_four_winds_flow_never_called_in_apply(self) -> None:
-        """is_four_winds_flow 在 apply 中未被调用。
+        """is_four_winds_flow 已在 apply DRAW 分支调用。
 
-        BUG 状态：apply.py 的 DISCARD → CALL_RESPONSE → all pass 流程中
-                  未检测四风连打条件。
-        修复：在 _finish_call_all_passed 或相关位置添加四风连打检测。
+        状态：已修复但时机问题（H-05/P1-05）。
+        函数在 DRAW 分支调用而非 CALL_RESPONSE 结束后立即检测。
         """
-        # 搜索验证：apply.py 中无 four_winds_flow 调用
-        pytest.skip("R-08 BUG: is_four_winds_flow 在 apply 中未被调用")
+        pytest.skip("H-05: 四风连打检测时机在下一家 DRAW，应在 CALL_RESPONSE 结束后立即检测")
 
     def test_fourth_wind_discard_enters_call_response(self) -> None:
         """第四张风牌弃牌后应进入 CALL_RESPONSE（荣和窗口）。
 
-        BUG 状态：当前流程可能正确进入 CALL_RESPONSE，但关闭后未检测四风连打。
-        修复：验证 CALL_RESPONSE 正确进入，并确保 all pass 后检测四风连打。
+        状态：CALL_RESPONSE 正确进入，但结束后检测时机在下一家 DRAW。
         """
-        pytest.skip("R-08 BUG: 需验证荣和窗口是否正确开放及 all pass 后检测")
+        pytest.skip("H-05: 验证 CALL_RESPONSE 结束后立即检测而非下一家 DRAW")
 
     def test_call_response_all_pass_should_detect_four_winds(self) -> None:
         """CALL_RESPONSE 全 pass 后应检测四风连打。
