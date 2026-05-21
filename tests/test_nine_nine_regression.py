@@ -31,6 +31,7 @@ from kernel.engine.actions import Action, ActionKind
 from kernel.engine.apply import ApplyOutcome, apply
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState, initial_game_state
+from kernel.api.legal_actions import legal_actions, LegalAction
 from kernel.flow.model import FlowKind
 from kernel.hand.melds import Meld, MeldKind
 from kernel.table.model import initial_table_snapshot
@@ -181,20 +182,87 @@ class TestNineNineActionWiring:
     """九种九牌动作接线测试（当前缺失）。"""
 
     def test_legal_actions_should_expose_nine_nine(self) -> None:
-        """legal_actions 应在首巡 + 无副露 + 9 种幺九牌时暴露九种九牌选项。
+        """legal_actions 应在首巡 + 无副露 + 9 种幺九牌时暴露九种九牌选项。"""
+        # 构造一个首巡状态：亲家配牌后处于 MUST_DISCARD，含 9+ 种幺九牌
+        wall = _make_standard_wall(seed=42)
+        board0 = _make_board_from_wall(wall, dealer_seat=0)
 
-        BUG 状态：legal_actions 模块中无九种九牌暴露逻辑。
-        修复：在 _legal_actions_must_discard 中添加九种九牌检测。
-        """
-        pytest.skip("R-07 BUG: legal_actions 中缺失九种九牌暴露逻辑")
+        # 构造手牌：9 种幺九牌 + 4 张其他牌凑成 13 张，再加 last_draw_tile 凑 14 张
+        nine_nine_hand = Counter([
+            MAN1, MAN9, PIN1, PIN9, SOU1, SOU9,  # 6 种
+            TON, NAN, SHA, PEI,  # 4 种字牌 = 10 种
+            HAKU, HATSU,  # 补 2 张凑 13 张
+        ])
+
+        # 用一张幺九牌作为 last_draw_tile（凑 14 张）
+        last_tile = CHUN
+
+        # 构造完整 14 张手牌
+        full_hand = Counter(nine_nine_hand)
+        full_hand[last_tile] += 1
+
+        # Mock board: 首巡（无舍牌）、无副露、MUST_DISCARD
+        mock_board = _mock_board(
+            board0,
+            hands=(full_hand, board0.hands[1], board0.hands[2], board0.hands[3]),
+            turn_phase=TurnPhase.MUST_DISCARD,
+            current_seat=0,  # 亲家
+            last_draw_tile=last_tile,
+            all_discards_per_seat=((), (), (),()),  # 首巡：无舍牌
+            melds=((), (), (),()),  # 无副露
+        )
+
+        # 构造 GameState
+        state = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=mock_board,
+        )
+
+        # 验证：legal_actions 应包含 DECLARE_NINE_NINE
+        actions = legal_actions(state, seat=0)
+        action_kinds = {a.kind for a in actions}
+        assert ActionKind.DECLARE_NINE_NINE in action_kinds
 
     def test_apply_should_handle_nine_nine(self) -> None:
-        """apply 应处理 DECLARE_NINE_NINE 动作 → FLOWN。
+        """apply 应处理 DECLARE_NINE_NINE 动作 → FLOWN。"""
+        # 构造九种九牌条件满足的状态
+        wall = _make_standard_wall(seed=42)
+        board0 = _make_board_from_wall(wall, dealer_seat=0)
 
-        BUG 状态：apply.py 中无九种九牌动作处理。
-        修复：添加 DECLARE_NINE_NINE 分支 → FLOWN with FlowKind.NINE_NINE。
-        """
-        pytest.skip("R-07 BUG: apply 中缺失九种九牌动作处理")
+        # 构造手牌：10 种幺九牌（满足九种九牌条件）
+        nine_nine_hand = Counter([
+            MAN1, MAN9, PIN1, PIN9, SOU1, SOU9,
+            TON, NAN, SHA, PEI,
+            HAKU, HATSU, CHUN,  # 13 张
+        ])
+        last_tile = Tile(Suit.MAN, 5)  # 补一张凑 14 张（非幺九）
+        full_hand = Counter(nine_nine_hand)
+        full_hand[last_tile] += 1
+
+        mock_board = _mock_board(
+            board0,
+            hands=(full_hand, board0.hands[1], board0.hands[2], board0.hands[3]),
+            turn_phase=TurnPhase.MUST_DISCARD,
+            current_seat=0,
+            last_draw_tile=last_tile,
+            all_discards_per_seat=((), (), (),()),
+            melds=((), (), (),()),
+        )
+
+        state = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=mock_board,
+        )
+
+        # 执行 DECLARE_NINE_NINE
+        outcome = apply(state, Action(ActionKind.DECLARE_NINE_NINE, seat=0))
+
+        # 验证：结果应为 FLOWN 状态
+        assert outcome.new_state.phase == GamePhase.FLOWN
+        assert outcome.new_state.flow_result is not None
+        assert outcome.new_state.flow_result.kind == FlowKind.NINE_NINE
 
 
 class TestNineNineConditions:
@@ -228,57 +296,252 @@ class TestNineNineConditions:
             assert len(board.melds[s]) == 0
 
     def test_first_turn_with_melds_no_nine_nine(self) -> None:
-        """首巡 + 有副露 → 无九种九牌选项。
+        """首巡 + 有副露 → 无九种九牌选项。"""
+        # 构造首巡状态，但某家有副露（模拟碰）
+        wall = _make_standard_wall(seed=42)
+        board0 = _make_board_from_wall(wall, dealer_seat=0)
 
-        规则：九种九牌仅允许门清（无吃碰杠）时宣言。
-        """
-        pytest.skip("R-07 BUG: 需修复后验证负向条件")
+        # 构造手牌含 9+ 种幺九牌
+        nine_nine_hand = Counter([
+            MAN1, MAN9, PIN1, PIN9, SOU1, SOU9,
+            TON, NAN, SHA, PEI, HAKU, HATSU, CHUN,
+        ])
+        last_tile = Tile(Suit.MAN, 5)
+        full_hand = Counter(nine_nine_hand)
+        full_hand[last_tile] += 1
+
+        # 模拟一个碰副露（座位 1 有碰）
+        fake_meld = Meld(
+            kind=MeldKind.PON,
+            tiles=(TON, TON, TON),
+            called_tile=TON,
+            from_seat=0,  # 从座位 0 鸣牌
+        )
+
+        mock_board = _mock_board(
+            board0,
+            hands=(full_hand, board0.hands[1], board0.hands[2], board0.hands[3]),
+            turn_phase=TurnPhase.MUST_DISCARD,
+            current_seat=0,
+            last_draw_tile=last_tile,
+            all_discards_per_seat=((), (), (),()),
+            melds=((), (fake_meld,), (),()),  # 座位 1 有副露
+        )
+
+        state = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=mock_board,
+        )
+
+        # 验证：legal_actions 不应包含 DECLARE_NINE_NINE
+        actions = legal_actions(state, seat=0)
+        action_kinds = {a.kind for a in actions}
+        assert ActionKind.DECLARE_NINE_NINE not in action_kinds
 
     def test_not_first_turn_no_nine_nine(self) -> None:
-        """非首巡 → 无九种九牌选项。
+        """非首巡 → 无九种九牌选项。"""
+        # 构造非首巡状态：座位 0 已有舍牌
+        wall = _make_standard_wall(seed=42)
+        board0 = _make_board_from_wall(wall, dealer_seat=0)
 
-        规则：九种九牌仅允许首巡宣言。
-        """
-        pytest.skip("R-07 BUG: 需修复后验证负向条件")
+        # 构造手牌含 9+ 种幺九牌
+        nine_nine_hand = Counter([
+            MAN1, MAN9, PIN1, PIN9, SOU1, SOU9,
+            TON, NAN, SHA, PEI, HAKU, HATSU, CHUN,
+        ])
+        last_tile = Tile(Suit.MAN, 5)
+        full_hand = Counter(nine_nine_hand)
+        full_hand[last_tile] += 1
+
+        # 座位 0 已有舍牌（非首巡）
+        mock_board = _mock_board(
+            board0,
+            hands=(full_hand, board0.hands[1], board0.hands[2], board0.hands[3]),
+            turn_phase=TurnPhase.MUST_DISCARD,
+            current_seat=0,
+            last_draw_tile=last_tile,
+            all_discards_per_seat=((MAN1,), (), (),()),  # 座位 0 已舍牌
+            melds=((), (), (),()),
+        )
+
+        state = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=mock_board,
+        )
+
+        # 验证：legal_actions 不应包含 DECLARE_NINE_NINE
+        actions = legal_actions(state, seat=0)
+        action_kinds = {a.kind for a in actions}
+        assert ActionKind.DECLARE_NINE_NINE not in action_kinds
 
 
 class TestNineNineIntegration:
     """九种九牌集成测试。"""
 
     def test_full_nine_nine_flow(self) -> None:
-        """完整流程：配牌 → 检测九种九牌 → 宣言 → FLOWN。
+        """完整流程：配牌 → 检测九种九牌 → 宣言 → FLOWN。"""
+        # 构造满足九种九牌条件的状态
+        wall = _make_standard_wall(seed=42)
+        board0 = _make_board_from_wall(wall, dealer_seat=0)
 
-        预期流程：
-        1. 配牌后亲家摸牌进入 MUST_DISCARD
-        2. 若手牌含 9+ 种幺九牌，legal_actions 含 DECLARE_NINE_NINE
-        3. 执行 DECLARE_NINE_NINE → FLOWN with FlowKind.NINE_NINE
-        """
-        pytest.skip("R-07 BUG: 需修复后验证完整流程")
+        # 构造手牌含 10 种幺九牌
+        nine_nine_hand = Counter([
+            MAN1, MAN9, PIN1, PIN9, SOU1, SOU9,
+            TON, NAN, SHA, PEI,
+            HAKU, HATSU, CHUN,
+        ])
+        last_tile = Tile(Suit.PIN, 5)
+        full_hand = Counter(nine_nine_hand)
+        full_hand[last_tile] += 1
+
+        mock_board = _mock_board(
+            board0,
+            hands=(full_hand, board0.hands[1], board0.hands[2], board0.hands[3]),
+            turn_phase=TurnPhase.MUST_DISCARD,
+            current_seat=0,
+            last_draw_tile=last_tile,
+            all_discards_per_seat=((), (), (),()),
+            melds=((), (), (),()),
+        )
+
+        state = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=mock_board,
+        )
+
+        # Step 1: legal_actions 应包含 DECLARE_NINE_NINE
+        actions = legal_actions(state, seat=0)
+        action_kinds = {a.kind for a in actions}
+        assert ActionKind.DECLARE_NINE_NINE in action_kinds
+
+        # Step 2: 执行 DECLARE_NINE_NINE
+        outcome = apply(state, Action(ActionKind.DECLARE_NINE_NINE, seat=0))
+
+        # Step 3: 验证 FLOWN 状态
+        assert outcome.new_state.phase == GamePhase.FLOWN
+        assert outcome.new_state.flow_result is not None
+        assert outcome.new_state.flow_result.kind == FlowKind.NINE_NINE
 
 
 class TestNineNineNegativeConditions:
     """负向条件测试。"""
 
     def test_melds_block_nine_nine(self) -> None:
-        """有副露时不应有九种九牌选项。
+        """有副露时不应有九种九牌选项。"""
+        wall = _make_standard_wall(seed=42)
+        board0 = _make_board_from_wall(wall, dealer_seat=0)
 
-        场景：配牌后，某家有碰/吃/杠副露，即使手牌有 9+ 种幺九牌也不应暴露九种九牌。
-        """
-        pytest.skip("R-07 BUG: 需修复后验证副露阻断条件")
+        # 构造手牌含 10 种幺九牌（理论上满足九种九牌）
+        nine_nine_hand = Counter([
+            MAN1, MAN9, PIN1, PIN9, SOU1, SOU9,
+            TON, NAN, SHA, PEI, HAKU, HATSU, CHUN,
+        ])
+        last_tile = Tile(Suit.MAN, 5)
+        full_hand = Counter(nine_nine_hand)
+        full_hand[last_tile] += 1
+
+        # 座位 0 有副露（即使手牌满足条件，副露阻断）
+        fake_meld = Meld(
+            kind=MeldKind.PON,
+            tiles=(TON, TON, TON),
+            called_tile=TON,
+            from_seat=3,
+        )
+
+        mock_board = _mock_board(
+            board0,
+            hands=(full_hand, board0.hands[1], board0.hands[2], board0.hands[3]),
+            turn_phase=TurnPhase.MUST_DISCARD,
+            current_seat=0,
+            last_draw_tile=last_tile,
+            all_discards_per_seat=((), (), (),()),
+            melds=((fake_meld,), (), (),()),  # 座位 0 有副露
+        )
+
+        state = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=mock_board,
+        )
+
+        actions = legal_actions(state, seat=0)
+        action_kinds = {a.kind for a in actions}
+        assert ActionKind.DECLARE_NINE_NINE not in action_kinds
 
     def test_not_first_turn_blocks_nine_nine(self) -> None:
-        """非首巡时不应有九种九牌选项。
+        """非首巡时不应有九种九牌选项。"""
+        wall = _make_standard_wall(seed=42)
+        board0 = _make_board_from_wall(wall, dealer_seat=0)
 
-        场景：第二轮巡目后，即使手牌有 9+ 种幺九牌也不应暴露九种九牌。
-        """
-        pytest.skip("R-07 BUG: 需修复后验证非首巡阻断条件")
+        # 构造手牌含 10 种幺九牌（理论上满足九种九牌）
+        nine_nine_hand = Counter([
+            MAN1, MAN9, PIN1, PIN9, SOU1, SOU9,
+            TON, NAN, SHA, PEI, HAKU, HATSU, CHUN,
+        ])
+        last_tile = Tile(Suit.MAN, 5)
+        full_hand = Counter(nine_nine_hand)
+        full_hand[last_tile] += 1
+
+        # 座位 0 已舍牌（非首巡阻断）
+        mock_board = _mock_board(
+            board0,
+            hands=(full_hand, board0.hands[1], board0.hands[2], board0.hands[3]),
+            turn_phase=TurnPhase.MUST_DISCARD,
+            current_seat=0,
+            last_draw_tile=last_tile,
+            all_discards_per_seat=((PIN1,), (MAN9,), (TON,), ()),  # 多家有舍牌
+            melds=((), (), (),()),
+        )
+
+        state = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=mock_board,
+        )
+
+        actions = legal_actions(state, seat=0)
+        action_kinds = {a.kind for a in actions}
+        assert ActionKind.DECLARE_NINE_NINE not in action_kinds
 
     def test_less_than_9_kinds_blocks_nine_nine(self) -> None:
-        """少于 9 种幺九牌时不应有九种九牌选项。
+        """少于 9 种幺九牌时不应有九种九牌选项。"""
+        wall = _make_standard_wall(seed=42)
+        board0 = _make_board_from_wall(wall, dealer_seat=0)
 
-        场景：手牌仅含 8 种幺九牌，不应暴露九种九牌。
-        """
-        pytest.skip("R-07 BUG: 需修复后验证种类不足阻断条件")
+        # 构造手牌仅含 8 种幺九牌（不满足九种九牌条件）
+        hand_8_kinds = Counter([
+            MAN1, MAN9, PIN1, PIN9, SOU1, SOU9,  # 6 种
+            TON, NAN,  # 2 种字牌 = 8 种
+            Tile(Suit.MAN, 5), Tile(Suit.MAN, 5),  # 补非幺九牌凑 13 张
+            Tile(Suit.PIN, 5), Tile(Suit.PIN, 5),
+            Tile(Suit.SOU, 5),
+        ])
+        last_tile = Tile(Suit.MAN, 3)  # 补一张凑 14 张（非幺九）
+        full_hand = Counter(hand_8_kinds)
+        full_hand[last_tile] += 1
+
+        mock_board = _mock_board(
+            board0,
+            hands=(full_hand, board0.hands[1], board0.hands[2], board0.hands[3]),
+            turn_phase=TurnPhase.MUST_DISCARD,
+            current_seat=0,
+            last_draw_tile=last_tile,
+            all_discards_per_seat=((), (), (),()),  # 首巡
+            melds=((), (), (),()),  # 无副露
+        )
+
+        state = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(),
+            board=mock_board,
+        )
+
+        actions = legal_actions(state, seat=0)
+        action_kinds = {a.kind for a in actions}
+        assert ActionKind.DECLARE_NINE_NINE not in action_kinds
 
 
 class TestFlowKindNineNine:
