@@ -166,6 +166,7 @@ def test_is_tenpai_seven_pairs(tenpai: bool, ranks: tuple[int, ...]) -> None:
 
 
 def test_apply_riichi_standard_form_tenpai() -> None:
+    """立直宣言后进入 pending 状态（CALL_RESPONSE 结束后才 finalize）。"""
     b, t9 = _board_standard_tenpai_dealer()
     st = initial_table_snapshot()
     gs = GameState(phase=GamePhase.IN_ROUND, table=st, board=b)
@@ -174,10 +175,20 @@ def test_apply_riichi_standard_form_tenpai() -> None:
         Action(ActionKind.DISCARD, seat=0, tile=t9, declare_riichi=True),
     )
     assert out.new_state.board is not None
-    assert out.new_state.board.riichi[0] is True
+    # H-04: 立直在 DISCARD 后只是 pending，CALL_RESPONSE 结束后才 finalize
+    assert out.new_state.board.pending_riichi == 0  # pending 状态
+    assert out.new_state.board.pending_riichi_tile == t9  # 记录宣言牌
+    assert out.new_state.board.riichi[0] is False  # 未 finalize
 
 
 def test_apply_riichi_updates_table_and_river() -> None:
+    """立直宣言后进入 pending 状态，CALL_RESPONSE 结束后才扣点和 finalize。
+
+    验证点：
+    - pending_riichi 被设置（而非 riichi[seat]）
+    - kyoutaku 仍为 0（点数未扣除）
+    - river 标记 riichi=True（UI 显示）
+    """
     b, t7 = _board_chiitoitsu_dealer()
     st = initial_table_snapshot()
     gs = GameState(phase=GamePhase.IN_ROUND, table=st, board=b)
@@ -185,15 +196,18 @@ def test_apply_riichi_updates_table_and_river() -> None:
         gs,
         Action(ActionKind.DISCARD, seat=0, tile=t7, declare_riichi=True),
     )
-    riichi_points = get_riichi_stick_points()
-    assert out.new_state.table.kyoutaku == riichi_points
-    assert out.new_state.table.scores[0] == st.scores[0] - riichi_points
+    # H-04: pending 状态，点数未扣除
+    assert out.new_state.table.kyoutaku == 0  # pending 状态，未扣点
+    assert out.new_state.table.scores[0] == st.scores[0]  # 点数未扣除
     nb = out.new_state.board
     assert nb is not None
-    assert nb.riichi[0] is True
-    assert nb.river[-1].riichi is True
-    assert 0 in nb.ippatsu_eligible
-    assert 0 in nb.double_riichi
+    assert nb.pending_riichi == 0  # pending 状态
+    assert nb.pending_riichi_tile == t7  # 记录宣言牌
+    assert nb.riichi[0] is False  # 未 finalize
+    assert nb.river[-1].riichi is True  # 河牌标记立直（UI 显示）
+    # 一发、双立直等标记在 CALL_RESPONSE 结束后才设置
+    assert 0 not in nb.ippatsu_eligible  # pending 状态未加一发标记
+    assert 0 not in nb.double_riichi  # pending 状态未加双立直标记
 
 
 def test_riichi_insufficient_points() -> None:

@@ -228,12 +228,15 @@ class TestPlayLayerFlow:
             assert b.turn_phase == TurnPhase.NEED_DRAW
 
     def test_riichi_discard(self) -> None:
-        """立直打牌路径。"""
+        """立直宣言后进入 pending 状态（CALL_RESPONSE 结束后才 finalize）。"""
         b = board_sorted_deal(dealer=0)
         tile = next(iter(b.hands[0].elements()))
         b = apply_discard(b, 0, tile, declare_riichi=True)
-        assert b.riichi[0] is True
+        # H-04: pending 状态，riichi[0] 未 finalize
+        assert b.pending_riichi == 0  # pending 状态
+        assert b.riichi[0] is False  # 未 finalize
         b = clear_call_window(b)
+        # CALL_RESPONSE 结束后 finalize（由 engine 层处理，play 层不处理）
         # 再摸一张，立直后必须摸切
         b = apply_draw(b, b.current_seat)
         drawn = b.last_draw_tile

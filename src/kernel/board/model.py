@@ -192,6 +192,10 @@ class BoardState:
     """各席是否已宣言立直（不可逆）。"""
     ippatsu_eligible: FrozenSet[int] = frozenset()
     """尚处于一发机会内的立直席（鸣牌或荣和结算后清空）；供后续点数模块消费。"""
+    pending_riichi: int | None = None
+    """待确认的立直座位：DISCARD(riichi) 时设置，CALL_RESPONSE 结束时 finalize 或 cancel。"""
+    pending_riichi_tile: Tile | None = None
+    """立直宣言牌（用于事件日志）。"""
     double_riichi: FrozenSet[int] = frozenset()
     """双立直席（本局该席第一打即立直）；须同时为已立直席。"""
     all_discards_per_seat: tuple[tuple[Tile, ...], ...] = field(
@@ -256,6 +260,20 @@ def validate_board_state(board: BoardState) -> None:
         if not 0 <= s <= 3:
             msg = "ippatsu_eligible seats must be 0..3"
             raise ValueError(msg)
+    # pending_riichi validation
+    if board.pending_riichi is not None:
+        if not 0 <= board.pending_riichi <= 3:
+            msg = "pending_riichi must be 0..3 if set"
+            raise ValueError(msg)
+        if board.pending_riichi_tile is None:
+            msg = "pending_riichi requires pending_riichi_tile"
+            raise ValueError(msg)
+        if board.riichi[board.pending_riichi]:
+            msg = "pending_riichi seat should not have riichi flag yet"
+            raise ValueError(msg)
+    elif board.pending_riichi_tile is not None:
+        msg = "pending_riichi_tile requires pending_riichi"
+        raise ValueError(msg)
     for s in board.double_riichi:
         if not 0 <= s <= 3:
             msg = "double_riichi seats must be 0..3"

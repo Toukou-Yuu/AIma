@@ -154,6 +154,48 @@ def _outcome_pass_call(state: GameState, seat: int, config: MahjongConfig | None
             ),
             events=events,
         )
+    # H-04: Finalize table-level riichi payment if pending was just finalized
+    if board.pending_riichi is not None and new_board.pending_riichi is None and new_board.riichi[board.pending_riichi]:
+        # Pending riichi was finalized - deduct points from table
+        riichi_seat = board.pending_riichi
+        riichi_points = get_riichi_stick_points()
+        scores = list(state.table.scores)
+        scores[riichi_seat] -= riichi_points
+        new_table = replace(
+            state.table,
+            scores=tuple(scores),
+            kyoutaku=state.table.kyoutaku + riichi_points,
+        )
+        # Continue with H-05 flow check using the updated table
+        if new_board.turn_phase == TurnPhase.NEED_DRAW and new_board.call_state is None:
+            flow_result = detect_flow_after_riichi(new_board, tuple(new_board.riichi))
+            if flow_result is not None:
+                eb = _create_event_builder(state)
+                flown_state, flow_event = apply_flow_transition(
+                    GameState(phase=phase, table=new_table, board=new_board, ron_winners=None, event_sequence=state.event_sequence),
+                    flow_result,
+                    eb,
+                )
+                return ApplyOutcome(new_state=flown_state, events=(flow_event,))
+        # No flow - return with updated table
+        return ApplyOutcome(
+            new_state=GameState(
+                phase=phase,
+                table=new_table,
+                board=new_board,
+                ron_winners=None,
+                event_sequence=state.event_sequence,
+            ),
+            events=(),
+        )
+    # H-05: Check for four-riichi flow after CALL_RESPONSE ends (no pending riichi case)
+    if new_board.turn_phase == TurnPhase.NEED_DRAW and new_board.call_state is None:
+        flow_result = detect_flow_after_riichi(new_board, tuple(new_board.riichi))
+        if flow_result is not None:
+            eb = _create_event_builder(state)
+            flown_state, flow_event = apply_flow_transition(state, flow_result, eb)
+            return ApplyOutcome(new_state=flown_state, events=(flow_event,))
+
     return ApplyOutcome(
         new_state=GameState(
             phase=phase,
@@ -521,21 +563,11 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                 declare_riichi=action.declare_riichi,
             )
 
-            riichi_points = get_riichi_stick_points()
-            new_table = state.table
-            if action.declare_riichi:
-                scores = list(state.table.scores)
-                scores[seat] -= riichi_points
-                new_table = replace(
-                    state.table,
-                    scores=tuple(scores),
-                    kyoutaku=state.table.kyoutaku + riichi_points,
-                )
-
+            # H-04: 点数扣除移至 pending riichi finalize 时（CALL_RESPONSE 结束）
             return ApplyOutcome(
                 new_state=GameState(
                     phase=phase,
-                    table=new_table,
+                    table=state.table,
                     board=new_board,
                     ron_winners=None,
                     event_sequence=eb._sequence,

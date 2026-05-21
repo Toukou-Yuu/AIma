@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from kernel.hand.multiset import add_tile, remove_tile
@@ -116,16 +117,19 @@ def apply_discard(
     new_river = board.river + (entry,)
     river_index = len(new_river) - 1
     next_seat = (seat + 1) % 4
-    new_riichi = board.riichi
+    # H-04/H-06: Pending riichi + ippatsu expiration
+    new_pending_riichi = board.pending_riichi
+    new_pending_riichi_tile = board.pending_riichi_tile
     new_ippatsu = board.ippatsu_eligible
-    new_double = board.double_riichi
+
     if declare_riichi:
-        nr = list(board.riichi)
-        nr[seat] = True
-        new_riichi = tuple(nr)
-        new_ippatsu = frozenset(board.ippatsu_eligible | {seat})
-        if not any(e.seat == seat for e in board.river):
-            new_double = frozenset(board.double_riichi | {seat})
+        # H-04: Mark as pending, do NOT finalize here
+        new_pending_riichi = seat
+        new_pending_riichi_tile = tile
+        # Keep riichi, ippatsu, double unchanged (pending state)
+    elif board.riichi[seat] and seat in board.ippatsu_eligible:
+        # H-06: Already-riichi player discards - ippatsu expires
+        new_ippatsu = frozenset(board.ippatsu_eligible - {seat})
     return BoardState(
         hands=tuple(new_hands),
         live_wall=board.live_wall,
@@ -140,9 +144,47 @@ def apply_discard(
         last_draw_was_rinshan=False,
         rinshan_draw_index=board.rinshan_draw_index,
         call_state=CallResolution.initial_after_discard(seat, river_index, tile),
+        riichi=board.riichi,
+        ippatsu_eligible=new_ippatsu,
+        double_riichi=board.double_riichi,
+        all_discards_per_seat=tuple(new_discards),
+        called_discard_indices=board.called_discard_indices,
+        pending_riichi=new_pending_riichi,
+        pending_riichi_tile=new_pending_riichi_tile,
+    )
+
+
+def finalize_pending_riichi(board: BoardState) -> BoardState:
+    """
+    Finalize pending riichi declaration after CALL_RESPONSE ends without ron.
+
+    Applies:
+    - riichi[seat] = True
+    - ippatsu_eligible |= {seat}
+    - double_riichi |= {seat} if first discard
+    - pending_riichi = None
+
+    Returns: new BoardState with riichi finalized
+    """
+    if board.pending_riichi is None:
+        return board
+
+    seat = board.pending_riichi
+    nr = list(board.riichi)
+    nr[seat] = True
+    new_riichi = tuple(nr)
+
+    new_ippatsu = frozenset(board.ippatsu_eligible | {seat})
+
+    new_double = board.double_riichi
+    if not any(e.seat == seat for e in board.river):
+        new_double = frozenset(board.double_riichi | {seat})
+
+    return replace(
+        board,
         riichi=new_riichi,
         ippatsu_eligible=new_ippatsu,
         double_riichi=new_double,
-        all_discards_per_seat=tuple(new_discards),
-        called_discard_indices=board.called_discard_indices,
+        pending_riichi=None,
+        pending_riichi_tile=None,
     )

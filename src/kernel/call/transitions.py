@@ -56,13 +56,21 @@ def _replace_board(board: BoardState, **kwargs: object) -> BoardState:
         called_discard_indices=kwargs.get(
             "called_discard_indices", board.called_discard_indices
         ),
+        pending_riichi=kwargs.get("pending_riichi", board.pending_riichi),
+        pending_riichi_tile=kwargs.get("pending_riichi_tile", board.pending_riichi_tile),
     )
 
 
 def _finish_call_all_passed(board: BoardState) -> BoardState:
-    """三家均放弃鸣牌：下家进入摸牌。"""
+    """三家均放弃鸣牌：finalize pending riichi，下家进入摸牌。"""
+    from kernel.play.transitions import finalize_pending_riichi
+
+    # H-04: Finalize pending riichi (if exists)
+    finalized = finalize_pending_riichi(board)
+
+    # Transition to NEED_DRAW
     return _replace_board(
-        board,
+        finalized,
         turn_phase=TurnPhase.NEED_DRAW,
         call_state=None,
     )
