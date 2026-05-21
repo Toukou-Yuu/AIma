@@ -85,7 +85,7 @@ def legal_actions(state: GameState, seat: int) -> tuple[LegalAction, ...]
 | `RON` | `Action(kind=RON, seat=seat)`（荣和牌以 `CallResolution` 上下文为准） |
 | `OPEN_MELD` | 必须带 `meld: Meld`（吃 / 碰 / 大明杠 之一；由 `legal_actions` 枚举，与 `kernel.api.meld_candidates.enumerate_call_response_open_melds` 一致） |
 | `ANKAN` | 必须带 `meld`（暗杠；见 `enumerate_ankan_melds`） |
-| `SHANKUMINKAN` | 必须带 `meld`（加杠；见 `enumerate_shankuminkan_melds`） |
+| `KAKAN` | 必须带 `meld`（加杠；见 `enumerate_kakan_melds`） |
 | `NOOP` | `Action(kind=NOOP, seat=seat)`；局间推进时常需同时传 `wall`（见 §5） |
 
 

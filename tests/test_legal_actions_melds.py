@@ -19,7 +19,7 @@ from llm.wire import legal_action_to_wire
 from tests.test_kan import (
     _board,
     _board_call_response_daiminkan_ready,
-    _board_with_pon_for_shankan,
+    _board_with_pon_for_kakan,
     _find_dealer_quad_seed,
 )
 
@@ -116,7 +116,7 @@ def test_must_discard_lists_ankan_when_four_in_hand() -> None:
 
 
 def test_must_discard_lists_kakan_when_pon_plus_tile() -> None:
-    b, t = _board_with_pon_for_shankan()
+    b, t = _board_with_pon_for_kakan()
     d = b.current_seat
     g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
     acts = legal_actions(g, d)
@@ -192,7 +192,7 @@ def test_chi_stage_only_shimocha_gets_chi_actions() -> None:
 
 
 def test_natural_text_roundtrip_kakan() -> None:
-    b, _t = _board_with_pon_for_shankan()
+    b, _t = _board_with_pon_for_kakan()
     d = b.current_seat
     g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
     acts = legal_actions(g, d)

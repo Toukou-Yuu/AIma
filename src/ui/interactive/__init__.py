@@ -13,17 +13,19 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-try:
-    from textual.app import App
-except ImportError as e:
-    print(f"需要 textual: pip install '.[rich]' ({e})", file=sys.stderr)
-    raise SystemExit(1)
-
-from .tui_app import AImaTextualApp
+# 不在顶层导入依赖 textual 的模块，避免阻塞非 TUI 场景
 
 
 def main(argv: list[str] | None = None) -> int:
     """主循环 - 由 start.py 调用."""
+    try:
+        from textual.app import App
+        from .tui_app import AImaTextualApp
+    except ImportError:
+        print("错误: 需要安装 textual 才能运行交互式 TUI", file=sys.stderr)
+        print("请执行: pip install textual", file=sys.stderr)
+        return 1
+
     start_mode = "quick" if argv and len(argv) > 0 and argv[0] == "quick" else None
     app: App[None] = AImaTextualApp(start_mode=start_mode)
     app.run()

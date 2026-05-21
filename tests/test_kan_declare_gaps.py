@@ -96,7 +96,7 @@ class TestAnkanErrorGuards:
 
 # --- apply_kakan error guards ---
 
-class TestShankuminkanErrorGuards:
+class TestKakanErrorGuards:
     def test_wrong_meld_kind(self) -> None:
         b = _must_discard_board()
         tile = next(iter(b.hands[0]))

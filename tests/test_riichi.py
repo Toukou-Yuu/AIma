@@ -252,9 +252,9 @@ def test_after_riichi_must_tsumogiri_via_play_layer() -> None:
 
 
 def test_kakan_forbidden_when_riichi() -> None:
-    from tests.test_kan import _board_with_pon_for_shankan
+    from tests.test_kan import _board_with_pon_for_kakan
 
-    b, quad_tile = _board_with_pon_for_shankan()
+    b, quad_tile = _board_with_pon_for_kakan()
     d = b.current_seat
     ri = tuple(s == d for s in range(4))
     b = BoardState(

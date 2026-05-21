@@ -69,7 +69,7 @@
 - `wall: tuple[Tile, ...] | None`：`**BEGIN_ROUND` 必填**；在 `**HAND_OVER` / `FLOWN` 下若用 `NOOP` 开下一局时，也需传入下一局的 136 张牌山**（见下文「局间推进」）
 - `tile: Tile | None`：`DISCARD` 必填；`RON` 在实现里与舍牌一致，通常由应答上下文约束
 - `declare_riichi: bool`：与 `DISCARD` 联用
-- `meld: Meld | None`：`OPEN_MELD` / `ANKAN` / `SHANKUMINKAN` 必填
+- `meld: Meld | None`：`OPEN_MELD` / `ANKAN` / `KAKAN` 必填
 
 动作种类摘要：
 
@@ -82,7 +82,7 @@
 | `DISCARD`                         | `IN_ROUND` 且 `MUST_DISCARD`，`seat == current_seat`                            |
 | `PASS_CALL` / `RON` / `OPEN_MELD` | `IN_ROUND` 且 `CALL_RESPONSE`，且须满足 `CallResolution` 轮到的席                       |
 | `TSUMO`                           | `IN_ROUND` 且 `MUST_DISCARD`，且存在合法自摸形（含岭上 15 张路径等）                             |
-| `ANKAN` / `SHANKUMINKAN`          | `IN_ROUND` 且 `MUST_DISCARD`（立直后禁止加杠等由转移函数约束）                                  |
+| `ANKAN` / `KAKAN`          | `IN_ROUND` 且 `MUST_DISCARD`（立直后禁止加杠等由转移函数约束）                                  |
 
 
 非法组合统一抛出 `kernel.engine.apply.IllegalActionError`（`EngineError` 子类）。
@@ -108,7 +108,7 @@
   - `PASS_CALL` / `RON`：`call` 子模块更新 `CallResolution`；荣和收齐后结算点数、`settle_ron_table`，进入 `HAND_OVER`（`RonEvent`、`HandOverEvent` 等）。
   - `OPEN_MELD`：`apply_open_meld`，产生 `CallEvent`；之后可能进入岭上摸牌等（由 `call`/`kan`/`play` 衔接）。
 - `**TSUMO**`：校验和了形 → `settle_tsumo_table` → `HAND_OVER`。
-- `**ANKAN` / `SHANKUMINKAN**`：`kan` 子模块；可能触发**四杠流局** → `FLOWN`；加杠路径上可进入抢杠应答窗口。
+- `**ANKAN` / `KAKAN**`：`kan` 子模块；可能触发**四杠流局** → `FLOWN`；加杠路径上可进入抢杠应答窗口。
 
 ### 5.3 局间推进（`HAND_OVER` / `FLOWN` → 下一局）
 

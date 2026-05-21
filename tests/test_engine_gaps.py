@@ -1253,9 +1253,9 @@ class TestAnkan:
         ds = g1.board.current_seat
         tile = next(iter(g1.board.hands[ds].elements()))
         g2 = apply(g1, Action(ActionKind.DISCARD, seat=ds, tile=tile)).new_state
-        shankan_meld = Meld(kind=MeldKind.KAKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=MAN1)
+        kakan_meld = Meld(kind=MeldKind.KAKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=MAN1)
         try:
-            apply(g2, Action(ActionKind.KAKAN, seat=g2.board.current_seat, meld=shankan_meld))
+            apply(g2, Action(ActionKind.KAKAN, seat=g2.board.current_seat, meld=kakan_meld))
         except Exception:
             pass
         else:
@@ -1299,7 +1299,7 @@ class TestAnkanSuccess:
 
 # --- KAKAN 成功路径 ---
 
-class TestShankuminkanSuccess:
+class TestKakanSuccess:
     """KAKAN 成功路径。"""
 
     def test_kakan_success(self) -> None:
@@ -1328,8 +1328,8 @@ class TestShankuminkanSuccess:
             table=initial_table_snapshot(),
             board=b,
         )
-        shankan_meld = Meld(kind=MeldKind.KAKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=MAN1)
-        result = apply(g, Action(ActionKind.KAKAN, seat=0, meld=shankan_meld))
+        kakan_meld = Meld(kind=MeldKind.KAKAN, tiles=(MAN1, MAN1, MAN1, MAN1), called_tile=MAN1)
+        result = apply(g, Action(ActionKind.KAKAN, seat=0, meld=kakan_meld))
         # 加杠后进入 CALL_RESPONSE（抢杠窗口）
         assert result.new_state.board.turn_phase == TurnPhase.CALL_RESPONSE
 

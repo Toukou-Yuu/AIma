@@ -56,7 +56,7 @@ def _find_dealer_quad_seed() -> tuple[BoardState, Tile]:
     raise RuntimeError(msg)
 
 
-def _board_with_pon_for_shankan(*, seed: int = 7) -> tuple[BoardState, Tile]:
+def _board_with_pon_for_kakan(*, seed: int = 7) -> tuple[BoardState, Tile]:
     """在四家手牌池内凑出：当前家 11 门内 + 1 张将用于加杠 + 已有 PON 三枚。"""
     b0 = _board(seed=seed, dealer=0)
     d = b0.current_seat
@@ -168,7 +168,7 @@ def test_no_more_dora_indicators_raises() -> None:
 
 
 def test_kakan_then_rinshan() -> None:
-    b0, t = _board_with_pon_for_shankan()
+    b0, t = _board_with_pon_for_kakan()
     d = b0.current_seat
     four = tuple(sorted((t, t, t, t), key=lambda x: (x.rank, 1 if x.is_red else 0)))
     sk = Meld(MeldKind.KAKAN, four, called_tile=None)
@@ -197,7 +197,7 @@ def _seven_pairs_tenpai_13(t: Tile) -> Counter[Tile]:
 
 
 def test_chankan_ron_after_kakan() -> None:
-    b0, t = _board_with_pon_for_shankan()
+    b0, t = _board_with_pon_for_kakan()
     d = b0.current_seat
     opp = (d + 1) % 4
     donor = (d + 2) % 4
@@ -237,7 +237,7 @@ def test_chankan_ron_after_kakan() -> None:
 
 
 def test_chankan_rejects_open_meld() -> None:
-    b0, t = _board_with_pon_for_shankan()
+    b0, t = _board_with_pon_for_kakan()
     d = b0.current_seat
     four = tuple(sorted((t, t, t, t), key=lambda x: (x.rank, 1 if x.is_red else 0)))
     sk = Meld(MeldKind.KAKAN, four, called_tile=None)

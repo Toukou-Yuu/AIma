@@ -107,7 +107,7 @@ class TestDaiminkanValidation:
 
 # --- KAKAN validation ---
 
-class TestShankuminkanValidation:
+class TestKakanValidation:
     def test_called_not_in_tiles(self) -> None:
         try:
             validate_meld_shape(Meld(MeldKind.KAKAN, (MAN5, MAN5, MAN5, MAN5), PIN5))
