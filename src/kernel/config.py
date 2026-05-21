@@ -7,6 +7,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
+
+
+class RonPolicy(Enum):
+    """多家荣和策略。"""
+
+    MULTI_RON = "multi_ron"
+    """一炮多响：所有荣和者同时和牌（雀魂默认）。"""
+
+    ATAMAHANE = "atamahane"
+    """头跳：仅最早一家荣和有效（下家 > 对家 > 上家）。"""
+
+    TRIPLE_ABORTIVE_ONLY = "triple_abortive_only"
+    """三家和流局：3家荣和时流局，双响允许。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,8 +52,8 @@ class MahjongConfig:
     #: 食断あり：副露后断幺九可算役
     allow_open_tanyao: bool = True
 
-    #: 一炮多响あり：多家同时荣和
-    allow_multiple_ron: bool = True
+    #: 多家荣和策略：multi_ron（一炮多响）、atamahane（头跳）、triple_abortive_only（三家和流局）
+    ron_policy: RonPolicy = RonPolicy.MULTI_RON
 
     # ========== 宝牌 ==========
     #: 赤牌あり：三赤（5m/5p/5s 各 1 张）

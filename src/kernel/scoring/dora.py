@@ -115,3 +115,45 @@ def count_ura_dora_total(
     c = all_winning_tiles_counter(concealed, melds, win_tile, for_ron=for_ron)
     c.update(melds_tile_counter(melds))
     return count_dora_in_tiles(c, dora)
+
+
+def count_aka_dora(
+    concealed: Counter[Tile],
+    melds: tuple[Meld, ...],
+    win_tile: Tile,
+    *,
+    for_ron: bool,
+    enabled: bool,
+) -> int:
+    """
+    计算赤宝牌数量。
+
+    赤宝牌（赤五）自成宝牌，每张赤五 +1 han。
+    仅统计手牌和副露中的赤五，不依赖宝牌指示牌。
+
+    Args:
+        concealed: 门内牌计数
+        melds: 副露
+        win_tile: 和了牌
+        for_ron: 是否荣和（True 时 win_tile 不在 concealed 中）
+        enabled: 是否启用赤宝牌规则
+
+    Returns:
+        赤宝牌数量（0 若 enabled=False）
+    """
+    if not enabled:
+        return 0
+    count = 0
+    # 统计门内赤五
+    for t, n in concealed.items():
+        if t.is_red and n > 0:
+            count += n
+    # 荣和时，和了牌不在 concealed 中，需单独检查
+    if for_ron and win_tile.is_red:
+        count += 1
+    # 统计副露赤五
+    for m in melds:
+        for t in m.tiles:
+            if t.is_red:
+                count += 1
+    return count

@@ -129,12 +129,12 @@ class TestFuDetailNonPinfu:
         assert d["pair"] == 2
 
     def test_pair_fu_double_wind(self) -> None:
-        # 场风==自风时只计一次
+        # 场风==自风时计 4 符（雀魂规则：双计）
         c = Counter({MAN1: 1, MAN2: 1, MAN3: 1, PIN1: 1, PIN2: 1, PIN3: 1,
                      SOU1: 1, SOU2: 1, SOU3: 1, TON: 2, MAN4: 1, MAN5: 1})
         d = compute_fu_detail(c, (), MAN6, for_ron=True, menzen=True, pinfu=False,
                               self_wind=TON, round_wind=TON)
-        assert d["pair"] == 2  # 不是 4
+        assert d["pair"] == 4  # 连风雀头：场风2符 + 自风2符
 
     def test_pair_fu_non_yakuhai(self) -> None:
         # 非役牌对子: 0
@@ -161,14 +161,24 @@ class TestFuDetailNonPinfu:
         assert d["sets"] >= 8
 
     def test_set_fu_with_pon(self) -> None:
-        # 明刻（碰）: 通过副露
+        # 明刻（碰）中张: +2 符
         pon_meld = Meld(kind=MeldKind.PON, tiles=(MAN5, MAN5, MAN5), called_tile=MAN5)
         c = Counter({PIN1: 1, PIN2: 1, PIN3: 1, SOU1: 1, SOU2: 1, SOU3: 1,
                      MAN1: 2, MAN2: 1, MAN3: 1, MAN4: 1})
         d = compute_fu_detail(c, (pon_meld,), MAN4, for_ron=True, menzen=False, pinfu=False,
                               self_wind=NAN, round_wind=TON)
-        # 碰的符通过 _count_sets_by_kind 中的 is_melded 检查排除
-        # 碰不单独计符（在 full 计数中 count==3 但 is_melded=True）
+        # 明刻中张 5m: +2 符
+        assert d["sets"] >= 2
+
+    def test_set_fu_with_pon_terminal(self) -> None:
+        # 明刻（碰）幺九字牌: +4 符
+        pon_meld = Meld(kind=MeldKind.PON, tiles=(MAN1, MAN1, MAN1), called_tile=MAN1)
+        c = Counter({PIN1: 1, PIN2: 1, PIN3: 1, SOU1: 1, SOU2: 1, SOU3: 1,
+                     MAN5: 2, MAN2: 1, MAN3: 1, MAN4: 1})
+        d = compute_fu_detail(c, (pon_meld,), MAN4, for_ron=True, menzen=False, pinfu=False,
+                              self_wind=NAN, round_wind=TON)
+        # 明刻幺九 1m: +4 符
+        assert d["sets"] >= 4
 
     def test_set_fu_with_ankan(self) -> None:
         # 暗杠中张: +16

@@ -1480,7 +1480,7 @@ class TestThreeRonFlow:
 
     def test_three_ron_flow(self) -> None:
         """三家荣和 → THREE_RON 流局。"""
-        from kernel.config import MahjongConfig
+        from kernel.config import MahjongConfig, RonPolicy
         winner_hand = Counter({
             MAN1: 2, MAN2: 2, MAN3: 2, MAN4: 2, MAN5: 2, MAN6: 2, MAN7: 1,
         })
@@ -1502,7 +1502,7 @@ class TestThreeRonFlow:
             table=initial_table_snapshot(),
             board=b,
         )
-        cfg = MahjongConfig(allow_multiple_ron=False)
+        cfg = MahjongConfig(ron_policy=RonPolicy.TRIPLE_ABORTIVE_ONLY)
         g1 = apply(g, Action(ActionKind.RON, seat=1), config=cfg).new_state
         g2 = apply(g1, Action(ActionKind.RON, seat=2), config=cfg).new_state
         g3 = apply(g2, Action(ActionKind.RON, seat=3), config=cfg)

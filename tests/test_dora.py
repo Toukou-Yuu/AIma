@@ -7,6 +7,7 @@ from collections import Counter
 from kernel.hand.melds import Meld, MeldKind
 from kernel.scoring.dora import (
     _is_red_five_match,
+    count_aka_dora,
     count_dora_in_tiles,
     count_dora_total,
     count_ura_dora_total,
@@ -272,3 +273,134 @@ class TestKanUraDora:
         # 开杠后 revealed_indicators 会增加到 2 张
         ura_after_kan = ura_indicators_for_settlement(board.dead_wall, 2)
         assert len(ura_after_kan) == 2
+
+
+class TestCountAkaDora:
+    """赤宝牌计数测试。"""
+
+    def test_count_aka_dora_disabled(self) -> None:
+        """赤宝牌规则禁用时不计数。"""
+        concealed = Counter()
+        concealed[Tile(Suit.MAN, 5, True)] = 1  # 赤五
+
+        count = count_aka_dora(
+            concealed=concealed,
+            melds=(),
+            win_tile=Tile(Suit.MAN, 1),
+            for_ron=False,
+            enabled=False,
+        )
+        assert count == 0
+
+    def test_count_aka_dora_concealed_only(self) -> None:
+        """门内赤五计数。"""
+        concealed = Counter()
+        concealed[Tile(Suit.MAN, 5, True)] = 1  # 赤五万
+        concealed[Tile(Suit.PIN, 5, True)] = 1  # 赤五筒
+        concealed[Tile(Suit.MAN, 3)] = 2  # 普通牌
+
+        count = count_aka_dora(
+            concealed=concealed,
+            melds=(),
+            win_tile=Tile(Suit.MAN, 1),
+            for_ron=False,
+            enabled=True,
+        )
+        assert count == 2  # 赤五万 + 赤五筒
+
+    def test_count_aka_dora_with_melds(self) -> None:
+        """副露含赤五。"""
+        concealed = Counter()
+        concealed[Tile(Suit.MAN, 5, True)] = 1  # 门内赤五万
+
+        # 吃牌包含赤五筒
+        melds = (
+            Meld(
+                kind=MeldKind.CHI,
+                tiles=[Tile(Suit.PIN, 4, False), Tile(Suit.PIN, 5, True), Tile(Suit.PIN, 6, False)],
+                from_seat=1,
+            ),
+        )
+
+        count = count_aka_dora(
+            concealed=concealed,
+            melds=melds,
+            win_tile=Tile(Suit.MAN, 1),
+            for_ron=False,
+            enabled=True,
+        )
+        assert count == 2  # 门内赤五万 + 副露赤五筒
+
+    def test_count_aka_dora_ron_with_red_win_tile(self) -> None:
+        """荣和时和了牌为赤五。"""
+        concealed = Counter()
+        concealed[Tile(Suit.MAN, 3)] = 2
+
+        count = count_aka_dora(
+            concealed=concealed,
+            melds=(),
+            win_tile=Tile(Suit.MAN, 5, True),  # 荣和赤五
+            for_ron=True,
+            enabled=True,
+        )
+        assert count == 1  # 荣和的赤五也算
+
+    def test_count_aka_dora_ron_without_red_win_tile(self) -> None:
+        """荣和时和了牌为普通牌。"""
+        concealed = Counter()
+        concealed[Tile(Suit.MAN, 5, True)] = 1  # 门内赤五
+        concealed[Tile(Suit.MAN, 3)] = 2
+
+        count = count_aka_dora(
+            concealed=concealed,
+            melds=(),
+            win_tile=Tile(Suit.MAN, 1),  # 普通和了牌
+            for_ron=True,
+            enabled=True,
+        )
+        assert count == 1  # 只有门内赤五
+
+    def test_count_aka_dora_tsumo_with_red_win_tile(self) -> None:
+        """自摸时和了牌为赤五（已在 concealed 中）。"""
+        concealed = Counter()
+        concealed[Tile(Suit.MAN, 5, True)] = 1  # 自摸的赤五
+        concealed[Tile(Suit.MAN, 3)] = 2
+
+        count = count_aka_dora(
+            concealed=concealed,
+            melds=(),
+            win_tile=Tile(Suit.MAN, 5, True),  # 自摸赤五（已在 concealed 中）
+            for_ron=False,
+            enabled=True,
+        )
+        assert count == 1  # 自摸的赤五已在 concealed 中
+
+    def test_count_aka_dora_multiple_red_in_concealed(self) -> None:
+        """门内多张赤五。"""
+        concealed = Counter()
+        concealed[Tile(Suit.MAN, 5, True)] = 2  # 多张赤五万（理论上不可能，但测试计数逻辑）
+        concealed[Tile(Suit.MAN, 3)] = 2
+
+        count = count_aka_dora(
+            concealed=concealed,
+            melds=(),
+            win_tile=Tile(Suit.MAN, 1),
+            for_ron=False,
+            enabled=True,
+        )
+        assert count == 2
+
+    def test_count_aka_dora_no_red_fives(self) -> None:
+        """无赤五时计数为 0。"""
+        concealed = Counter()
+        concealed[Tile(Suit.MAN, 5, False)] = 3  # 普通五万
+        concealed[Tile(Suit.MAN, 3)] = 2
+
+        count = count_aka_dora(
+            concealed=concealed,
+            melds=(),
+            win_tile=Tile(Suit.MAN, 1),
+            for_ron=False,
+            enabled=True,
+        )
+        assert count == 0

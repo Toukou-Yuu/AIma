@@ -24,7 +24,7 @@ from kernel.engine.phase import GamePhase
 from kernel.engine.settlement import settle_ron, settle_tsumo
 from kernel.engine.state import GameState
 from kernel.event_log import GameEvent
-from kernel.config import get_default_config, MahjongConfig
+from kernel.config import get_default_config, MahjongConfig, RonPolicy
 from kernel.flow import FlowKind, FlowResult
 from kernel.hand.multiset import remove_tile
 from kernel.kan import apply_ankan, apply_kakan
@@ -47,6 +47,26 @@ class EngineError(ValueError):
 
 class IllegalActionError(EngineError):
     """当前阶段不接受该动作，或阶段尚未接线。"""
+
+
+def atamahane_winner(ron_claimants: frozenset[int], discard_seat: int) -> int:
+    """头跳：返回最靠近 discard_seat 的荣和者（下家优先）。
+
+    Args:
+        ron_claimants: 荣和申请者的座位集合
+        discard_seat: 被荣和牌的打出者座位
+
+    Returns:
+        头跳胜者的座位
+
+    Example:
+        discard_seat=0, ron_claimants={1, 2, 3} -> return 1（下家）
+        discard_seat=0, ron_claimants={2, 3} -> return 2（对家）
+        discard_seat=1, ron_claimants={0, 2} -> return 2（对家优先于上家）
+    """
+    # (seat - discard_seat + 4) % 4 计算座位相对于打出者的顺位
+    # 结果越小越优先：下家=1，对家=2，上家=3
+    return min(ron_claimants, key=lambda s: (s - discard_seat + 4) % 4)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,8 +109,9 @@ def _outcome_pass_call(state: GameState, seat: int, config: MahjongConfig | None
         raise IllegalActionError(str(e)) from e
     cs_pb = new_board.call_state
     if cs_pb is not None and cs_pb.finished and cs_pb.ron_claimants:
-        # 三家和流局判定：一炮多响=false 且 3 家荣和时触发流局
-        if not config.allow_multiple_ron and len(cs_pb.ron_claimants) >= 3:
+        # 多家荣和策略判定
+        if config.ron_policy == RonPolicy.TRIPLE_ABORTIVE_ONLY and len(cs_pb.ron_claimants) >= 3:
+            # 三家和流局：仅 3 家荣和时触发流局
             eb = _create_event_builder(state)
             flow_state = apply_three_ron_flow(new_board, state.table, cs_pb.ron_claimants, eb)
             flow_event = eb.flow(
@@ -106,12 +127,17 @@ def _outcome_pass_call(state: GameState, seat: int, config: MahjongConfig | None
                 new_state=flow_state,
                 events=(flow_event, hand_over_event),
             )
+        # 选择荣和胜者集合
+        ron_winners = cs_pb.ron_claimants
+        if config.ron_policy == RonPolicy.ATAMAHANE:
+            # 头跳：仅头跳胜者结算
+            ron_winners = frozenset({atamahane_winner(cs_pb.ron_claimants, cs_pb.discard_seat)})
         eb = _create_event_builder(state)
         is_chankan = cs_pb.chankan_rinshan_pending
         new_table, settled, events = settle_ron(
             state.table,
             new_board,
-            ron_winners=cs_pb.ron_claimants,
+            ron_winners=ron_winners,
             discard_seat=cs_pb.discard_seat,
             win_tile=cs_pb.claimed_tile,
             is_chankan=is_chankan,
@@ -123,7 +149,7 @@ def _outcome_pass_call(state: GameState, seat: int, config: MahjongConfig | None
                 phase=GamePhase.HAND_OVER,
                 table=new_table,
                 board=settled,
-                ron_winners=cs_pb.ron_claimants,
+                ron_winners=ron_winners,
                 event_sequence=eb._sequence,
             ),
             events=events,
@@ -298,8 +324,9 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                     raise IllegalActionError(str(e)) from e
                 cs = new_board.call_state
                 if cs is not None and cs.finished and cs.ron_claimants:
-                    # 三家和流局判定：一炮多响=false 且 3 家荣和时触发流局
-                    if not config.allow_multiple_ron and len(cs.ron_claimants) >= 3:
+                    # 多家荣和策略判定
+                    if config.ron_policy == RonPolicy.TRIPLE_ABORTIVE_ONLY and len(cs.ron_claimants) >= 3:
+                        # 三家和流局：仅 3 家荣和时触发流局
                         eb = _create_event_builder(state)
                         flow_state = apply_three_ron_flow(new_board, state.table, cs.ron_claimants, eb)
                         flow_event = eb.flow(
@@ -315,12 +342,17 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                             new_state=flow_state,
                             events=(flow_event, hand_over_event),
                         )
+                    # 选择荣和胜者集合
+                    ron_winners = cs.ron_claimants
+                    if config.ron_policy == RonPolicy.ATAMAHANE:
+                        # 头跳：仅头跳胜者结算
+                        ron_winners = frozenset({atamahane_winner(cs.ron_claimants, cs.discard_seat)})
                     eb = _create_event_builder(state)
                     is_chankan = cs.chankan_rinshan_pending
                     new_table, settled, events = settle_ron(
                         state.table,
                         new_board,
-                        ron_winners=cs.ron_claimants,
+                        ron_winners=ron_winners,
                         discard_seat=cs.discard_seat,
                         win_tile=cs.claimed_tile,
                         is_chankan=is_chankan,
@@ -332,7 +364,7 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                             phase=GamePhase.HAND_OVER,
                             table=new_table,
                             board=settled,
-                            ron_winners=cs.ron_claimants,
+                            ron_winners=ron_winners,
                             event_sequence=eb._sequence,
                         ),
                         events=events,

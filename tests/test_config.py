@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kernel.config import MahjongConfig, get_default_config
+from kernel.config import MahjongConfig, RonPolicy, get_default_config
 from kernel.config_manager import KernelConfigManager
 
 
@@ -46,4 +46,4 @@ class TestGetDefaultConfig:
         assert cfg.riichi_stick_value == 1000
         assert cfg.honba_value == 300
         assert cfg.allow_open_tanyao is True
-        assert cfg.allow_multiple_ron is True
+        assert cfg.ron_policy == RonPolicy.MULTI_RON

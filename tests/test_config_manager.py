@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 import pytest
 import yaml
 
-from kernel.config import MahjongConfig
+from kernel.config import MahjongConfig, RonPolicy
 from kernel.config_manager import KernelConfigManager
 
 
@@ -68,7 +68,7 @@ class TestKernelConfigManagerValidate:
                 "starting_points": 25000,
                 "round_wind_count": 2,
                 "allow_open_tanyao": True,
-                "allow_multiple_ron": True,
+                "ron_policy": "multi_ron",
                 "red_dora_enabled": True,
                 "ura_dora_enabled": True,
                 "flow_mangan_enabled": True,

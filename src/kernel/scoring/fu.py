@@ -68,7 +68,7 @@ def _count_sets_by_kind(
 ) -> dict[str, list[tuple[Suit, int]]]:
     """
     统计刻子/杠子（按种类分组，赤五与普通五视为同种）。
-    返回：{"ankan": [...], "minkan": [...], "anko": [...], "toitsu": [...]}
+    返回：{"ankan": [...], "minkan": [...], "anko": [...], "pon": [...], "toitsu": [...]}
     所有键均为 (Suit, int) 元组。
     """
     full = concealed.copy()
@@ -78,6 +78,7 @@ def _count_sets_by_kind(
     # 副露的刻子/杠子
     ankan_keys = []
     minkan_keys = []
+    pon_keys = []
     for m in melds:
         key = triplet_key(m.tiles[0])
         if m.kind == MeldKind.ANKAN:
@@ -87,8 +88,9 @@ def _count_sets_by_kind(
         elif m.kind == MeldKind.KAKAN:
             # 加杠视为明杠
             minkan_keys.append(key)
-        # 碰也形成刻子，但这里只统计杠
-        # 刻子（碰）在下面通过 full 计数判断
+        elif m.kind == MeldKind.PON:
+            # 明刻（碰）
+            pon_keys.append(key)
 
     # 门内的暗刻/暗杠/对子
     anko_keys = []
@@ -113,6 +115,7 @@ def _count_sets_by_kind(
         "ankan": ankan_keys,
         "minkan": minkan_keys,
         "anko": anko_keys,
+        "pon": pon_keys,
         "toitsu": toitsu_keys,
     }
 
@@ -317,11 +320,12 @@ def compute_fu_detail(
     pair_fu = 0
     for key in pair_keys:
         t = Tile(key[0], key[1])
+        # 连风雀头：场风 + 自风独立判断，允许双计 4 符
         if key == triplet_key(round_wind):
             pair_fu += FU_PAIR_YAKUHAI
-        elif key == triplet_key(self_wind):
+        if key == triplet_key(self_wind):
             pair_fu += FU_PAIR_YAKUHAI
-        elif t.suit == Suit.HONOR and t.rank in (5, 6, 7):
+        if t.suit == Suit.HONOR and t.rank in (5, 6, 7):
             pair_fu += FU_PAIR_YAKUHAI
     result["pair"] = pair_fu
 
@@ -336,6 +340,9 @@ def compute_fu_detail(
     for key in sets_data["anko"]:
         cat = _get_set_category(Tile(key[0], key[1]))
         sets_fu += FU_SET_ANKO[cat]
+    for key in sets_data["pon"]:
+        cat = _get_set_category(Tile(key[0], key[1]))
+        sets_fu += FU_SET_MINCHI[cat]
     result["sets"] = sets_fu
 
     # 门清荣和加符

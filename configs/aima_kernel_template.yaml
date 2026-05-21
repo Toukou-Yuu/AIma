@@ -22,8 +22,11 @@ kernel:
   # allow_open_tanyao: 食断あり，副露后断幺九可算役
   allow_open_tanyao: true
 
-  # allow_multiple_ron: 一炮多响あり，多家同时荣和
-  allow_multiple_ron: true
+  # ron_policy: 多家荣和策略
+  # - multi_ron: 一炮多响，所有荣和者同时和牌（雀魂默认）
+  # - atamahane: 头跳，仅最早一家荣和有效（下家 > 对家 > 上家）
+  # - triple_abortive_only: 三家和流局，3家荣和时流局，双响允许
+  ron_policy: multi_ron
 
   # === 宝牌 ===
   # red_dora_enabled: 赤牌あり，三赤（5m/5p/5s 各1张赤牌）

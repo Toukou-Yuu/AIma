@@ -8,7 +8,7 @@ from dataclasses import replace
 from kernel.board import BoardState
 from kernel.event_log import WinSettlementLine
 from kernel.hand.melds import Meld
-from kernel.scoring.dora import count_dora_total, count_ura_dora_total
+from kernel.scoring.dora import count_aka_dora, count_dora_total, count_ura_dora_total
 from kernel.scoring.fu import compute_fu_detail
 from kernel.scoring.points import child_ron_payment_from_discarder, child_tsumo_payments
 from kernel.scoring.yaku import (
@@ -43,6 +43,7 @@ def settle_ron_table(
     win_tile: Tile,
     ura_indicators: tuple[Tile, ...] = (),
     allow_open_tanyao: bool = True,
+    red_dora_enabled: bool = True,
     is_chankan: bool = False,
 ) -> tuple[TableSnapshot, tuple[WinSettlementLine, ...], tuple[int, int, int, int]]:
     """
@@ -134,13 +135,22 @@ def settle_ron_table(
                 for_ron=True,
                 ura_indicators=ura_indicators,
             )
-        han = nd_han + dora_h + ura_h
+        aka_h = count_aka_dora(
+            board.hands[w],
+            board.melds[w],
+            win_tile,
+            for_ron=True,
+            enabled=red_dora_enabled,
+        )
+        han = nd_han + dora_h + ura_h + aka_h
 
         yakus_list = list(nd_labels)
         if dora_h:
             yakus_list.append(f"表宝牌{dora_h}")
         if ura_h:
             yakus_list.append(f"里宝牌{ura_h}")
+        if aka_h:
+            yakus_list.append(f"赤宝牌{aka_h}")
 
         pay = child_ron_payment_from_discarder(
             w,
@@ -206,6 +216,7 @@ def settle_tsumo_table(
     win_tile: Tile,
     ura_indicators: tuple[Tile, ...] = (),
     allow_open_tanyao: bool = True,
+    red_dora_enabled: bool = True,
 ) -> tuple[TableSnapshot, tuple[WinSettlementLine, ...], tuple[int, int, int, int]]:
     """自摸：三家点棒按子/亲公式；供托归和了者。
 
@@ -285,13 +296,22 @@ def settle_tsumo_table(
             for_ron=False,
             ura_indicators=ura_indicators,
         )
-    han = nd_han + dora_h + ura_h
+    aka_h = count_aka_dora(
+        board.hands[winner],
+        board.melds[winner],
+        win_tile,
+        for_ron=False,
+        enabled=red_dora_enabled,
+    )
+    han = nd_han + dora_h + ura_h + aka_h
 
     yakus_list = list(nd_labels)
     if dora_h:
         yakus_list.append(f"表宝牌{dora_h}")
     if ura_h:
         yakus_list.append(f"里宝牌{ura_h}")
+    if aka_h:
+        yakus_list.append(f"赤宝牌{aka_h}")
 
     deltas = child_tsumo_payments(
         winner,

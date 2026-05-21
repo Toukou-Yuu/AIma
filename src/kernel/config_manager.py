@@ -12,7 +12,7 @@ from typing import Any
 
 import yaml
 
-from kernel.config import MahjongConfig
+from kernel.config import MahjongConfig, RonPolicy
 
 
 _KERNEL_CONFIG_PATH = Path("configs/aima_kernel.yaml")
@@ -23,7 +23,7 @@ _REQUIRED_FIELDS = (
     "starting_points",
     "round_wind_count",
     "allow_open_tanyao",
-    "allow_multiple_ron",
+    "ron_policy",
     "red_dora_enabled",
     "ura_dora_enabled",
     "flow_mangan_enabled",
@@ -70,16 +70,30 @@ class KernelConfigManager:
             raise ValueError("配置文件缺少 kernel 配置块")
 
         kernel_data = data["kernel"]
+
+        # 向后兼容：allow_multiple_ron -> ron_policy
+        if "ron_policy" not in kernel_data and "allow_multiple_ron" in kernel_data:
+            allow_multiple_ron = kernel_data["allow_multiple_ron"]
+            kernel_data["ron_policy"] = "multi_ron" if allow_multiple_ron else "triple_abortive_only"
+
         missing = cls._validate_fields(kernel_data)
         if missing:
             raise ValueError(f"kernel 配置块缺少必需字段: {', '.join(missing)}")
+
+        # 解析 ron_policy 枚举
+        ron_policy_str = kernel_data["ron_policy"]
+        try:
+            ron_policy = RonPolicy(ron_policy_str)
+        except ValueError:
+            valid_values = [p.value for p in RonPolicy]
+            raise ValueError(f"ron_policy 值 '{ron_policy_str}' 无效，有效值: {valid_values}")
 
         return MahjongConfig(
             match_length=kernel_data["match_length"],
             starting_points=kernel_data["starting_points"],
             round_wind_count=kernel_data["round_wind_count"],
             allow_open_tanyao=kernel_data["allow_open_tanyao"],
-            allow_multiple_ron=kernel_data["allow_multiple_ron"],
+            ron_policy=ron_policy,
             red_dora_enabled=kernel_data["red_dora_enabled"],
             ura_dora_enabled=kernel_data["ura_dora_enabled"],
             flow_mangan_enabled=kernel_data["flow_mangan_enabled"],

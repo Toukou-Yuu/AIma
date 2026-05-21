@@ -249,14 +249,33 @@ def _is_chanta(
     return False
 
 
-def _count_ananko(concealed: Counter[Tile], melds: tuple[Meld, ...]) -> int:
-    """暗刻数量（门内刻子，不含副露）。"""
+def _count_ananko(
+    concealed: Counter[Tile],
+    melds: tuple[Meld, ...],
+    win_tile: Tile | None = None,
+    for_ron: bool = False,
+) -> int:
+    """
+    暗刻数量（门内刻子，不含副露）。
+
+    Args:
+        concealed: 门内牌张计数
+        melds: 副露（当前未使用）
+        win_tile: 和牌（荣和时为被荣的牌，自摸时为自摸牌）
+        for_ron: 是否荣和
+
+    Returns:
+        暗刻数量
+
+    Note:
+        荣和时 concealed 为 13 张（不含荣和牌），自摸时 concealed 为 14 张（含自摸牌）。
+        因此荣和补成刻子的牌在 concealed 中只有 2 张，不会被统计为暗刻。
+        自摸补成刻子的牌在 concealed 中有 3 张，会被统计为暗刻。
+        这个显式参数版本与隐式版本行为一致，但更清晰地表达了意图。
+    """
     count = 0
     for key, n in concealed.items():
-        if n == 3:
-            count += 1
-        elif n == 4:
-            # 暗杠也算暗刻（四暗刻用）
+        if n >= 3:
             count += 1
     return count
 
@@ -1005,7 +1024,7 @@ def non_dora_yaku_han_and_labels(
             han += 2
             labels.append("混老头")
 
-    ananko_count = _count_ananko(concealed, melds)
+    ananko_count = _count_ananko(concealed, melds, win_tile=win_tile, for_ron=for_ron)
     if ananko_count >= 3:
         han += 2
         labels.append("三暗刻")
