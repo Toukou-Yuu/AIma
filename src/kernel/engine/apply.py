@@ -196,6 +196,14 @@ def _outcome_pass_call(state: GameState, seat: int, config: MahjongConfig | None
             flown_state, flow_event = apply_flow_transition(state, flow_result, eb)
             return ApplyOutcome(new_state=flown_state, events=(flow_event,))
 
+    # H-08: Check for four winds flow after CALL_RESPONSE ends
+    if new_board.turn_phase == TurnPhase.NEED_DRAW and new_board.call_state is None:
+        four_winds_flow = detect_flow_four_winds(new_board)
+        if four_winds_flow is not None:
+            eb = _create_event_builder(state)
+            flown_state, flow_event = apply_flow_transition(state, four_winds_flow, eb)
+            return ApplyOutcome(new_state=flown_state, events=(flow_event,))
+
     return ApplyOutcome(
         new_state=GameState(
             phase=phase,

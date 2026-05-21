@@ -177,7 +177,11 @@ def finalize_pending_riichi(board: BoardState) -> BoardState:
     new_ippatsu = frozenset(board.ippatsu_eligible | {seat})
 
     new_double = board.double_riichi
-    if not any(e.seat == seat for e in board.river):
+    # H-07: 双立直条件 = 首打 + 无鸣牌
+    # 首打判断：river 中该 seat 恰好 1 张舍牌（立直宣言牌已加入 river）
+    is_first_discard = sum(1 for e in board.river if e.seat == seat) == 1
+    no_calls_occurred = all(len(m) == 0 for m in board.melds)
+    if is_first_discard and no_calls_occurred:
         new_double = frozenset(board.double_riichi | {seat})
 
     return replace(
