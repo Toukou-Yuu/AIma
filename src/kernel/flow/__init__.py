@@ -3,6 +3,7 @@
 from kernel.flow.model import FlowKind, FlowResult, TenpaiResult
 from kernel.flow.settle import (
     compute_tenpai_result,
+    settle_abortive_flow,
     settle_flow,
     settle_tenpai,
     should_continue_dealer,
@@ -31,6 +32,7 @@ __all__ = [
     "is_four_winds_flow",
     "is_nine_nine_flow",
     "is_three_ron_flow",
+    "settle_abortive_flow",
     "settle_flow",
     "settle_tenpai",
     "compute_tenpai_result",

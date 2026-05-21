@@ -9,7 +9,7 @@ from kernel.board import BoardState
 from kernel.engine.events import EventBuilder
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState
-from kernel.flow import FlowKind, FlowResult, check_flow_kind, settle_flow
+from kernel.flow import FlowKind, FlowResult, check_flow_kind, settle_abortive_flow, settle_flow
 from kernel.hand.melds import MeldKind
 from kernel.table.model import TableSnapshot
 from kernel.table.transitions import advance_round, final_settlement, should_match_end
@@ -97,7 +97,18 @@ def apply_flow_transition(
 
     返回 (new_state, flow_event)。
     """
-    new_table, tenpai_result = settle_flow(state.table, state.board)
+    # 中途流局（无听牌料结算）与荒牌流局（有听牌料结算）分支
+    abortive_kinds = {
+        FlowKind.NINE_NINE,
+        FlowKind.FOUR_WINDS,
+        FlowKind.FOUR_KANS,
+        FlowKind.FOUR_RIICHI,
+    }
+    if flow_result.kind in abortive_kinds:
+        new_table, tenpai_result = settle_abortive_flow(state.table)
+    else:
+        new_table, tenpai_result = settle_flow(state.table, state.board)
+
     flow_event = event_builder.flow(
         flow_kind=flow_result.kind,
         tenpai_seats=tenpai_result.tenpai_seats if tenpai_result else frozenset(),
@@ -152,6 +163,7 @@ def advance_after_flow(
     dealer_seat: int,
     wall: list["Tile"],
     event_builder: EventBuilder,
+    flow_result: FlowResult | None = None,
 ) -> tuple[GameState, tuple[GameEvent, ...]]:
     """
     流局后推进到下一局或终局。
@@ -161,8 +173,21 @@ def advance_after_flow(
     from kernel.deal import assert_wall_is_standard_deck, build_board_after_split
     from kernel.wall.split import split_wall as deal_split_wall
 
-    # 先判断是否连庄（亲家听牌）
-    continue_dealer = tenpai_result is not None and dealer_seat in tenpai_result.tenpai_seats
+    # 先判断是否连庄
+    # 中途流局（abortive flow）→ 连庄
+    # 荒牌流局 → 视 tenpai_result 决定
+    abortive_kinds = {
+        FlowKind.NINE_NINE,
+        FlowKind.FOUR_WINDS,
+        FlowKind.FOUR_KANS,
+        FlowKind.FOUR_RIICHI,
+    }
+    if flow_result is not None and flow_result.kind in abortive_kinds:
+        continue_dealer = True  # 中途流局连庄
+    elif tenpai_result is None:
+        continue_dealer = False  # 无 tenpai_result 时亲流（兼容测试）
+    else:
+        continue_dealer = dealer_seat in tenpai_result.tenpai_seats
 
     if continue_dealer:
         # 连庄：不判断终局，直接推进

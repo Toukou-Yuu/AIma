@@ -214,6 +214,16 @@ def update_honba(
         return replace(table, honba=0)
 
 
+def settle_abortive_flow(table: TableSnapshot) -> tuple[TableSnapshot, None]:
+    """
+    中途流局结算：无听牌料结算，本场+1，亲家连庄。
+
+    适用于：九种九牌、四风连打、四杠散了、四家立直。
+    """
+    new_table = update_honba(table, continue_dealer=True)
+    return new_table, None
+
+
 def settle_flow(
     table: TableSnapshot,
     board: "BoardState",

@@ -204,6 +204,14 @@ def _outcome_pass_call(state: GameState, seat: int, config: MahjongConfig | None
             flown_state, flow_event = apply_flow_transition(state, four_winds_flow, eb)
             return ApplyOutcome(new_state=flown_state, events=(flow_event,))
 
+    # H-11: Check for four-kans flow after chankan window closes
+    if new_board.turn_phase == TurnPhase.NEED_DRAW and new_board.call_state is None:
+        four_kans_flow = detect_flow_after_kan(new_board)
+        if four_kans_flow is not None and four_kans_flow.kind == FlowKind.FOUR_KANS:
+            eb = _create_event_builder(state)
+            flown_state, flow_event = apply_flow_transition(state, four_kans_flow, eb)
+            return ApplyOutcome(new_state=flown_state, events=(flow_event,))
+
     return ApplyOutcome(
         new_state=GameState(
             phase=phase,
@@ -649,25 +657,27 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                 call_kind="ankan",
             )
 
-            # 检测四杠流局
-            flow_result = detect_flow_after_kan(new_board)
-            if flow_result is not None and flow_result.kind == FlowKind.FOUR_KANS:
-                # 四杠流局：进入 FLOWN 状态
-                flown_state, flow_event = apply_flow_transition(
-                    GameState(
-                        phase=GamePhase.IN_ROUND,
-                        table=state.table,
-                        board=new_board,
-                        ron_winners=None,
-                        event_sequence=eb._sequence,
-                    ),
-                    flow_result,
-                    eb,
-                )
-                return ApplyOutcome(
-                    new_state=flown_state,
-                    events=(kan_event, flow_event),
-                )
+            # H-11: 四杠散了检测须在抢杠窗口结束后执行
+            # 若 apply_ankan 创建了 CALL_RESPONSE 窗口（kokushi-rob-ankan），跳过检测
+            # 若无抢杠窗口，立即检测是正确的
+            if new_board.turn_phase != TurnPhase.CALL_RESPONSE:
+                flow_result = detect_flow_after_kan(new_board)
+                if flow_result is not None and flow_result.kind == FlowKind.FOUR_KANS:
+                    flown_state, flow_event = apply_flow_transition(
+                        GameState(
+                            phase=GamePhase.IN_ROUND,
+                            table=state.table,
+                            board=new_board,
+                            ron_winners=None,
+                            event_sequence=eb._sequence,
+                        ),
+                        flow_result,
+                        eb,
+                    )
+                    return ApplyOutcome(
+                        new_state=flown_state,
+                        events=(kan_event, flow_event),
+                    )
 
             return ApplyOutcome(
                 new_state=GameState(
@@ -702,25 +712,8 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                 call_kind="kakan",
             )
 
-            # 检测四杠流局
-            flow_result = detect_flow_after_kan(new_board)
-            if flow_result is not None and flow_result.kind == FlowKind.FOUR_KANS:
-                # 四杠流局：进入 FLOWN 状态
-                flown_state, flow_event = apply_flow_transition(
-                    GameState(
-                        phase=GamePhase.IN_ROUND,
-                        table=state.table,
-                        board=new_board,
-                        ron_winners=None,
-                        event_sequence=eb._sequence,
-                    ),
-                    flow_result,
-                    eb,
-                )
-                return ApplyOutcome(
-                    new_state=flown_state,
-                    events=(kan_event, flow_event),
-                )
+            # H-11: 加杠一定触发抢杠窗口，四杠散了检测须在窗口结束后执行
+            # 移除过早检测，让 CALL_RESPONSE 正常处理
 
             return ApplyOutcome(
                 new_state=GameState(
@@ -753,12 +746,8 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
             if not check_nine_nine_declaration(board.hands[seat]):
                 msg = "not nine_nine declaration condition"
                 raise IllegalActionError(msg)
-            # 检查是否首巡：亲家配牌后（无舍牌）或子家配牌后（只有庄家一张舍牌）
-            total_discards = sum(len(discards) for discards in board.all_discards_per_seat)
-            dealer_seat = state.table.dealer_seat
-            is_first_turn = total_discards == 0 or (
-                total_discards == 1 and len(board.all_discards_per_seat[dealer_seat]) == 1
-            )
+            # 检查是否首巡：当前玩家无舍牌
+            is_first_turn = len(board.all_discards_per_seat[seat]) == 0
             if not is_first_turn:
                 msg = "not first turn for nine_nine declaration"
                 raise IllegalActionError(msg)
@@ -878,6 +867,7 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                 state.table.dealer_seat,
                 action.wall,
                 eb,
+                flow_result=state.flow_result,
             )
             return ApplyOutcome(new_state=new_state, events=events)
         msg = f"action {kind.value} not allowed in phase {phase.value}"
