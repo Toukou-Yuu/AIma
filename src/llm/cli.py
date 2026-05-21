@@ -159,7 +159,7 @@ def _merge_config(
     watch_cfg = yaml_cfg["watch"]
     llm_cfg = yaml_cfg["llm"]
     yaml_defaults = {
-        "seed": kernel_cfg["seed"],
+        "seed": kernel_cfg.get("seed") or 0,  # null/缺失 → 默认 0
         "wall_file": kernel_cfg.get("wall_file"),
         "match_end": {
             "type": kernel_cfg["match_end"]["type"],
