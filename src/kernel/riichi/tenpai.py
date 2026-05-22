@@ -18,13 +18,11 @@ def _is_menzen(melds: tuple[Meld, ...]) -> bool:
 
 
 def _iter_ron_candidate_tiles() -> tuple[Tile, ...]:
-    """荣和/听牌枚举用候选牌（含赤五）。"""
+    """荣和/听牌枚举用候选牌（不含赤五，34 种逻辑牌）。"""
     out: list[Tile] = []
     for suit in (Suit.MAN, Suit.PIN, Suit.SOU):
         for r in range(1, 10):
-            out.append(Tile(suit, r))
-            if r == 5:
-                out.append(Tile(suit, 5, is_red=True))
+            out.append(Tile(suit, r))  # H-16: 不添加赤五候选
     for r in range(1, 8):
         out.append(Tile(Suit.HONOR, r))
     return tuple(out)

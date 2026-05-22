@@ -9,6 +9,7 @@ from kernel.board import BoardState
 from kernel.hand.melds import Meld, MeldKind, triplet_key
 from kernel.table.model import PrevailingWind, TableSnapshot, seat_wind_rank
 from kernel.tiles.model import Suit, Tile
+from kernel.tiles.key import logical_counter, tile_key  # H-15: 赤五归一化
 from kernel.win_shape.decompose import menzen_peikou_level
 from kernel.win_shape.pinfu import pinfu_eligible
 
@@ -81,13 +82,15 @@ def _yakuhai_han_triplets(
 
 
 def _is_chiitoitsu(full: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
+    """七对子：14 张门内牌恰好 7 种各 2 张（赤五归一化）。"""
     if melds:
         return False
-    if sum(full.values()) != 14:
+    logical = logical_counter(full)  # H-15: 赤五归一化
+    if sum(logical.values()) != 14:
         return False
-    if len(full) != 7:
+    if len(logical) != 7:
         return False
-    return all(n == 2 for n in full.values())
+    return all(n == 2 for n in logical.values())
 
 
 def _is_all_terminals_and_honors(full: Counter[Tile]) -> bool:
@@ -256,7 +259,7 @@ def _count_ananko(
     for_ron: bool = False,
 ) -> int:
     """
-    暗刻数量（门内刻子，不含副露）。
+    暗刻数量（门内刻子，不含副露，赤五归一化）。
 
     Args:
         concealed: 门内牌张计数
@@ -273,8 +276,9 @@ def _count_ananko(
         自摸补成刻子的牌在 concealed 中有 3 张，会被统计为暗刻。
         这个显式参数版本与隐式版本行为一致，但更清晰地表达了意图。
     """
+    logical = logical_counter(concealed)  # H-15: 赤五归一化
     count = 0
-    for key, n in concealed.items():
+    for key, n in logical.items():
         if n >= 3:
             count += 1
     return count
@@ -283,10 +287,12 @@ def _count_ananko(
 def _is_toitoi(
     melds: tuple[Meld, ...], concealed: Counter[Tile], win_tile: Tile, for_ron: bool
 ) -> bool:
-    """对对和：四刻子 + 一对。"""
+    """对对和：四刻子 + 一对（赤五归一化）。"""
     full = concealed.copy()
     if for_ron:
         full[win_tile] += 1
+
+    logical = logical_counter(full)  # H-15: 赤五归一化
 
     # 所有副露必须是刻子或杠子（非顺子）
     for m in melds:
@@ -297,7 +303,7 @@ def _is_toitoi(
     pair_count = 0
     triplet_count = len(melds)  # 副露的刻子/杠子数
 
-    for key, count in full.items():
+    for key, count in logical.items():
         if count == 2:
             pair_count += 1
         elif count == 3:
@@ -420,7 +426,7 @@ def _is_suuankou(
     concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile, for_ron: bool
 ) -> bool:
     """
-    四暗刻：门前清四组暗刻 + 对子。
+    四暗刻：门前清四组暗刻 + 对子（赤五归一化）。
     荣和时不算四暗刻（荣和破坏门清）。
     单骑等待由 ``_is_suuankou_tanki`` 单独处理。
     役满。
@@ -437,7 +443,9 @@ def _is_suuankou(
     if for_ron:
         full[win_tile] += 1
 
-    for key, count in full.items():
+    logical = logical_counter(full)  # H-15: 赤五归一化
+
+    for key, count in logical.items():
         if count == 3:
             anko_count += 1
         elif count == 4:
@@ -454,7 +462,7 @@ def _is_suuankou_tanki(
     concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile, for_ron: bool
 ) -> bool:
     """
-    四暗刻单骑：门前清四暗刻 + 单骑待牌。
+    四暗刻单骑：门前清四暗刻 + 单骑待牌（赤五归一化）。
     役满。
     仅荣和时成立（自摸时是普通四暗刻）。
     """
@@ -464,9 +472,10 @@ def _is_suuankou_tanki(
         return False  # 自摸时不是单骑
 
     # 荣和时：手牌 3 刻子 +2 对子，荣和的牌使其中一对变成刻子
+    logical = logical_counter(concealed)  # H-15: 赤五归一化
     anko_count = 0
     pair_count = 0
-    for key, count in concealed.items():
+    for key, count in logical.items():
         if count == 3:
             anko_count += 1
         elif count == 4:
@@ -474,7 +483,9 @@ def _is_suuankou_tanki(
         elif count == 2:
             pair_count += 1
 
-    if anko_count == 3 and pair_count == 2 and concealed[win_tile] == 2:
+    # 荣和牌需要检查逻辑牌种（赤五与普通五等价）
+    win_key = tile_key(win_tile)
+    if anko_count == 3 and pair_count == 2 and logical.get(win_key, 0) == 2:
         return True
     return False
 
@@ -665,18 +676,19 @@ def _is_ryuuiisou(full: Counter[Tile], melds: tuple[Meld, ...]) -> bool:
 
 def _is_chuuren_poutou(concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile) -> bool:
     """
-    九莲宝灯：同花色 1112345678999 + 任意同花色牌。
+    九莲宝灯：同花色 1112345678999 + 任意同花色牌（赤五归一化）。
     门前清限定。
     役满。
     """
     if melds:
         return False
 
-    if sum(concealed.values()) != 14:
+    logical = logical_counter(concealed)  # H-15: 赤五归一化
+    if sum(logical.values()) != 14:
         return False
 
     # 找出唯一的非字牌花色
-    suits = {t.suit for t in concealed.keys() if t.suit != Suit.HONOR}
+    suits = {key[0] for key in logical.keys() if key[0] != Suit.HONOR}
     if len(suits) != 1:
         return False
 
@@ -687,15 +699,15 @@ def _is_chuuren_poutou(concealed: Counter[Tile], melds: tuple[Meld, ...], win_ti
 
     # 检查是否符合九莲宝灯形
     # 允许任意一张牌多一张（形成 14 张）
-    ranks_present = {t.rank for t in concealed.keys()}
+    ranks_present = {key[1] for key in logical.keys() if key[0] == suit}
     if not {1, 2, 3, 4, 5, 6, 7, 8, 9}.issubset(ranks_present):
         return False
 
     # 检查是否符合 1112345678999 + 1 张的形式
     total = 0
     for rank in range(1, 10):
-        t = Tile(suit, rank)
-        count = concealed.get(t, 0)
+        key = (suit, rank)
+        count = logical.get(key, 0)
         if count < base_pattern[rank]:
             return False
         total += count
@@ -704,7 +716,7 @@ def _is_chuuren_poutou(concealed: Counter[Tile], melds: tuple[Meld, ...], win_ti
         return False
 
     # 检查额外牌是否在 1-9 范围内（已经是同花色）
-    extra_count = sum(concealed.values()) - 13
+    extra_count = sum(logical.values()) - 13
     return extra_count == 1
 
 
@@ -712,19 +724,20 @@ def _is_junsei_chuuren_poutou(
     concealed: Counter[Tile], melds: tuple[Meld, ...], win_tile: Tile
 ) -> bool:
     """
-    纯正九莲宝灯：九面待牌的九莲宝灯。
+    纯正九莲宝灯：九面待牌的九莲宝灯（赤五归一化）。
     役满。
     条件：手牌 1112345678999 待任意同花色牌（1-9 任意）。
     """
     if melds:
         return False
 
+    logical = logical_counter(concealed)  # H-15: 赤五归一化
     # 手牌必须是 13 张
-    if sum(concealed.values()) != 13:
+    if sum(logical.values()) != 13:
         return False
 
     # 找出唯一的非字牌花色
-    suits = {t.suit for t in concealed.keys() if t.suit != Suit.HONOR}
+    suits = {key[0] for key in logical.keys() if key[0] != Suit.HONOR}
     if len(suits) != 1:
         return False
 
@@ -735,8 +748,8 @@ def _is_junsei_chuuren_poutou(
 
     # 检查手牌是否完全符合基础形
     for rank in range(1, 10):
-        t = Tile(suit, rank)
-        if concealed.get(t, 0) != base_pattern[rank]:
+        key = (suit, rank)
+        if logical.get(key, 0) != base_pattern[rank]:
             return False
 
     return True

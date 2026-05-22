@@ -6,6 +6,7 @@ from collections import Counter
 
 from kernel.hand.melds import Meld, MeldKind, meld_tile_count
 from kernel.tiles.model import Suit, Tile
+from kernel.tiles.key import logical_counter  # H-15: 赤五归一化
 from kernel.win_shape.std import can_win_standard_form, can_win_standard_form_concealed_total
 
 
@@ -103,31 +104,33 @@ def can_ron_seven_pairs(
     win_tile: Tile,
 ) -> bool:
     """
-    门清七对子荣和：副露须为空，手牌 13 张 + 和了牌 = 14 张且为七对。
+    门清七对子荣和：副露须为空，手牌 13 张 + 和了牌 = 14 张且为七对（赤五归一化）。
     """
     if len(melds) > 0:
         return False
     c = concealed.copy()
     c[win_tile] += 1
-    if sum(c.values()) != 14:
+    logical = logical_counter(c)  # H-15: 赤五归一化
+    if sum(logical.values()) != 14:
         return False
-    if len(c) != 7:
+    if len(logical) != 7:
         return False
-    return all(n == 2 for n in c.values())
+    return all(n == 2 for n in logical.values())
 
 
 def can_win_seven_pairs_concealed_14(
     concealed: Counter[Tile],
     melds: tuple[Meld, ...],
 ) -> bool:
-    """门内+副露合计 14 张时的七对和了（无副露）。"""
+    """门内+副露合计 14 张时的七对和了（无副露，赤五归一化）。"""
     if melds:
         return False
-    if sum(concealed.values()) != 14:
+    logical = logical_counter(concealed)  # H-15: 赤五归一化
+    if sum(logical.values()) != 14:
         return False
-    if len(concealed) != 7:
+    if len(logical) != 7:
         return False
-    return all(n == 2 for n in concealed.values())
+    return all(n == 2 for n in logical.values())
 
 
 def _can_ron_kokushi(

@@ -232,10 +232,10 @@ def _tile_to_idx(t: Tile) -> int:
 
 
 def _to_vec34(tiles: Counter[Tile]) -> list[int]:
-    """Counter[Tile] → vec34。"""
+    """Counter[Tile] → vec34，赤五与普通五累加。"""
     vec = [0] * 34
     for t, n in tiles.items():
-        vec[_tile_to_idx(t)] = n
+        vec[_tile_to_idx(t)] += n  # H-17: 累加而非覆盖
     return vec
 
 
