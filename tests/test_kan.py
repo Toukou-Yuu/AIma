@@ -476,75 +476,110 @@ def _make_kokushi_thirteen_waits_hand_missing_east() -> Counter[Tile]:
 
 
 def test_kokushi_rob_ankan_creates_chankan_window() -> None:
-    """暗杠后成功执行。
+    """国士十三面听牌玩家可以抢暗杠的幺九牌。
 
-    注意：完整的国士抢暗杠场景因牌山限制难以构造（需要对手有国士十三面听牌），
-    本测试只验证暗杠成功执行和基本流程。
+    使用自定义牌分配，构造：
+    - 庄家 seat 0: MAN 1 x4（用于暗杠）
+    - seat 2: 国士十三面听牌（等待 MAN 1）
     """
-    # 使用 seed 7，手牌中有 MAN 1 x4（可作暗杠牌）
-    b0 = _board(seed=7, dealer=0)
-    merged = Counter()
-    for h in b0.hands:
-        merged.update(h)
+    from kernel.call.win import is_kokushi_thirteen_waits_waiting, get_kokushi_waiting_tiles
+    from kernel.config import MahjongConfig
+    from kernel.config_manager import KernelConfigManager
+    from dataclasses import replace
 
-    # 找一个有 4 张的牌作为暗杠牌
-    quad_tile = None
-    for t, n in merged.items():
-        if n >= 4:
-            quad_tile = t
-            break
+    # 确保 kokushi rob ankan 配置开启
+    original_config = KernelConfigManager._cached_config
+    KernelConfigManager._cached_config = MahjongConfig(allow_kokushi_rob_ankan=True)
 
-    if quad_tile is None:
-        pytest.skip("牌山没有足够的牌用于暗杠测试")
+    try:
+        b0 = _board(seed=7, dealer=0)
+        merged = Counter()
+        for h in b0.hands:
+            merged.update(h)
 
-    # 构造手牌：
-    # seat 0（庄家）: 4 张 quad_tile + 其他牌凑 14 张
-    merged[quad_tile] -= 4
-    h0 = Counter({quad_tile: 4})
-    for _ in range(10):  # 庄家配牌 14 张
-        x = next(iter(merged.elements()))
-        h0[x] += 1
-        merged[x] -= 1
+        # MAN 1 是幺九牌，有 4 张
+        quad_tile = Tile(Suit.MAN, 1, False)
+        assert merged[quad_tile] >= 4, "seed 7 应该有 MAN 1 x4"
 
-    # seat 1, 2, 3 的手牌
-    h1 = Counter()
-    h2 = Counter()
-    h3 = Counter()
-    for target in (h1, h2, h3):
-        for _ in range(13):
+        # 分配牌：
+        # seat 0: MAN 1 x4 + 10 张其他 = 14 张（庄家）
+        merged[quad_tile] -= 4
+        h0 = Counter({quad_tile: 4})
+        for _ in range(10):
             x = next(iter(merged.elements()))
-            target[x] += 1
+            h0[x] += 1
             merged[x] -= 1
 
-    hands = (h0, h1, h2, h3)
+        # seat 2: 国士十三面听牌（等待 MAN 1）
+        # 需要 12 种幺九牌（不含 MAN 1）各 1 张 + 1 张其他
+        yaochu_except_man1 = [
+            Tile(Suit.MAN, 9, False),
+            Tile(Suit.PIN, 1, False), Tile(Suit.PIN, 9, False),
+            Tile(Suit.SOU, 1, False), Tile(Suit.SOU, 9, False),
+            Tile(Suit.HONOR, 1, False), Tile(Suit.HONOR, 2, False),
+            Tile(Suit.HONOR, 3, False), Tile(Suit.HONOR, 4, False),
+            Tile(Suit.HONOR, 5, False), Tile(Suit.HONOR, 6, False),
+            Tile(Suit.HONOR, 7, False),
+        ]
 
-    # 构造 board
-    b = BoardState(
-        hands=hands,
-        live_wall=b0.live_wall,
-        live_draw_index=b0.live_draw_index,
-        dead_wall=b0.dead_wall,
-        revealed_indicators=b0.revealed_indicators,
-        current_seat=0,
-        turn_phase=TurnPhase.MUST_DISCARD,
-        river=b0.river,
-        melds=((), (), (), ()),
-        last_draw_tile=None,
-        last_draw_was_rinshan=False,
-        rinshan_draw_index=0,
-        call_state=None,
-        all_discards_per_seat=b0.all_discards_per_seat,
-    )
+        kokushi_hand = Counter()
+        for t in yaochu_except_man1:
+            kokushi_hand[t] = 1
+            merged[t] -= 1
+        # 加一张非幺九牌凑成 13 张
+        extra = next(iter(merged.elements()))
+        kokushi_hand[extra] += 1
+        merged[extra] -= 1
 
-    # 执行暗杠
-    ankan_meld = Meld(MeldKind.ANKAN, (quad_tile, quad_tile, quad_tile, quad_tile), called_tile=None)
-    b2 = apply_ankan(b, 0, ankan_meld)
+        # seat 1 和 seat 3
+        h1 = Counter()
+        h3 = Counter()
+        for target in (h1, h3):
+            for _ in range(13):
+                x = next(iter(merged.elements()))
+                target[x] += 1
+                merged[x] -= 1
 
-    # 验证：暗杠成功执行，岭上摸牌
-    assert b2.turn_phase == TurnPhase.MUST_DISCARD
-    assert b2.last_draw_was_rinshan is True
-    assert len(b2.melds[0]) == 1
-    assert b2.melds[0][0].kind == MeldKind.ANKAN
+        hands = (h0, h1, kokushi_hand, h3)
+
+        # 验证 seat 2 是国士十三面听牌
+        assert is_kokushi_thirteen_waits_waiting(kokushi_hand, ())
+        waiting = get_kokushi_waiting_tiles(kokushi_hand)
+        assert quad_tile in waiting, "MAN 1 应该是等待牌"
+
+        # 构造 board
+        b = BoardState(
+            hands=hands,
+            live_wall=b0.live_wall,
+            live_draw_index=b0.live_draw_index,
+            dead_wall=b0.dead_wall,
+            revealed_indicators=b0.revealed_indicators,
+            current_seat=0,
+            turn_phase=TurnPhase.MUST_DISCARD,
+            river=b0.river,
+            melds=((), (), (), ()),
+            last_draw_tile=None,
+            last_draw_was_rinshan=False,
+            rinshan_draw_index=0,
+            call_state=None,
+            all_discards_per_seat=b0.all_discards_per_seat,
+        )
+
+        # 执行暗杠
+        ankan_meld = Meld(MeldKind.ANKAN, (quad_tile, quad_tile, quad_tile, quad_tile), called_tile=None)
+        b2 = apply_ankan(b, 0, ankan_meld)
+
+        # 验证：创建了 chankan 窗口
+        assert b2.turn_phase == TurnPhase.CALL_RESPONSE
+        assert b2.call_state is not None
+        assert b2.call_state.chankan_rinshan_pending is True
+        assert b2.call_state.claimed_tile == quad_tile
+
+        # 验证 seat 2 可以荣和
+        assert 2 in b2.call_state.ron_remaining
+
+    finally:
+        KernelConfigManager._cached_config = original_config
 
 
 def test_kokushi_rob_ankan_disabled_by_config() -> None:
