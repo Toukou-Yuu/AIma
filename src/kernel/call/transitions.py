@@ -58,6 +58,8 @@ def _replace_board(board: BoardState, **kwargs: object) -> BoardState:
         ),
         pending_riichi=kwargs.get("pending_riichi", board.pending_riichi),
         pending_riichi_tile=kwargs.get("pending_riichi_tile", board.pending_riichi_tile),
+        temporary_furiten=kwargs.get("temporary_furiten", board.temporary_furiten),
+        riichi_furiten=kwargs.get("riichi_furiten", board.riichi_furiten),
     )
 
 
@@ -399,4 +401,6 @@ def board_after_ron_winners(board: BoardState) -> BoardState:
         double_riichi=board.double_riichi,
         all_discards_per_seat=board.all_discards_per_seat,
         called_discard_indices=board.called_discard_indices,
+        temporary_furiten=board.temporary_furiten,
+        riichi_furiten=board.riichi_furiten,
     )

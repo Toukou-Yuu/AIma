@@ -206,6 +206,10 @@ class BoardState:
         default_factory=_empty_called_indices_per_seat
     )
     """各席 ``all_discards_per_seat[seat]`` 的下标：被他家吃/碰/大明杠鸣走的舍牌。"""
+    temporary_furiten: FrozenSet[int] = frozenset()
+    """P2-01: 同巡振听席（见逃可和牌后，到下次摸牌前不能荣和）。"""
+    riichi_furiten: FrozenSet[int] = frozenset()
+    """P2-01: 立直见逃振听席（立直后见逃可和牌，本局不能荣和）。"""
 
     def __post_init__(self) -> None:
         validate_board_state(self)
@@ -290,6 +294,20 @@ def validate_board_state(board: BoardState) -> None:
             if i < 0 or i >= len(board.all_discards_per_seat[s]):
                 msg = f"called_discard_indices[{s}] out of range for all_discards_per_seat"
                 raise ValueError(msg)
+
+    # P2-01: 验证振听字段
+    for s in board.temporary_furiten:
+        if not 0 <= s <= 3:
+            msg = "temporary_furiten seats must be 0..3"
+            raise ValueError(msg)
+    for s in board.riichi_furiten:
+        if not 0 <= s <= 3:
+            msg = "riichi_furiten seats must be 0..3"
+            raise ValueError(msg)
+        # 立直振听席必须是已立直席
+        if not board.riichi[s]:
+            msg = "riichi_furiten seat must be riichi"
+            raise ValueError(msg)
 
     cur = board.current_seat
     if board.turn_phase == TurnPhase.NEED_DRAW:

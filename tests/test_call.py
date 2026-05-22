@@ -52,7 +52,8 @@ def test_ron_rejected_when_shape_wrong() -> None:
     cs = g2.board.call_state
     assert cs is not None
     s = next(iter(cs.ron_remaining))
-    with pytest.raises(IllegalActionError, match="illegal ron"):
+    # P2-02: 役番门禁检查，无役时抛 IllegalActionError
+    with pytest.raises(IllegalActionError, match="荣和须至少一番役|illegal"):
         apply(g2, Action(ActionKind.RON, seat=s))
 
 

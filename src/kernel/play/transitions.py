@@ -29,6 +29,8 @@ def apply_draw(board: BoardState, seat: int) -> BoardState:
     tile = board.live_wall[board.live_draw_index]
     new_hands = list(board.hands)
     new_hands[seat] = add_tile(new_hands[seat], tile)
+    # P2-01: 清除同巡振听（摸牌后解除）
+    new_temp_furiten = frozenset(s for s in board.temporary_furiten if s != seat)
     return BoardState(
         hands=tuple(new_hands),
         live_wall=board.live_wall,
@@ -48,6 +50,8 @@ def apply_draw(board: BoardState, seat: int) -> BoardState:
         double_riichi=board.double_riichi,
         all_discards_per_seat=board.all_discards_per_seat,
         called_discard_indices=board.called_discard_indices,
+        temporary_furiten=new_temp_furiten,
+        riichi_furiten=board.riichi_furiten,
     )
 
 
@@ -82,6 +86,8 @@ def board_after_tsumo_win(board: BoardState, *, winner: int, win_tile: Tile) -> 
         double_riichi=board.double_riichi,
         all_discards_per_seat=board.all_discards_per_seat,
         called_discard_indices=board.called_discard_indices,
+        temporary_furiten=board.temporary_furiten,
+        riichi_furiten=board.riichi_furiten,
     )
 
 
@@ -151,6 +157,8 @@ def apply_discard(
         called_discard_indices=board.called_discard_indices,
         pending_riichi=new_pending_riichi,
         pending_riichi_tile=new_pending_riichi_tile,
+        temporary_furiten=board.temporary_furiten,
+        riichi_furiten=board.riichi_furiten,
     )
 
 

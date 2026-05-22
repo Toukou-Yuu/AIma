@@ -75,6 +75,8 @@ def apply_ankan(board: BoardState, seat: int, meld: Meld) -> BoardState:
                         double_riichi=board.double_riichi,
                         all_discards_per_seat=board.all_discards_per_seat,
                         called_discard_indices=board.called_discard_indices,
+                        temporary_furiten=board.temporary_furiten,
+                        riichi_furiten=board.riichi_furiten,
                     )
                     cs = CallResolution.initial_chankan(seat, ankan_tile)
                     return BoardState(
@@ -96,6 +98,8 @@ def apply_ankan(board: BoardState, seat: int, meld: Meld) -> BoardState:
                         double_riichi=intermediate.double_riichi,
                         all_discards_per_seat=intermediate.all_discards_per_seat,
                         called_discard_indices=intermediate.called_discard_indices,
+                        temporary_furiten=intermediate.temporary_furiten,
+                        riichi_furiten=intermediate.riichi_furiten,
                     )
 
     # 无国士例外：正常岭上摸牌流程
@@ -121,6 +125,8 @@ def apply_ankan(board: BoardState, seat: int, meld: Meld) -> BoardState:
         double_riichi=board.double_riichi,
         all_discards_per_seat=board.all_discards_per_seat,
         called_discard_indices=board.called_discard_indices,
+        temporary_furiten=board.temporary_furiten,
+        riichi_furiten=board.riichi_furiten,
     )
     return apply_after_kan_rinshan_draw(intermediate, seat)
 
@@ -190,6 +196,8 @@ def apply_kakan(board: BoardState, seat: int, meld: Meld) -> BoardState:
         double_riichi=board.double_riichi,
         all_discards_per_seat=board.all_discards_per_seat,
         called_discard_indices=board.called_discard_indices,
+        temporary_furiten=board.temporary_furiten,
+        riichi_furiten=board.riichi_furiten,
     )
     cs = CallResolution.initial_chankan(seat, extra)
     return BoardState(
@@ -211,4 +219,6 @@ def apply_kakan(board: BoardState, seat: int, meld: Meld) -> BoardState:
         double_riichi=intermediate.double_riichi,
         all_discards_per_seat=intermediate.all_discards_per_seat,
         called_discard_indices=intermediate.called_discard_indices,
+        temporary_furiten=intermediate.temporary_furiten,
+        riichi_furiten=intermediate.riichi_furiten,
     )

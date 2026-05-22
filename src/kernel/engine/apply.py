@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from kernel.call import apply_open_meld, apply_pass_call, apply_ron
+from kernel.call.transitions import _replace_board  # P2-01: 用于设置振听
 from kernel.call.win import (
     can_tsumo_default,
     can_win_seven_pairs_concealed_14,
@@ -43,6 +44,77 @@ from kernel.wall.split import split_wall as deal_split_wall, total_wall_remainin
 if TYPE_CHECKING:
     from kernel.hand.melds import Meld
     from kernel.tiles.model import Tile
+
+
+# P2-02: 役番门禁检查函数
+def _is_haitei_for_scoring(board: BoardState) -> bool:
+    """是否海底（本墙已摸完）。"""
+    return board.live_draw_index >= len(board.live_wall)
+
+
+def _is_hotei_for_scoring(board: BoardState, discard_seat: int) -> bool:
+    """是否河底。"""
+    return board.live_draw_index >= len(board.live_wall)
+
+
+def _ron_non_dora_han(state: GameState, seat: int, win_tile: Tile) -> int:
+    """荣和时ドラ以外の役番（P2-02: 一番起和门禁）。"""
+    board = state.board
+    if board is None:
+        return 0
+    cs = board.call_state
+    if cs is None:
+        return 0
+    # 延迟导入避免循环依赖
+    from kernel.scoring.yaku import non_dora_yaku_han_and_labels
+
+    table = state.table
+    discard_seat = cs.discard_seat
+    config = get_default_config()
+    nd_han, _ = non_dora_yaku_han_and_labels(
+        board,
+        table,
+        seat,
+        for_ron=True,
+        win_tile=win_tile,
+        concealed=board.hands[seat],
+        melds=board.melds[seat],
+        allow_open_tanyao=config.allow_open_tanyao,
+        last_draw_was_rinshan=False,
+        is_haitei=_is_haitei_for_scoring(board),
+        is_hotei=_is_hotei_for_scoring(board, discard_seat),
+        is_chankan=cs.chankan_rinshan_pending,
+        is_tsumo=False,
+    )
+    return nd_han
+
+
+def _tsumo_non_dora_han(state: GameState, seat: int, win_tile: Tile) -> int:
+    """自摸时ドラ以外の役番（P2-02: 一番起和门禁）。"""
+    board = state.board
+    if board is None:
+        return 0
+    # 延迟导入避免循环依赖
+    from kernel.scoring.yaku import non_dora_yaku_han_and_labels
+
+    table = state.table
+    config = get_default_config()
+    nd_han, _ = non_dora_yaku_han_and_labels(
+        board,
+        table,
+        seat,
+        for_ron=False,
+        win_tile=win_tile,
+        concealed=board.hands[seat],
+        melds=board.melds[seat],
+        allow_open_tanyao=config.allow_open_tanyao,
+        last_draw_was_rinshan=board.last_draw_was_rinshan,
+        is_haitei=_is_haitei_for_scoring(board),
+        is_hotei=False,
+        is_chankan=False,
+        is_tsumo=True,
+    )
+    return nd_han
 
 
 class EngineError(ValueError):
@@ -100,17 +172,41 @@ _CALL_PASS_DRAIN_MAX = 64
 
 
 def _outcome_pass_call(state: GameState, seat: int, config: MahjongConfig | None = None) -> ApplyOutcome:
-    """执行单次 ``PASS_CALL``（含荣和收集结束时的结算与事件）。"""
+    """执行单次 ``PASS_CALL``（含荣和收集结束时的结算与事件，P2-01: 设置振听）。"""
     config = config or get_default_config()
     phase = state.phase
     board = state.board
     if board is None:
         msg = "IN_ROUND requires board"
         raise IllegalActionError(msg)
+
+    # P2-01: 检查是否有合法荣和机会（用于设置振听）
+    cs = board.call_state
+    had_valid_ron = False
+    if cs is not None and cs.stage == "ron" and seat in cs.ron_remaining:
+        win_tile = cs.claimed_tile
+        # 检查形状和役番
+        from kernel.call.win import can_ron_default
+        if can_ron_default(board.hands[seat], board.melds[seat], win_tile):
+            if _ron_non_dora_han(state, seat, win_tile) >= 1:
+                had_valid_ron = True
+
     try:
         new_board = apply_pass_call(board, seat)
     except ValueError as e:
         raise IllegalActionError(str(e)) from e
+
+    # P2-01: 设置振听状态（如果有合法荣和机会但 pass）
+    if had_valid_ron:
+        if board.riichi[seat]:
+            # 立直后见逃：本局振听
+            new_furiten = frozenset(board.riichi_furiten | {seat})
+            new_board = _replace_board(new_board, riichi_furiten=new_furiten)
+        else:
+            # 同巡振听：到下次摸牌前振听
+            new_furiten = frozenset(board.temporary_furiten | {seat})
+            new_board = _replace_board(new_board, temporary_furiten=new_furiten)
+
     cs_pb = new_board.call_state
     if cs_pb is not None and cs_pb.finished and cs_pb.ron_claimants:
         # 多家荣和策略判定
@@ -387,6 +483,15 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
             if kind == ActionKind.RON:
                 if action.seat is None:
                     msg = "RON requires seat"
+                    raise IllegalActionError(msg)
+                # P2-02: 一番起和门禁检查
+                cs = board.call_state
+                if cs is None:
+                    msg = "RON requires call_state"
+                    raise IllegalActionError(msg)
+                win_tile = cs.claimed_tile
+                if _ron_non_dora_han(state, action.seat, win_tile) < 1:
+                    msg = "荣和须至少一番役（ドラ不可单独计和）"
                     raise IllegalActionError(msg)
                 try:
                     new_board = apply_ron(board, action.seat)
@@ -673,6 +778,11 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                             wt = tile
                             break
 
+                    # P2-02: 天和役番门禁检查
+                    if _tsumo_non_dora_han(state, seat, wt) < 1:
+                        msg = "自摸须至少一番役（ドラ不可单独计和）"
+                        raise IllegalActionError(msg)
+
                     eb = _create_event_builder(state)
                     new_table, settled, events = settle_tsumo(
                         state.table,
@@ -705,6 +815,11 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                 last_draw_was_rinshan=board.last_draw_was_rinshan,
             ):
                 msg = "illegal tsumo shape"
+                raise IllegalActionError(msg)
+
+            # P2-02: 自摸役番门禁检查
+            if _tsumo_non_dora_han(state, seat, wt) < 1:
+                msg = "自摸须至少一番役（ドラ不可单独计和）"
                 raise IllegalActionError(msg)
 
             eb = _create_event_builder(state)

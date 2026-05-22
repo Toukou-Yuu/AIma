@@ -80,4 +80,6 @@ def build_board_after_split(wall_split: WallSplit, dealer_seat: int) -> BoardSta
         last_draw_tile=None,
         last_draw_was_rinshan=False,
         rinshan_draw_index=0,
+        temporary_furiten=frozenset(),
+        riichi_furiten=frozenset(),
     )
