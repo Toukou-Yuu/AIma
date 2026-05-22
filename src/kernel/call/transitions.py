@@ -349,7 +349,9 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
         new_melds[seat] = board.melds[seat] + (m2,)
         new_river = _remove_claimed_river(board)
         new_called = _called_discard_indices_after_minkan_claim(board, ds)
-        intermediate = _replace_board(
+        # H-12: 返回中间状态（已添加副露但未岭上摸牌）
+        # 四杠散了检测由 apply.py OPEN_MELD handler 负责
+        return _replace_board(
             board,
             hands=tuple(new_concealed if s == seat else board.hands[s] for s in range(4)),
             melds=tuple(new_melds),
@@ -359,10 +361,9 @@ def apply_open_meld(board: BoardState, seat: int, meld: Meld) -> BoardState:
             last_draw_tile=None,
             last_draw_was_rinshan=False,
             call_state=None,
+            ippatsu_eligible=frozenset(),
             called_discard_indices=new_called,
         )
-        after_kan = apply_after_kan_rinshan_draw(intermediate, seat)
-        return _replace_board(after_kan, ippatsu_eligible=frozenset())
 
     msg = f"unsupported meld kind for open meld: {meld.kind!r}"
     raise ValueError(msg)

@@ -112,25 +112,29 @@ def test_apply_tsumo_chiitoitsu_hand_over_and_scores() -> None:
     assert out.new_state.table.kyoutaku == 0
 
 
-def test_tsumo_rejected_without_last_draw() -> None:
+def test_tsumo_rejected_without_last_draw_not_winning_shape() -> None:
+    """H-14: 庄家配牌14张非和牌形时 TSUMO 应报错（不允许无 last_draw_tile）。"""
     b0 = _board_sorted_deal()
+    # 庄家 seat 0 配牌14张，但手牌不是和牌形（随机分配）
+    # 设置 last_draw_tile=None 模拟配牌状态
     b = BoardState(
         hands=b0.hands,
         live_wall=b0.live_wall,
         live_draw_index=b0.live_draw_index,
         dead_wall=b0.dead_wall,
         revealed_indicators=b0.revealed_indicators,
-        current_seat=b0.current_seat,
+        current_seat=b0.current_seat,  # 庄家
         turn_phase=TurnPhase.MUST_DISCARD,
         river=b0.river,
         melds=b0.melds,
-        last_draw_tile=None,
+        last_draw_tile=None,  # 配牌状态
         last_draw_was_rinshan=False,
         rinshan_draw_index=b0.rinshan_draw_index,
         call_state=None,
     )
-    g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(), board=b)
-    with pytest.raises(IllegalActionError, match="last_draw_tile"):
+    g = GameState(phase=GamePhase.IN_ROUND, table=initial_table_snapshot(dealer_seat=0), board=b)
+    # H-14: 如果手牌不是和牌形，应该报错
+    with pytest.raises(IllegalActionError, match="not winning shape"):
         apply(g, Action(ActionKind.TSUMO, seat=b.current_seat))
 
 

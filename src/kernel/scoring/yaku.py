@@ -802,8 +802,10 @@ def _is_tenhou(board: BoardState, winner: int, is_tsumo: bool, dealer_seat: int 
         return False
     if board.current_seat != dealer_seat:
         return False
-    # 第一巡：无人打牌
-    return len(board.river) == 0
+    # H-14: 第一巡 = 无舍牌 + 无鸣牌
+    if len(board.river) != 0:
+        return False
+    return all(len(m) == 0 for m in board.melds)
 
 
 def _is_chihou(board: BoardState, winner: int, is_tsumo: bool, dealer_seat: int = 0) -> bool:
@@ -815,8 +817,10 @@ def _is_chihou(board: BoardState, winner: int, is_tsumo: bool, dealer_seat: int 
         return False
     if board.current_seat == dealer_seat:  # 亲家不算地和
         return False
-    # 第一巡：河里仅有亲家的一张舍牌
-    return len(board.river) == 1
+    # H-14: 第一巡 = 当前玩家无舍牌 + 无鸣牌
+    if len(board.all_discards_per_seat[winner]) != 0:
+        return False
+    return all(len(m) == 0 for m in board.melds)
 
 
 def _yakuhai_labels_for_triplets(

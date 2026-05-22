@@ -6,7 +6,11 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from kernel.call import apply_open_meld, apply_pass_call, apply_ron
-from kernel.call.win import can_tsumo_default
+from kernel.call.win import (
+    can_tsumo_default,
+    can_win_seven_pairs_concealed_14,
+)
+from kernel.win_shape.std import can_win_standard_form_concealed_total
 from kernel.deal import assert_wall_is_standard_deck, build_board_after_split
 from kernel.board import BoardState
 from kernel.engine.actions import Action, ActionKind
@@ -202,6 +206,14 @@ def _outcome_pass_call(state: GameState, seat: int, config: MahjongConfig | None
         if four_winds_flow is not None:
             eb = _create_event_builder(state)
             flown_state, flow_event = apply_flow_transition(state, four_winds_flow, eb)
+            return ApplyOutcome(new_state=flown_state, events=(flow_event,))
+
+    # H-13: Check for exhausted flow after CALL_RESPONSE ends
+    if new_board.turn_phase == TurnPhase.NEED_DRAW and new_board.call_state is None:
+        exhausted_flow = detect_flow_exhausted(new_board)
+        if exhausted_flow is not None:
+            eb = _create_event_builder(state)
+            flown_state, flow_event = apply_flow_transition(state, exhausted_flow, eb)
             return ApplyOutcome(new_state=flown_state, events=(flow_event,))
 
     # H-11: Check for four-kans flow after chankan window closes
@@ -457,6 +469,41 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                     meld=action.meld,
                     call_kind=call_kind,
                 )
+
+                # H-12: 大明杠后检测四杠散了
+                from kernel.hand.melds import MeldKind
+                from kernel.kan.rinshan import apply_after_kan_rinshan_draw
+                if action.meld.kind == MeldKind.DAIMINKAN:
+                    flow_result = detect_flow_after_kan(new_board)
+                    if flow_result is not None and flow_result.kind == FlowKind.FOUR_KANS:
+                        flown_state, flow_event = apply_flow_transition(
+                            GameState(
+                                phase=GamePhase.IN_ROUND,
+                                table=state.table,
+                                board=new_board,
+                                ron_winners=None,
+                                event_sequence=eb._sequence,
+                            ),
+                            flow_result,
+                            eb,
+                        )
+                        return ApplyOutcome(
+                            new_state=flown_state,
+                            events=(call_event, flow_event),
+                        )
+                    # 无流局，岭上摸牌
+                    after_rinshan = apply_after_kan_rinshan_draw(new_board, action.seat)
+                    return ApplyOutcome(
+                        new_state=GameState(
+                            phase=phase,
+                            table=state.table,
+                            board=after_rinshan,
+                            ron_winners=None,
+                            event_sequence=eb._sequence,
+                        ),
+                        events=(call_event,),
+                    )
+
                 return ApplyOutcome(
                     new_state=GameState(
                         phase=phase,
@@ -600,10 +647,56 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
             if action.seat != board.current_seat:
                 msg = "TSUMO seat must equal current_seat"
                 raise IllegalActionError(msg)
-            if board.last_draw_tile is None:
-                msg = "TSUMO requires last_draw_tile (e.g. 天和未接线)"
-                raise IllegalActionError(msg)
+
             seat = action.seat
+
+            # H-14: 允许庄家配牌14张自摸（天和）
+            if board.last_draw_tile is None:
+                # 条件：庄家 + river为空 + 无鸣牌 + MUST_DISCARD
+                if (
+                    board.current_seat == state.table.dealer_seat
+                    and len(board.river) == 0
+                    and all(len(m) == 0 for m in board.melds)
+                ):
+                    # 检查14张手牌是否为和牌形
+                    concealed = board.hands[seat]
+                    melds = board.melds[seat]
+                    is_seven_pairs = can_win_seven_pairs_concealed_14(concealed, melds)
+                    is_standard = can_win_standard_form_concealed_total(concealed, melds)
+                    if not is_seven_pairs and not is_standard:
+                        msg = "Dealer initial 14 not winning shape"
+                        raise IllegalActionError(msg)
+
+                    # 从14张手牌中确定 win_tile（选择第一张非零牌）
+                    for tile, count in concealed.items():
+                        if count >= 1:
+                            wt = tile
+                            break
+
+                    eb = _create_event_builder(state)
+                    new_table, settled, events = settle_tsumo(
+                        state.table,
+                        board,
+                        winner=seat,
+                        win_tile=wt,
+                        is_rinshan=False,
+                        dealer_seat=state.table.dealer_seat,
+                        event_builder=eb,
+                    )
+                    return ApplyOutcome(
+                        new_state=GameState(
+                            phase=GamePhase.HAND_OVER,
+                            table=new_table,
+                            board=settled,
+                            ron_winners=frozenset({seat}),
+                            event_sequence=eb._sequence,
+                        ),
+                        events=events,
+                    )
+                else:
+                    msg = "TSUMO requires last_draw_tile"
+                    raise IllegalActionError(msg)
+
             wt = board.last_draw_tile
             if not can_tsumo_default(
                 board.hands[seat],

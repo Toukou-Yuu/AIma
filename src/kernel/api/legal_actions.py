@@ -15,6 +15,7 @@ from kernel.api.meld_candidates import (
     enumerate_kakan_melds,
 )
 from kernel.call.ron_rules import can_declare_ron
+from kernel.call.win import can_win_seven_pairs_concealed_14
 from kernel.config import get_default_config
 from kernel.board import BoardState, TurnPhase
 from kernel.engine.actions import ActionKind
@@ -24,9 +25,7 @@ from kernel.hand.melds import Meld
 from kernel.riichi.tenpai import is_tenpai_default
 from kernel.scoring.yaku import non_dora_yaku_han_and_labels
 from kernel.tiles.model import Tile
-
-if TYPE_CHECKING:
-    pass
+from kernel.win_shape.std import can_win_standard_form_concealed_total
 
 
 def _scoring_is_haitei(board: BoardState) -> bool:
@@ -332,6 +331,7 @@ def _legal_actions_must_discard(
             )
 
     # TSUMO: 检查是否可以自摸（需同时满足和了形 + 至少 1 役）
+    # H-14: 允许庄家配牌14张天和（last_tile is None）
     if last_tile is not None:
         from kernel.call.win import can_tsumo_default
 
@@ -349,6 +349,32 @@ def _legal_actions_must_discard(
                         tile=last_tile,
                     )
                 )
+    else:
+        # H-14: 庄家配牌14张天和
+        # 条件：庄家 + river为空 + 无鸣牌 + MUST_DISCARD
+        if (
+            seat == state.table.dealer_seat
+            and len(board.river) == 0
+            and all(len(m) == 0 for m in board.melds)
+        ):
+            # 检查14张手牌是否为和牌形
+            is_seven_pairs = can_win_seven_pairs_concealed_14(concealed, melds)
+            is_standard = can_win_standard_form_concealed_total(concealed, melds)
+            if is_seven_pairs or is_standard:
+                # 从14张手牌中确定 win_tile（选择第一张非零牌）
+                for tile, count in concealed.items():
+                    if count >= 1:
+                        win_tile = tile
+                        break
+                # 检查是否有天和役（天和是役满）
+                if _legal_tsumo_non_dora_han(state, seat, win_tile) >= 1:
+                    actions.append(
+                        LegalAction(
+                            kind=ActionKind.TSUMO,
+                            seat=seat,
+                            tile=win_tile,
+                        )
+                    )
 
     for m in enumerate_ankan_melds(board, seat):
         # 立直后暗杠：须保证听牌集合不变

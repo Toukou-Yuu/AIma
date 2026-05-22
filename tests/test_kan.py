@@ -363,11 +363,38 @@ def _board_call_response_daiminkan_ready() -> tuple[BoardState, Tile]:
     )
 
 
-def test_daiminkan_open_meld_triggers_rinshan() -> None:
+def test_daiminkan_open_meld_returns_intermediate_state() -> None:
+    """H-12: apply_open_meld 对 DAIMINKAN 返回中间状态（副露已添加，无岭上摸牌）。"""
     b, t = _board_call_response_daiminkan_ready()
     four = tuple(sorted((t, t, t, t), key=lambda x: (x.rank, 1 if x.is_red else 0)))
     meld = Meld(MeldKind.DAIMINKAN, four, called_tile=t)
     b2 = apply_open_meld(b, 1, meld)
+    # H-12: 中间状态无岭上摸牌
+    assert b2.rinshan_draw_index == 0
+    assert b2.last_draw_was_rinshan is False
+    assert b2.last_draw_tile is None
+    assert len(b2.revealed_indicators) == len(b.revealed_indicators)  # 无新开杠指示牌
+    assert completed_kan_rinshan_count(b2) == 0
+    # 副露已添加
+    assert len(b2.melds[1]) == 1
+    assert b2.melds[1][0].kind == MeldKind.DAIMINKAN
+
+
+def test_daiminkan_via_apply_triggers_rinshan() -> None:
+    """H-12: 通过 apply() 执行 DAIMINKAN 完成完整流程（岭上摸牌）。"""
+    b, t = _board_call_response_daiminkan_ready()
+    four = tuple(sorted((t, t, t, t), key=lambda x: (x.rank, 1 if x.is_red else 0)))
+    meld = Meld(MeldKind.DAIMINKAN, four, called_tile=t)
+    g0 = GameState(
+        phase=GamePhase.IN_ROUND,
+        table=initial_table_snapshot(dealer_seat=0),
+        board=b,
+        ron_winners=None,
+    )
+    outcome = apply(g0, Action(ActionKind.OPEN_MELD, seat=1, meld=meld))
+    g1 = outcome.new_state
+    b2 = g1.board
+    # 通过 apply() 完成岭上摸牌
     assert b2.rinshan_draw_index == 1
     assert b2.last_draw_was_rinshan is True
     assert b2.last_draw_tile == b.dead_wall.rinshan[0]

@@ -304,8 +304,7 @@ class TestChihou:
         """M1: dealer_seat=2 时，winner=0 且第一巡可为地和。"""
         import dataclasses
         from collections import Counter as C
-        from kernel.api.observation import RiverEntry
-        from kernel.board import TurnPhase
+        from kernel.board import RiverEntry, TurnPhase
 
         board = _board_stub_with_dealer(2)
         # 亲家（seat=2）打出一张牌，同时从手牌中移除
@@ -316,11 +315,16 @@ class TestChihou:
             del new_hand_2[disc]
         hands = list(board.hands)
         hands[2] = new_hand_2
-        river_entry = RiverEntry(tile=disc, seat=2, is_tsumogiri=True, is_riichi=False)
+        # H-14: 修复 RiverEntry 类型（使用 kernel.board.RiverEntry）
+        river_entry = RiverEntry(seat=2, tile=disc, tsumogiri=True, riichi=False)
+        # H-14: 同时更新 all_discards_per_seat 以正确记录舍牌
+        all_discards = list(board.all_discards_per_seat)
+        all_discards[2] = (disc,)
         board = dataclasses.replace(
             board,
             hands=tuple(hands),
             river=(river_entry,),
+            all_discards_per_seat=tuple(all_discards),
             current_seat=0,
             turn_phase=TurnPhase.NEED_DRAW,
         )

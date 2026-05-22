@@ -5,8 +5,11 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import replace
 
+import pytest
+
 from kernel import Tile, Suit, build_deck
 from kernel.call.win import can_ron_default, can_tsumo_default
+from kernel.engine.apply import apply, IllegalActionError
 from kernel.riichi.tenpai import is_tenpai_default, compute_waiting_tiles
 from kernel.board import BoardState
 from kernel.engine.actions import Action, ActionKind
@@ -681,28 +684,20 @@ class TestTsumoSettlement:
         else:
             raise AssertionError("expected error for TSUMO wrong seat")
 
-    def test_tsumo_rejected_no_last_draw(self) -> None:
-        """无 last_draw_tile 时 TSUMO 应报错。"""
+    def test_tsumo_rejected_no_last_draw_non_winning_shape(self) -> None:
+        """H-14: 庄家配牌14张非和牌形时 TSUMO 应报错。"""
         b = board_sorted_deal(dealer=0)
-        # 构造一个和牌形但没有 last_draw_tile 的状态
-        hand = Counter({
-            MAN1: 2, MAN2: 2, MAN3: 2, MAN4: 2, MAN5: 2, MAN6: 2, MAN7: 2,
-        })
+        # 庄家手牌由 board_sorted_deal 分配，确保不是和牌形
         from dataclasses import replace
-        hands = list(b.hands)
-        hands[0] = hand
-        b = replace(b, hands=tuple(hands), last_draw_tile=None)
+        b = replace(b, last_draw_tile=None)
         g = GameState(
             phase=GamePhase.IN_ROUND,
-            table=initial_table_snapshot(),
+            table=initial_table_snapshot(dealer_seat=0),
             board=b,
         )
-        try:
+        # H-14: 如果手牌不是和牌形，应该报错
+        with pytest.raises(IllegalActionError, match="not winning shape"):
             apply(g, Action(ActionKind.TSUMO, seat=0))
-        except Exception:
-            pass
-        else:
-            raise AssertionError("expected error for TSUMO without last_draw_tile")
 
 
 # --- RON drain 测试 ---
