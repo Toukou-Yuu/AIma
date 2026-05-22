@@ -302,45 +302,46 @@ def test_kakan_forbidden_when_riichi() -> None:
 
 
 def test_board_after_ron_clears_ippatsu() -> None:
-    from kernel.call.transitions import apply_ron, board_after_ron_winners
+    """荣和后一发状态被清除。"""
+    from kernel.call.transitions import board_after_ron_winners
+    from tests.engine_helpers import make_ron_board
 
-    g0 = initial_game_state()
-    w = tuple(shuffle_deck(build_deck(), seed=42))
-    g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=w)).new_state
-    b = g1.board
-    assert b is not None
-    b = BoardState(
-        hands=b.hands,
-        live_wall=b.live_wall,
-        live_draw_index=b.live_draw_index,
-        dead_wall=b.dead_wall,
-        revealed_indicators=b.revealed_indicators,
-        current_seat=b.current_seat,
-        turn_phase=b.turn_phase,
-        river=b.river,
-        melds=b.melds,
-        last_draw_tile=b.last_draw_tile,
-        last_draw_was_rinshan=b.last_draw_was_rinshan,
-        rinshan_draw_index=b.rinshan_draw_index,
-        call_state=b.call_state,
-        riichi=b.riichi,
-        ippatsu_eligible=frozenset({0, 1}),
-        double_riichi=b.double_riichi,
+    # 使用 make_ron_board 构造确定性的荣和场景
+    winner_hand = Counter()
+    for rank in [1, 2, 3, 4, 5, 6]:
+        winner_hand[Tile(Suit.MAN, rank, False)] = 2
+    winner_hand[Tile(Suit.MAN, 7, False)] = 1  # 单骑等待 MAN 7
+
+    win_tile = Tile(Suit.MAN, 7, False)
+    b = make_ron_board(dealer=0, discarder=0, winner=1, winner_hand=winner_hand, win_tile=win_tile)
+
+    # 设置一发状态
+    from dataclasses import replace
+    b = replace(b, ippatsu_eligible=frozenset({0, 1}))
+
+    # 验证 CALL_RESPONSE 状态
+    assert b.call_state is not None
+    assert b.turn_phase == TurnPhase.CALL_RESPONSE
+
+    # 模拟荣和完成后的状态（finished=True）
+    from kernel.board import CallResolution
+    cs_finished = CallResolution(
+        discard_seat=b.call_state.discard_seat,
+        claimed_tile=b.call_state.claimed_tile,
+        river_index=b.call_state.river_index,
+        stage="ron",
+        ron_remaining=frozenset(),
+        ron_claimants=frozenset({1}),
+        pon_kan_order=(),
+        pon_kan_idx=0,
+        finished=True,
+        ron_passed_seats=frozenset({2, 3}),
+        chankan_rinshan_pending=False,
     )
-    ds = b.current_seat
-    t0 = next(iter(b.hands[ds].elements()))
-    b2 = apply_discard(b, ds, t0)
-    cs = b2.call_state
-    assert cs is not None
-    s = next(iter(cs.ron_remaining))
-    c13 = Counter(b2.hands[s])
-    c13[cs.claimed_tile] -= 1
-    if not is_tenpai_default(c13, b2.melds[s]):
-        pytest.skip("该种子无上家可荣和听牌")
-    b3 = apply_ron(b2, s)
-    cs3 = b3.call_state
-    assert cs3 is not None and cs3.finished
-    settled = board_after_ron_winners(b3)
+    b_finished = replace(b, call_state=cs_finished)
+
+    # 验证一发状态被清除
+    settled = board_after_ron_winners(b_finished)
     assert settled.ippatsu_eligible == frozenset()
 
 
