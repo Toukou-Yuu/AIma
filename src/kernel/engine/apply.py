@@ -234,16 +234,19 @@ def _outcome_pass_call(state: GameState, seat: int, config: MahjongConfig | None
             ron_winners = frozenset({atamahane_winner(cs_pb.ron_claimants, cs_pb.discard_seat)})
         eb = _create_event_builder(state)
         is_chankan = cs_pb.chankan_rinshan_pending
-        new_table, settled, events = settle_ron(
-            state.table,
-            new_board,
-            ron_winners=ron_winners,
-            discard_seat=cs_pb.discard_seat,
-            win_tile=cs_pb.claimed_tile,
-            is_chankan=is_chankan,
-            dealer_seat=state.table.dealer_seat,
-            event_builder=eb,
-        )
+        try:  # H-34: 统一异常转换
+            new_table, settled, events = settle_ron(
+                state.table,
+                new_board,
+                ron_winners=ron_winners,
+                discard_seat=cs_pb.discard_seat,
+                win_tile=cs_pb.claimed_tile,
+                is_chankan=is_chankan,
+                dealer_seat=state.table.dealer_seat,
+                event_builder=eb,
+            )
+        except ValueError as e:
+            raise IllegalActionError(str(e)) from e
         return ApplyOutcome(
             new_state=GameState(
                 phase=GamePhase.HAND_OVER,
@@ -524,16 +527,19 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                         ron_winners = frozenset({atamahane_winner(cs.ron_claimants, cs.discard_seat)})
                     eb = _create_event_builder(state)
                     is_chankan = cs.chankan_rinshan_pending
-                    new_table, settled, events = settle_ron(
-                        state.table,
-                        new_board,
-                        ron_winners=ron_winners,
-                        discard_seat=cs.discard_seat,
-                        win_tile=cs.claimed_tile,
-                        is_chankan=is_chankan,
-                        dealer_seat=state.table.dealer_seat,
-                        event_builder=eb,
-                    )
+                    try:  # H-34: 统一异常转换
+                        new_table, settled, events = settle_ron(
+                            state.table,
+                            new_board,
+                            ron_winners=ron_winners,
+                            discard_seat=cs.discard_seat,
+                            win_tile=cs.claimed_tile,
+                            is_chankan=is_chankan,
+                            dealer_seat=state.table.dealer_seat,
+                            event_builder=eb,
+                        )
+                    except ValueError as e:
+                        raise IllegalActionError(str(e)) from e
                     return ApplyOutcome(
                         new_state=GameState(
                             phase=GamePhase.HAND_OVER,
@@ -784,15 +790,18 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                         raise IllegalActionError(msg)
 
                     eb = _create_event_builder(state)
-                    new_table, settled, events = settle_tsumo(
-                        state.table,
-                        board,
-                        winner=seat,
-                        win_tile=wt,
-                        is_rinshan=False,
-                        dealer_seat=state.table.dealer_seat,
-                        event_builder=eb,
-                    )
+                    try:  # H-34: 统一异常转换
+                        new_table, settled, events = settle_tsumo(
+                            state.table,
+                            board,
+                            winner=seat,
+                            win_tile=wt,
+                            is_rinshan=False,
+                            dealer_seat=state.table.dealer_seat,
+                            event_builder=eb,
+                        )
+                    except ValueError as e:
+                        raise IllegalActionError(str(e)) from e
                     return ApplyOutcome(
                         new_state=GameState(
                             phase=GamePhase.HAND_OVER,
@@ -823,15 +832,18 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                 raise IllegalActionError(msg)
 
             eb = _create_event_builder(state)
-            new_table, settled, events = settle_tsumo(
-                state.table,
-                board,
-                winner=seat,
-                win_tile=wt,
-                is_rinshan=board.last_draw_was_rinshan,
-                dealer_seat=state.table.dealer_seat,
-                event_builder=eb,
-            )
+            try:  # H-34: 统一异常转换
+                new_table, settled, events = settle_tsumo(
+                    state.table,
+                    board,
+                    winner=seat,
+                    win_tile=wt,
+                    is_rinshan=board.last_draw_was_rinshan,
+                    dealer_seat=state.table.dealer_seat,
+                    event_builder=eb,
+                )
+            except ValueError as e:
+                raise IllegalActionError(str(e)) from e
             return ApplyOutcome(
                 new_state=GameState(
                     phase=GamePhase.HAND_OVER,
