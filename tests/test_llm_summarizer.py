@@ -9,11 +9,6 @@ import os
 
 import pytest
 
-pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_LIVE_LLM_TESTS") != "1",
-    reason="H-26: 需真实 API 调用，设置 RUN_LIVE_LLM_TESTS=1 运行",
-)
-
 from llm.agent.llm_summarizer import LLMSummarizer, create_summarizer
 from llm.agent.memory import EpisodeStats, PlayerMemory
 
@@ -121,6 +116,11 @@ class TestPolishExceptionFallback:
 # --- 真实 DeepSeek API 调用 ---
 
 class TestPolishWithDeepSeek:
+    pytestmark = pytest.mark.skipif(
+        os.environ.get("RUN_LIVE_LLM_TESTS") != "1",
+        reason="H-26: 需真实 API 调用，设置 RUN_LIVE_LLM_TESTS=1 运行",
+    )
+
     def test_polish_returns_memory(self) -> None:
         """真实 DeepSeek 调用 polish() 应返回 PlayerMemory。
 
