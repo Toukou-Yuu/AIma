@@ -1119,8 +1119,8 @@ class TestRunLLMMatchEdgeCases:
         # 应该停止于 MATCH_END
         assert result.stopped_reason == "match_end"
 
-    def test_noop_wall_failed_precise_mock(self) -> None:
-        """NOOP 墙失败时返回错误结果（精确 mock 在 HAND_OVER 后的 NOOP）。"""
+    def test_next_round_wall_failed_precise_mock(self) -> None:
+        """NEXT_ROUND 墙失败时返回错误结果（精确 mock 在 HAND_OVER 后的 NEXT_ROUND）。H-28 更新。"""
         from kernel import IllegalActionError, apply as real_apply
         from kernel.engine.phase import GamePhase
         from llm.config import MatchEndCondition
@@ -1131,7 +1131,7 @@ class TestRunLLMMatchEdgeCases:
         match_end = MatchEndCondition(type="hands", value=100, allow_negative=True)
         seat_llm_configs = load_test_seat_llm_configs()
 
-        # 在 HAND_OVER 状态后的 NOOP 调用时抛出异常
+        # 在 HAND_OVER 状态后的 NEXT_ROUND 调用时抛出异常
         hand_over_seen = [False]
         def mock_apply_fn(state, action):
             # 第一次调用：begin_round，正常执行
@@ -1139,9 +1139,9 @@ class TestRunLLMMatchEdgeCases:
             # 检查状态是否为 HAND_OVER
             if result.new_state.phase in (GamePhase.HAND_OVER, GamePhase.FLOWN):
                 hand_over_seen[0] = True
-            # 如果已经看到 HAND_OVER，下一次调用（NOOP）抛出异常
-            if hand_over_seen[0] and action.kind.value == "noop":
-                raise IllegalActionError("noop wall failed")
+            # 如果已经看到 HAND_OVER，下一次调用（NEXT_ROUND）抛出异常
+            if hand_over_seen[0] and action.kind.value == "next_round":
+                raise IllegalActionError("next_round wall failed")
             return result
 
         with patch("llm.runner.apply") as mock_apply:
@@ -1159,5 +1159,5 @@ class TestRunLLMMatchEdgeCases:
                 prompt_format=runtime.prompt_format,
                 enable_conversation_logging=False,
             )
-        # 应该返回 noop_wall_failed
-        assert "noop_wall_failed" in result.stopped_reason
+        # H-28: 应该返回 next_round_failed
+        assert "next_round_failed" in result.stopped_reason

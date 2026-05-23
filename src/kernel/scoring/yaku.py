@@ -595,8 +595,18 @@ def hand_pattern_label(
             return "七对子"
     elif can_win_seven_pairs_concealed_14(concealed, melds):
         return "七对子"
-    if is_kokushi_thirteen_waits(concealed, melds, win_tile) or is_kokushi_musou(concealed, melds):
-        return "国士无双"
+    # H-29: 国士判断修复
+    kokushi_hand = concealed.copy()
+    if for_ron:
+        kokushi_hand[win_tile] += 1
+    if for_ron:
+        if is_kokushi_thirteen_waits(concealed, melds, win_tile) or is_kokushi_musou(kokushi_hand, melds):
+            return "国士无双"
+    else:
+        kokushi_before = concealed.copy()
+        kokushi_before[win_tile] -= 1
+        if is_kokushi_thirteen_waits(kokushi_before, melds, win_tile) or is_kokushi_musou(concealed, melds):
+            return "国士无双"
     return "一般形"
 
 
@@ -891,10 +901,28 @@ def non_dora_yaku_han_and_labels(
         return 13, ("四暗刻单骑",)
     if _is_suuankou(concealed, melds, win_tile, for_ron=for_ron):
         return 13, ("四暗刻",)
-    if is_kokushi_thirteen_waits(concealed, melds, win_tile) or is_kokushi_musou(concealed, melds):
-        return 13, ("国士无双十三面",)
-    if is_kokushi_musou(concealed, melds):
-        return 13, ("国士无双",)
+    # H-29: 国士无双计分修复 - 正确处理 RON/TSUMO 的 concealed 张数差异
+    kokushi_hand = concealed.copy()
+    if for_ron:
+        kokushi_hand[win_tile] += 1  # RON: concealed=13张，需加 win_tile 构造14张
+    if for_ron:
+        # RON: concealed 是 13 张
+        # 十三面判断：用原始 13 张检查是否为十三面听牌
+        if is_kokushi_thirteen_waits(concealed, melds, win_tile):
+            return 13, ("国士无双十三面",)
+        # 普通国士：用构造的 14 张检查完成形
+        if is_kokushi_musou(kokushi_hand, melds):
+            return 13, ("国士无双",)
+    else:
+        # TSUMO: concealed 是 14 张
+        # 十三面判断：移除自摸牌得到 13 张，检查是否为十三面听牌
+        kokushi_before = concealed.copy()
+        kokushi_before[win_tile] -= 1
+        if is_kokushi_thirteen_waits(kokushi_before, melds, win_tile):
+            return 13, ("国士无双十三面",)
+        # 普通国士：用原始 14 张检查完成形
+        if is_kokushi_musou(concealed, melds):
+            return 13, ("国士无双",)
     if _is_chinroutou(full, melds):
         return 13, ("清老头",)
     if _is_tsuuiisou(full, melds):

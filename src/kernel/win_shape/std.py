@@ -77,13 +77,17 @@ def can_win_standard_form(
     """
     副露 + 门内（含荣和的和了牌）能否构成标准形。
     面子总数须为 4（副露每组算 1 面子，杠亦为 1 组）。
+
+    H-30: 杠子物理上是 4 张，但结构上只占 1 个面子（3 张结构牌）。
     """
     if len(melds) > 4:
         return False
     c = concealed.copy()
     c[win_tile] += 1
-    open_tiles = sum(meld_tile_count(m) for m in melds)
-    if sum(c.values()) + open_tiles != 14:
+    # H-30: 使用结构张数而非物理张数
+    # 每个副露（包括杠）结构上只占 3 张（一个面子）
+    open_structure_tiles = 3 * len(melds)
+    if sum(c.values()) + open_structure_tiles != 14:
         return False
     mentsu_needed = 4 - len(melds)
     if mentsu_needed < 0:
@@ -99,11 +103,14 @@ def can_win_standard_form_concealed_total(
     """
     门内 + 副露合计恰 14 张时的标准四面子一雀头（不再并入 ``win_tile``）。
     用于岭上自摸等「和了牌已在门内」的形判。
+
+    H-30: 杠子物理上是 4 张，但结构上只占 1 个面子（3 张结构牌）。
     """
     if len(melds) > 4:
         return False
-    open_tiles = sum(meld_tile_count(m) for m in melds)
-    if sum(concealed.values()) + open_tiles != 14:
+    # H-30: 使用结构张数而非物理张数
+    open_structure_tiles = 3 * len(melds)
+    if sum(concealed.values()) + open_structure_tiles != 14:
         return False
     mentsu_needed = 4 - len(melds)
     if mentsu_needed < 0:

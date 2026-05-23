@@ -390,7 +390,7 @@ def run_llm_match(
     从 ``PRE_DEAL`` 开局到 ``MATCH_END`` 或满足结束条件。
 
     - ``dry_run``：每步取 ``legal_actions`` 首项（确定性，无网络）。
-    - 局间 ``HAND_OVER`` / ``FLOWN``：自动 ``NOOP`` + 新牌山（``shuffle_deck`` 递增种子）。
+    - 局间 ``HAND_OVER`` / ``FLOWN``：自动 ``NEXT_ROUND`` + 新牌山（``shuffle_deck`` 递增种子）。
     - ``verbose``：每步 ``apply`` 后向 stderr 打一行阶段摘要（CLI ``--verbose``）。
     - ``session_audit``：向 logging 写每步内核动作摘要；
       非 dry-run 时另写模型解析结果（CLI ``--log-session``）；
@@ -601,28 +601,28 @@ def run_llm_match(
         if state.phase in (GamePhase.HAND_OVER, GamePhase.FLOWN):
             nw = tuple(shuffle_deck(build_deck(), seed=wall_seed))
             wall_seed += 1
-            noop_act = Action(ActionKind.NOOP, wall=nw)
+            next_round_act = Action(ActionKind.NEXT_ROUND, wall=nw)  # H-28: 使用 NEXT_ROUND
             old_phase = state.phase
             try:
-                noop_out = apply(state, noop_act)
-                actions_acc.append(action_to_wire(noop_act))
+                next_round_out = apply(state, next_round_act)
+                actions_acc.append(action_to_wire(next_round_act))
                 token_diagnostics_acc.append(None)
                 _append_events_with_settlement_log(
                     events_acc,
-                    noop_out.events,
+                    next_round_out.events,
                     session_audit=session_audit,
                     verbose=verbose,
                 )
                 shared_journal.archive_current_hand()
-                _accumulate_simple_stats(noop_out.events, win_counts, hands_finished)
-                state = noop_out.new_state
+                _accumulate_simple_stats(next_round_out.events, win_counts, hands_finished)
+                state = next_round_out.new_state
                 if state.phase == GamePhase.IN_ROUND and old_phase in (
                     GamePhase.HAND_OVER,
                     GamePhase.FLOWN,
                 ):
                     hands_completed += 1  # 已完成一局
                     hand_number += 1
-                    shared_journal.start_hand(hand_number, noop_out.events)
+                    shared_journal.start_hand(hand_number, next_round_out.events)
                     # 新一局开始时，由 MatchContext 创建新的 EpisodeContext（Factory 模式）
                     for s in range(4):
                         seat_contexts[s] = match_contexts[s].create_episode(
@@ -632,23 +632,23 @@ def run_llm_match(
                     simple_log_file,
                     state,
                     hand_number,
-                    action_to_wire(noop_act),
+                    action_to_wire(next_round_act),
                     win_counts=tuple(win_counts),
                     hands_finished=hands_finished[0],
-                    events=noop_out.events,
+                    events=next_round_out.events,
                 )
                 _stderr_progress(
                     verbose,
-                    f"[match] step={kernel_steps + 1} noop+wall phase={state.phase.value}",
+                    f"[match] step={kernel_steps + 1} next_round phase={state.phase.value}",  # H-28
                 )
                 if session_audit:
                     log.info(
-                        "apply step=%s noop wall_next_phase=%s",
+                        "apply step=%s next_round next_phase=%s",  # H-28
                         kernel_steps + 1,
                         state.phase.value,
                     )
             except IllegalActionError as e:
-                reason = f"noop_wall_failed:{e}"
+                reason = f"next_round_failed:{e}"  # H-28
                 break
             kernel_steps += 1
             continue
