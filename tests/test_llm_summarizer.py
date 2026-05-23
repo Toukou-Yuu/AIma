@@ -1,6 +1,18 @@
-"""llm.agent.llm_summarizer 覆盖缺口测试（0% → 100%）。"""
+"""llm.agent.llm_summarizer 覆盖缺口测试（0% → 100%）。
+
+H-26: 移除硬编码 API Key，使用环境变量。
+"""
 
 from __future__ import annotations
+
+import os
+
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_LIVE_LLM_TESTS") != "1",
+    reason="H-26: 需真实 API 调用，设置 RUN_LIVE_LLM_TESTS=1 运行",
+)
 
 from llm.agent.llm_summarizer import LLMSummarizer, create_summarizer
 from llm.agent.memory import EpisodeStats, PlayerMemory
@@ -110,14 +122,21 @@ class TestPolishExceptionFallback:
 
 class TestPolishWithDeepSeek:
     def test_polish_returns_memory(self) -> None:
-        """真实 DeepSeek 调用 polish() 应返回 PlayerMemory。"""
+        """真实 DeepSeek 调用 polish() 应返回 PlayerMemory。
+
+        H-26: API Key 从环境变量获取，不再硬编码。
+        """
         from llm.config import LLMClientConfig
         from llm.protocol import build_client
 
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            pytest.skip("H-26: 需设置 DEEPSEEK_API_KEY 环境变量")
+
         cfg = LLMClientConfig(
             provider="openai",
-            api_key="sk-467c7001b0024712b3c004b1c956e7dd",
-            base_url="https://api.deepseek.com/",
+            api_key=api_key,  # H-26: 使用环境变量
+            base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/"),
             model="deepseek-v4-flash",
             timeout_sec=30,
             max_context=4096,
