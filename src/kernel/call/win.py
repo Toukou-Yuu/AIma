@@ -41,10 +41,11 @@ def is_kokushi_thirteen_waits_waiting(
 
     十三面听牌条件：
     - 门前清（无副露，或仅有暗杠）
-    - 手牌 13 张
-    - 恰好 12 种幺九牌各 1 张
-    - 有一张万能牌（必须是非幺九牌，不能是重复的幺九牌）
-    - 如果万能牌是重复的幺九牌，则是十二面听牌而非十三面
+    - 手牌恰好 13 张
+    - 13 种幺九牌各恰好 1 张（无对子，无其他牌）
+
+    真实日麻规则：十三面听牌是 13 种幺九牌各 1 张，等待任意一种成对。
+    12 幺九 + 1 非幺九牌是错误定义，不应通过。
 
     Returns True if this is specifically 13-wait kokushi tenpai.
     """
@@ -57,29 +58,26 @@ def is_kokushi_thirteen_waits_waiting(
     if sum(concealed.values()) != 13:
         return False
 
-    # 检查幺九牌分布
-    yaochu_kinds = sum(1 for t in _YAOCHU_TILES if concealed.get(t, 0) >= 1)
+    # 使用赤五归一化的计数
+    logical = logical_counter(concealed)
 
-    # 十三面听牌：恰好 12 种幺九牌各 1 张
-    if yaochu_kinds != 12:
+    # 检查是否为 13 种幺九牌各恰好 1 张
+    yaochu_count = 0
+    for t in _YAOCHU_TILES:
+        cnt = logical.get(t, 0)
+        if cnt != 1:
+            return False  # 不是恰好 1 张
+        yaochu_count += 1
+
+    # 必须恰好 13 种幺九牌
+    if yaochu_count != 13:
         return False
 
-    # 确保这 12 种幺九牌都只有 1 张
-    for t in _YAOCHU_TILES:
-        if concealed.get(t, 0) > 1:
-            # 有重复的幺九牌，这是十二面听牌而非十三面
-            return False
+    # 确认手牌总数只有这 13 张（无其他牌）
+    if sum(logical.values()) != 13:
+        return False
 
-    # 检查万能牌（手牌中非这 12 种幺九牌的牌）
-    for tile in concealed:
-        if not _is_yaochu(tile):
-            # 有非幺九牌，这是十三面听牌（万能牌）
-            return True
-
-    # 如果所有牌都是幺九牌，且 12 种各 1 张，那么第 13 张牌是什么？
-    # 实际上这种情况不存在，因为 sum(concealed) == 13 且 yaochu_kinds == 12
-    # 所以必然有一张牌不属于这 12 种幺九牌
-    return False
+    return True
 
 
 def get_kokushi_waiting_tiles(concealed: Counter[Tile]) -> frozenset[Tile]:

@@ -476,13 +476,25 @@ def _make_kokushi_thirteen_waits_hand_missing_east() -> Counter[Tile]:
 
 
 def test_kokushi_rob_ankan_creates_chankan_window() -> None:
-    """国士十三面听牌玩家可以抢暗杠的幺九牌。
+    """国士无双听牌玩家可以抢暗杠的幺九牌（chankan）。
 
-    使用自定义牌分配，构造：
-    - 庄家 seat 0: MAN 1 x4（用于暗杠）
-    - seat 2: 国士十三面听牌（等待 MAN 1）
+    规则分析：
+    - 十三面听牌需要持有 13 种幺九牌各 1 张，等待任意一种成对
+    - 被暗杠的那种牌十三面玩家必须持有 1 张，但暗杠需要 4 张
+    - 每种牌只有 4 张，十三面持有 1 张后其他玩家最多 3 张，不能暗杠
+    - 所以十三面听牌实际不能抢暗杠
+
+    十二面听牌（单骑）可以抢暗杠：
+    - 持有 11 种幺九牌各 1 张 + 某种幺九牌 2 张（对子）= 13 张
+    - 等待缺失的第 13 种幺九牌
+    - 如果其他玩家暗杠该缺失牌，可以抢
+
+    测试场景：
+    - seat 0 暗杠某种幺九牌（4 张）
+    - seat 2 国士单骑听牌（持有其他幺九牌 + 某种对子，等待被暗杠的牌）
     """
     from kernel.call.win import is_kokushi_thirteen_waits_waiting, get_kokushi_waiting_tiles
+    from kernel.scoring.yaku import is_kokushi_musou, is_kokushi_thirteen_waits  # P0-2 导入
     from kernel.config import MahjongConfig
     from kernel.config_manager import KernelConfigManager
     from dataclasses import replace
@@ -497,23 +509,9 @@ def test_kokushi_rob_ankan_creates_chankan_window() -> None:
         for h in b0.hands:
             merged.update(h)
 
-        # MAN 1 是幺九牌，有 4 张
-        quad_tile = Tile(Suit.MAN, 1, False)
-        assert merged[quad_tile] >= 4, "seed 7 应该有 MAN 1 x4"
-
-        # 分配牌：
-        # seat 0: MAN 1 x4 + 10 张其他 = 14 张（庄家）
-        merged[quad_tile] -= 4
-        h0 = Counter({quad_tile: 4})
-        for _ in range(10):
-            x = next(iter(merged.elements()))
-            h0[x] += 1
-            merged[x] -= 1
-
-        # seat 2: 国士十三面听牌（等待 MAN 1）
-        # 需要 12 种幺九牌（不含 MAN 1）各 1 张 + 1 张其他
-        yaochu_except_man1 = [
-            Tile(Suit.MAN, 9, False),
+        # 检查牌山中哪些幺九牌有足够数量用于暗杠
+        yaochu_tiles = [
+            Tile(Suit.MAN, 1, False), Tile(Suit.MAN, 9, False),
             Tile(Suit.PIN, 1, False), Tile(Suit.PIN, 9, False),
             Tile(Suit.SOU, 1, False), Tile(Suit.SOU, 9, False),
             Tile(Suit.HONOR, 1, False), Tile(Suit.HONOR, 2, False),
@@ -522,14 +520,39 @@ def test_kokushi_rob_ankan_creates_chankan_window() -> None:
             Tile(Suit.HONOR, 7, False),
         ]
 
+        # 找一个在 merged 中有 4 张的幺九牌作为暗杠牌
+        quad_tile = None
+        for t in yaochu_tiles:
+            if merged[t] >= 4:
+                quad_tile = t
+                break
+
+        assert quad_tile is not None, "seed 7 应该有某种幺九牌 x4"
+
+        # 分配牌：
+        # seat 0: quad_tile x4 + 10 张其他 = 14 张（庄家，用于暗杠）
+        merged[quad_tile] -= 4
+        h0 = Counter({quad_tile: 4})
+        for _ in range(10):
+            x = next(iter(merged.elements()))
+            h0[x] += 1
+            merged[x] -= 1
+
+        # seat 2: 国士单骑听牌（等待 quad_tile）
+        # 持有 11 种其他幺九牌各 1 张 + 某种幺九牌对子 = 13 张
+        # 选择 MAN 1 作为对子（假设 MAN 1 不是 quad_tile）
+        pair_tile = Tile(Suit.MAN, 1, False) if quad_tile != Tile(Suit.MAN, 1, False) else Tile(Suit.MAN, 9, False)
+
         kokushi_hand = Counter()
-        for t in yaochu_except_man1:
+        # 添加对子
+        kokushi_hand[pair_tile] = 2
+        merged[pair_tile] -= 2
+
+        # 添加其他 11 种幺九牌（不含 quad_tile 和 pair_tile）
+        other_yaochu = [t for t in yaochu_tiles if t != quad_tile and t != pair_tile]
+        for t in other_yaochu:
             kokushi_hand[t] = 1
             merged[t] -= 1
-        # 加一张非幺九牌凑成 13 张
-        extra = next(iter(merged.elements()))
-        kokushi_hand[extra] += 1
-        merged[extra] -= 1
 
         # seat 1 和 seat 3
         h1 = Counter()
@@ -542,10 +565,16 @@ def test_kokushi_rob_ankan_creates_chankan_window() -> None:
 
         hands = (h0, h1, kokushi_hand, h3)
 
-        # 验证 seat 2 是国士十三面听牌
-        assert is_kokushi_thirteen_waits_waiting(kokushi_hand, ())
-        waiting = get_kokushi_waiting_tiles(kokushi_hand)
-        assert quad_tile in waiting, "MAN 1 应该是等待牌"
+        # 验证 seat 2 是国士听牌（不是十三面，是单骑）
+        # P0-1 修复后：十三面需要 13 种幺九牌各 1 张
+        # 单骑持有 11 种 + 对子，所以不是十三面
+        assert not is_kokushi_thirteen_waits_waiting(kokushi_hand, ())  # 不是十三面
+
+        # 但应该是国士听牌（单骑）
+        # 添加 win_tile（quad_tile）后检查是否是国士和牌
+        kokushi_with_win = Counter(kokushi_hand)
+        kokushi_with_win[quad_tile] = 1
+        assert is_kokushi_musou(kokushi_with_win, ())  # 是国士和牌形
 
         # 构造 board
         b = BoardState(
@@ -575,7 +604,7 @@ def test_kokushi_rob_ankan_creates_chankan_window() -> None:
         assert b2.call_state.chankan_rinshan_pending is True
         assert b2.call_state.claimed_tile == quad_tile
 
-        # 验证 seat 2 可以荣和
+        # 验证 seat 2 可以荣和（国士听牌可以抢暗杠）
         assert 2 in b2.call_state.ron_remaining
 
     finally:

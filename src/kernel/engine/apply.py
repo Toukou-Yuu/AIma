@@ -11,6 +11,7 @@ from kernel.call.win import (
     can_tsumo_default,
     can_win_seven_pairs_concealed_14,
 )
+from kernel.scoring.yaku import is_kokushi_musou  # P0-2: 天和国士支持
 from kernel.win_shape.std import can_win_standard_form_concealed_total
 from kernel.deal import assert_wall_is_standard_deck, build_board_after_split
 from kernel.board import BoardState
@@ -772,9 +773,11 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
                     # 检查14张手牌是否为和牌形
                     concealed = board.hands[seat]
                     melds = board.melds[seat]
+                    # P0-2: 添加国士无双检查
+                    is_kokushi = is_kokushi_musou(concealed, melds)
                     is_seven_pairs = can_win_seven_pairs_concealed_14(concealed, melds)
                     is_standard = can_win_standard_form_concealed_total(concealed, melds)
-                    if not is_seven_pairs and not is_standard:
+                    if not is_kokushi and not is_seven_pairs and not is_standard:
                         msg = "Dealer initial 14 not winning shape"
                         raise IllegalActionError(msg)
 

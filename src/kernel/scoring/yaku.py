@@ -840,12 +840,16 @@ def _is_chihou(board: BoardState, winner: int, is_tsumo: bool, dealer_seat: int 
         return False
     if board.current_seat == dealer_seat:  # 亲家不算地和
         return False
-    # H-33: 首巡窗口 = 庄家已打第一张 + 胜者无舍牌 + 无鸣牌
-    if len(board.river) != 1:  # 庄家打出第一张后
+    # P1-1: 地和全席位支持
+    # 首巡窗口：庄家已打第一张 + 和了者无舍牌 + 无鸣牌
+    # river 包含当前巡的舍牌，南家和时 river 有 1 张，西家时有 2 张，北家时有 3 张
+    if len(board.river) < 1:  # 庄家还没打出第一张
         return False
     if len(board.all_discards_per_seat[winner]) != 0:
-        return False
-    return all(len(m) == 0 for m in board.melds)
+        return False  # 和了者已经舍过牌
+    if any(len(m) > 0 for m in board.melds):
+        return False  # 有鸣牌（吃碰杠）破坏首巡
+    return True
 
 
 def _yakuhai_labels_for_triplets(

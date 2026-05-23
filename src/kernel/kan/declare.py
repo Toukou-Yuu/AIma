@@ -9,19 +9,107 @@ from kernel.hand.melds import Meld, MeldKind, triplet_key, validate_meld_shape
 from kernel.hand.multiset import remove_tile, remove_tiles
 from kernel.kan.rinshan import apply_after_kan_rinshan_draw
 from kernel.board import CallResolution, TurnPhase
+from kernel.tiles.key import tile_key  # P0-1: 用于幺九牌判断
 
 if TYPE_CHECKING:
     from kernel.board import BoardState
 
 
+# P0-1: 幺九牌集合（使用 Suit 枚举形式，与 logical_counter 返回的 key 一致）
+from kernel.tiles.model import Suit
+_YAOCHU_KEYS = frozenset([
+    (Suit.MAN, 1), (Suit.MAN, 9),  # MAN 1, 9
+    (Suit.PIN, 1), (Suit.PIN, 9),  # PIN 1, 9
+    (Suit.SOU, 1), (Suit.SOU, 9),  # SOU 1, 9
+    (Suit.HONOR, 1), (Suit.HONOR, 2), (Suit.HONOR, 3), (Suit.HONOR, 4),  # 东东南南西西北北
+    (Suit.HONOR, 5), (Suit.HONOR, 6), (Suit.HONOR, 7),  # 白发中
+])
+
+
+def _is_kokushi_tenpai(concealed: Counter, melds: tuple[Meld, ...]) -> bool:
+    """P0-1: 判断是否为国士无双听牌（十三面或单骑）。
+
+    十三面：13 种幺九牌各 1 张 = 13 张，等待任意一种成对
+    单骑：11 种幺九牌各 1 张 + 某种幺九牌 2 张 = 13 张，等待缺失的第 13 种
+
+    Returns True if this is kokushi tenpai (any form).
+    """
+    if melds:
+        for m in melds:
+            if m.kind != MeldKind.ANKAN:
+                return False  # 非门清
+
+    if sum(concealed.values()) != 13:
+        return False
+
+    # 使用 logical_counter（返回的键已经是 TileKey tuple）
+    from kernel.tiles.key import logical_counter
+    logical = logical_counter(concealed)
+
+    # 统计幺九牌分布（logical 的键已经是 tuple，直接用）
+    yaochu_counts = {}
+    non_yaochu_count = 0
+    for key, cnt in logical.items():
+        # key 已经是 (suit, rank) tuple
+        if key in _YAOCHU_KEYS:
+            yaochu_counts[key] = cnt
+        else:
+            non_yaochu_count += cnt
+
+    # 国士听牌条件：没有非幺九牌
+    if non_yaochu_count > 0:
+        return False
+
+    # 十三面：13 种幺九牌各恰好 1 张
+    if len(yaochu_counts) == 13 and all(c == 1 for c in yaochu_counts.values()):
+        return True
+
+    # 单骑：12 种幺九牌，其中 11 种各 1 张，1 种 2 张
+    if len(yaochu_counts) == 12:
+        pair_count = sum(1 for c in yaochu_counts.values() if c == 2)
+        single_count = sum(1 for c in yaochu_counts.values() if c == 1)
+        if pair_count == 1 and single_count == 11:
+            return True
+
+    return False
+
+
+def _get_kokushi_waiting_tiles(concealed: Counter) -> frozenset:
+    """P0-1: 获取国士听牌的等待牌。
+
+    十三面：返回空集（等待任意一种，但暗杠牌不在等待列表中）
+    单骑：返回缺失的第 13 种幺九牌
+
+    Returns frozenset of tile keys (not Tile objects).
+    """
+    from kernel.tiles.key import logical_counter
+
+    logical = logical_counter(concealed)
+
+    # 统计幺九牌分布（logical 的键已经是 tuple）
+    yaochu_counts = {}
+    for key, cnt in logical.items():
+        if key in _YAOCHU_KEYS:
+            yaochu_counts[key] = cnt
+
+    # 十三面：等待任意一种成对，返回空集（实际实现中暗杠检查会特殊处理）
+    if len(yaochu_counts) == 13 and all(c == 1 for c in yaochu_counts.values()):
+        return frozenset()  # 十三面等待任意一种，但暗杠牌不在手牌中不可能抢
+
+    # 单骑：返回缺失的第 13 种
+    missing = frozenset(k for k in _YAOCHU_KEYS if k not in yaochu_counts)
+    return missing
+
+
 def apply_ankan(board: BoardState, seat: int, meld: Meld) -> BoardState:
     """暗杠：须 ``MUST_DISCARD``、门清四张同种；返回岭摸+翻宝后的状态。
 
-    如果配置允许国士抢暗杠且有玩家国士十三面听牌等待此牌，创建抢杠窗口。
+    如果配置允许国士抢暗杠且有玩家国士听牌等待此牌，创建抢杠窗口。
+    P0-1: 支持所有国士听牌（十三面和单骑）抢暗杠。
     """
     from kernel.board import BoardState
     from kernel.config import get_default_config
-    from kernel.call.win import is_kokushi_thirteen_waits_waiting, get_kokushi_waiting_tiles
+    from kernel.tiles.key import tile_key
 
     validate_meld_shape(meld)
     if meld.kind != MeldKind.ANKAN:
@@ -43,15 +131,16 @@ def apply_ankan(board: BoardState, seat: int, meld: Meld) -> BoardState:
     # 检查国士无双抢暗杠例外
     config = get_default_config()
     ankan_tile = meld.tiles[0]  # 暗杠的牌（四张相同）
+    ankan_key = tile_key(ankan_tile)
 
     if config.allow_kokushi_rob_ankan:
-        # 遍历其他三家，检查是否有国士十三面听牌等待此牌
+        # P0-1: 遍历其他三家，检查是否有国士听牌等待此牌
         for opponent in range(4):
             if opponent == seat:
                 continue
-            if is_kokushi_thirteen_waits_waiting(board.hands[opponent], board.melds[opponent]):
-                waiting = get_kokushi_waiting_tiles(board.hands[opponent])
-                if ankan_tile in waiting:
+            if _is_kokushi_tenpai(board.hands[opponent], board.melds[opponent]):
+                waiting_keys = _get_kokushi_waiting_tiles(board.hands[opponent])
+                if ankan_key in waiting_keys:
                     # 创建 chankan 窗口（复用 KAKAN 的机制）
                     new_concealed = remove_tiles(board.hands[seat], meld.tiles)
                     new_melds = list(board.melds)

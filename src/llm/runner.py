@@ -134,6 +134,7 @@ def _finalize_agents_episode(
     seat_contexts: dict[int, EpisodeContext],
     match_contexts: dict[int, MatchContext],
     seat_clients: dict[int, CompletionClient] | None = None,
+    dry_run: bool = False,  # P2-1: 添加 dry_run 参数
 ) -> None:
     """局结束时更新所有 Agent 的 memory 并关闭 EpisodeContext."""
     for ev in events:
@@ -145,7 +146,9 @@ def _finalize_agents_episode(
                     # 关闭本局（更新 MatchContext 的跨局统计）
                     match_contexts[seat].close_episode(seat_contexts[seat])
                     client = seat_clients.get(seat) if seat_clients else None
-                    seat_agents[seat].update_memory(seat_contexts[seat], client)
+                    # P2-1: dry-run 不持久化 memory
+                    if not dry_run:
+                        seat_agents[seat].update_memory(seat_contexts[seat], client)
 
 
 def _write_simple_snapshot(
@@ -576,8 +579,9 @@ def run_llm_match(
                     key=lambda s: (-final_scores[s], (s - final_dealer) % 4)
                 )
                 placements = {seat: rank + 1 for rank, seat in enumerate(sorted_seats)}
+                # P2-1: dry-run 不持久化 stats
                 for seat, agent in seat_agents.items():
-                    if agent.player_id is not None and seat in seat_contexts:
+                    if agent.player_id is not None and seat in seat_contexts and not dry_run:
                         agent.update_stats(seat_contexts[seat], placements[seat])
                 shared_journal.archive_current_hand()
                 # 触发 MATCH_END
@@ -592,8 +596,9 @@ def run_llm_match(
                 key=lambda s: (-final_scores[s], (s - final_dealer) % 4)
             )
             placements = {seat: rank + 1 for rank, seat in enumerate(sorted_seats)}
+            # P2-1: dry-run 不持久化 stats
             for seat, agent in seat_agents.items():
-                if agent.player_id is not None and seat in seat_contexts:
+                if agent.player_id is not None and seat in seat_contexts and not dry_run:
                     agent.update_stats(seat_contexts[seat], placements[seat])
             shared_journal.archive_current_hand()
             break
@@ -760,6 +765,7 @@ def run_llm_match(
                 seat_contexts,
                 match_contexts,
                 seat_clients,
+                dry_run=dry_run,  # P2-1: 传递 dry_run 参数
             )
             state = step_out.new_state
             _write_simple_snapshot(

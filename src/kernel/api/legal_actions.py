@@ -16,6 +16,7 @@ from kernel.api.meld_candidates import (
 )
 from kernel.call.ron_rules import can_declare_ron
 from kernel.call.win import can_win_seven_pairs_concealed_14
+from kernel.scoring.yaku import is_kokushi_musou  # P0-2: 天和国士支持
 from kernel.config import get_default_config
 from kernel.board import BoardState, TurnPhase
 from kernel.engine.actions import ActionKind
@@ -362,9 +363,11 @@ def _legal_actions_must_discard(
             and all(len(m) == 0 for m in board.melds)
         ):
             # 检查14张手牌是否为和牌形
+            # P0-2: 添加国士无双检查
+            is_kokushi = is_kokushi_musou(concealed, melds)
             is_seven_pairs = can_win_seven_pairs_concealed_14(concealed, melds)
             is_standard = can_win_standard_form_concealed_total(concealed, melds)
-            if is_seven_pairs or is_standard:
+            if is_kokushi or is_seven_pairs or is_standard:
                 # 从14张手牌中确定 win_tile（选择第一张非零牌）
                 for tile, count in concealed.items():
                     if count >= 1:
