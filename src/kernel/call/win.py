@@ -49,6 +49,8 @@ def is_kokushi_thirteen_waits_waiting(
 
     Returns True if this is specifically 13-wait kokushi tenpai.
     """
+    from kernel.tiles.key import tile_key
+
     # 门前清限定（暗杠可以）
     for m in melds:
         if m.kind != MeldKind.ANKAN:
@@ -61,10 +63,13 @@ def is_kokushi_thirteen_waits_waiting(
     # 使用赤五归一化的计数
     logical = logical_counter(concealed)
 
+    # 幺九牌 key 集合（使用 tuple 形式与 logical_counter 一致）
+    yaochu_keys = frozenset(tile_key(t) for t in _YAOCHU_TILES)
+
     # 检查是否为 13 种幺九牌各恰好 1 张
     yaochu_count = 0
-    for t in _YAOCHU_TILES:
-        cnt = logical.get(t, 0)
+    for key in yaochu_keys:
+        cnt = logical.get(key, 0)
         if cnt != 1:
             return False  # 不是恰好 1 张
         yaochu_count += 1
@@ -84,9 +89,10 @@ def get_kokushi_waiting_tiles(concealed: Counter[Tile]) -> frozenset[Tile]:
     """
     获取国士十三面听牌缺失的幺九牌（等待牌）。
 
-    前置条件：is_kokushi_thirteen_waits_waiting() 为 True。
+    十三面听牌时返回所有 13 种幺九牌（任意一种成对都可和牌）。
     """
-    return frozenset(t for t in _YAOCHU_TILES if concealed.get(t, 0) == 0)
+    # 对于十三面听牌，返回所有幺九牌（任意一种成对都可和）
+    return frozenset(_YAOCHU_TILES)
 
 
 def _seat_concealed_plus_meld_tiles(
