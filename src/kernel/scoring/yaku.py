@@ -840,7 +840,9 @@ def _is_chihou(board: BoardState, winner: int, is_tsumo: bool, dealer_seat: int 
         return False
     if board.current_seat == dealer_seat:  # 亲家不算地和
         return False
-    # H-14: 第一巡 = 当前玩家无舍牌 + 无鸣牌
+    # H-33: 首巡窗口 = 庄家已打第一张 + 胜者无舍牌 + 无鸣牌
+    if len(board.river) != 1:  # 庄家打出第一张后
+        return False
     if len(board.all_discards_per_seat[winner]) != 0:
         return False
     return all(len(m) == 0 for m in board.melds)

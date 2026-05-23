@@ -127,19 +127,26 @@ class TestCliWallFileIntegration:
 
     def test_wall_file_cli_help(self) -> None:
         """--wall-file 参数在 help 中显示。"""
+        import os
         import subprocess
 
+        env = os.environ.copy()
+        env["PYTHONPATH"] = "src"  # H-27: 子进程显式设置 PYTHONPATH
         result = subprocess.run(
             ["python", "-m", "llm", "--help"],
             capture_output=True,
             text=True,
+            env=env,
         )
         assert "--wall-file" in result.stdout
 
     def test_wall_file_with_max_hands_gt_1_rejected(self) -> None:
         """wall-file 与 max-hands > 1 组合时报错。"""
+        import os
         import subprocess
 
+        env = os.environ.copy()
+        env["PYTHONPATH"] = "src"  # H-27: 子进程显式设置 PYTHONPATH
         result = subprocess.run(
             [
                 "python",
@@ -153,14 +160,18 @@ class TestCliWallFileIntegration:
             ],
             capture_output=True,
             text=True,
+            env=env,
         )
         assert result.returncode == 2
         assert "仅支持单局" in result.stderr
 
     def test_wall_file_single_hand_dry_run(self) -> None:
         """wall-file 单局 dry-run 正常执行。"""
+        import os
         import subprocess
 
+        env = os.environ.copy()
+        env["PYTHONPATH"] = "src"  # H-27: 子进程显式设置 PYTHONPATH
         result = subprocess.run(
             [
                 "python",
@@ -174,6 +185,7 @@ class TestCliWallFileIntegration:
             ],
             capture_output=True,
             text=True,
+            env=env,
         )
         # 应正常执行，返回码 0
         assert result.returncode == 0

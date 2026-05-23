@@ -22,11 +22,14 @@ from llm.agent.stats import PlayerStats
 from llm.config import LLMClientConfig
 from llm.protocol import build_client
 
-# 跳过条件：未设置环境变量
-pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_LIVE_LLM_TESTS") != "1",
-    reason="需要真实 API 调用，设置 RUN_LIVE_LLM_TESTS=1 运行",
-)
+# H-27: live API 测试标记为 live marker
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(
+        os.environ.get("RUN_LIVE_LLM_TESTS") != "1",
+        reason="需要真实 API 调用，设置 RUN_LIVE_LLM_TESTS=1 运行",
+    ),
+]
 
 
 def _deepseek_client():

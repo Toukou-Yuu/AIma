@@ -1,4 +1,7 @@
-"""interactive 模块测试。"""
+"""interactive 模块测试。
+
+H-27: UI 测试标记为 ui marker，需要 textual/rich 库。
+"""
 
 from __future__ import annotations
 
@@ -6,6 +9,13 @@ import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
+
+import pytest
+
+# H-27: UI 测试需要 rich optional dependencies，缺库时跳过
+pytest.importorskip("textual")  # 文件级别跳过
+
+pytestmark = pytest.mark.ui
 
 
 def test_load_model_summary_marks_missing_config(tmp_path: Path) -> None:

@@ -28,6 +28,11 @@ include = ["kernel*", "llm*", "ui*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "ui: tests requiring textual/questionary/rich UI libraries",
+    "live: tests requiring real API calls (skipped by default)",
+    "slow: tests that take >5 seconds to run",
+]
 
 [tool.ruff]
 target-version = "py311"

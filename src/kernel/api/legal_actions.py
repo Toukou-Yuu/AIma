@@ -22,7 +22,7 @@ from kernel.engine.actions import ActionKind
 from kernel.engine.state import GameState
 from kernel.flow import check_nine_nine_declaration
 from kernel.hand.melds import Meld
-from kernel.riichi.tenpai import is_tenpai_default
+from kernel.riichi.tenpai import _is_menzen, is_tenpai_default
 from kernel.scoring.yaku import non_dora_yaku_han_and_labels
 from kernel.tiles.model import Tile
 from kernel.win_shape.std import can_win_standard_form_concealed_total
@@ -303,7 +303,7 @@ def _legal_actions_must_discard(
         # DISCARD: 枚举所有手牌
         for tile in concealed.elements():
             # 检查是否可以立直
-            if not melds:
+            if _is_menzen(melds):  # H-31: 暗杠不破门清
                 # 检查立直条件：门清、听牌、有足够点数
                 from kernel.hand.multiset import remove_tile
                 from kernel.table.model import get_riichi_stick_points

@@ -3,11 +3,20 @@
 测试目标：
 - components/tiles.py：牌面渲染组件
 - viewer.py：核心渲染函数和 LiveMatchViewer 类
+
+H-27: UI 测试标记为 ui marker，需要 rich 库。
 """
 
 from __future__ import annotations
 
 from collections import Counter
+
+import pytest
+
+# H-27: UI 测试需要 rich 库，缺库时跳过
+pytest.importorskip("rich")  # 文件级别跳过
+
+pytestmark = pytest.mark.ui
 
 from rich.cells import cell_len
 from rich.text import Text
