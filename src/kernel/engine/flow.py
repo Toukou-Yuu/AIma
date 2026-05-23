@@ -107,7 +107,8 @@ def apply_flow_transition(
     if flow_result.kind in abortive_kinds:
         new_table, tenpai_result = settle_abortive_flow(state.table)
     else:
-        new_table, tenpai_result = settle_flow(state.table, state.board)
+        # H-21: 传递 flow_kind 以限制流局满贯只在荒牌触发
+        new_table, tenpai_result = settle_flow(state.table, state.board, flow_kind=flow_result.kind)
 
     flow_event = event_builder.flow(
         flow_kind=flow_result.kind,

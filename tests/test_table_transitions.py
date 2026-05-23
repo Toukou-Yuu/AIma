@@ -243,7 +243,7 @@ class TestR09DealerWinAtSouth4ShouldContinue:
     """
 
     def test_dealer_win_at_south4_hand_over_should_continue(self) -> None:
-        """南四局亲家和了后 HAND_OVER → NOOP → IN_ROUND（连庄）。"""
+        """南四局亲家和了后 HAND_OVER → NEXT_ROUND → IN_ROUND（连庄）(H-24)。"""
         # 构造南四局场况
         table = initial_table_snapshot(
             match_preset=MatchPreset.HANCHAN,
@@ -264,8 +264,8 @@ class TestR09DealerWinAtSouth4ShouldContinue:
         # 准备牌山用于下一局
         wall = tuple(build_deck())
 
-        # 执行 NOOP 推进
-        outcome = apply(state, Action(kind=ActionKind.NOOP, wall=wall))
+        # 执行 NEXT_ROUND 推进 (H-24)
+        outcome = apply(state, Action(kind=ActionKind.NEXT_ROUND, wall=wall))
 
         # 验证：应连庄（IN_ROUND），而非终局（MATCH_END）
         assert outcome.new_state.phase == GamePhase.IN_ROUND
@@ -323,7 +323,7 @@ class TestR09DealerTenpaiAtSouth4FlowShouldContinue:
         wall = tuple(build_deck())
 
         # 执行 NOOP 推进
-        outcome = apply(state, Action(kind=ActionKind.NOOP, wall=wall))
+        outcome = apply(state, Action(kind=ActionKind.NEXT_ROUND, wall=wall))
 
         # 验证：应连庄（IN_ROUND），而非终局（MATCH_END）
         assert outcome.new_state.phase == GamePhase.IN_ROUND
@@ -354,7 +354,7 @@ class TestR09DealerTenpaiAtSouth4FlowShouldContinue:
         wall = tuple(build_deck())
 
         # 执行 NOOP 推进
-        outcome = apply(state, Action(kind=ActionKind.NOOP, wall=wall))
+        outcome = apply(state, Action(kind=ActionKind.NEXT_ROUND, wall=wall))
 
         # 验证：应终局（MATCH_END），而非连庄
         assert outcome.new_state.phase == GamePhase.MATCH_END
@@ -382,7 +382,7 @@ class TestR09DealerTenpaiAtSouth4FlowShouldContinue:
         wall = tuple(build_deck())
 
         # 执行 NOOP 推进
-        outcome = apply(state, Action(kind=ActionKind.NOOP, wall=wall))
+        outcome = apply(state, Action(kind=ActionKind.NEXT_ROUND, wall=wall))
 
         # 验证：应终局（MATCH_END），因为南四局亲流后终局
         assert outcome.new_state.phase == GamePhase.MATCH_END

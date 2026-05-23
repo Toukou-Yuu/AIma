@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from kernel.config import get_default_config, MahjongConfig
 from kernel.board import BoardState
-from kernel.flow.model import TenpaiResult
+from kernel.flow.model import FlowKind, TenpaiResult
 from kernel.riichi.tenpai import is_tenpai_default
 from kernel.scoring.points import nagashi_mangan_payments
 from kernel.table.model import TableSnapshot
@@ -197,12 +197,12 @@ def should_continue_dealer(
     return False
 
 
-def update_honba(
+def update_honba_after_win(
     table: TableSnapshot,
     continue_dealer: bool,
 ) -> TableSnapshot:
     """
-    本场数更新。
+    和了后本场数更新（H-20: 与流局分开）。
 
     规则：
     - 连庄（亲家继续）：本场 +1
@@ -212,6 +212,27 @@ def update_honba(
         return replace(table, honba=table.honba + 1)
     else:
         return replace(table, honba=0)
+
+
+def update_honba_after_draw(table: TableSnapshot) -> TableSnapshot:
+    """
+    流局后本场数更新（H-20: 荒牌流局固定 +1）。
+
+    规则：荒牌流局后，无论亲家是否听牌，本场都 +1。
+    """
+    return replace(table, honba=table.honba + 1)
+
+
+def update_honba(
+    table: TableSnapshot,
+    continue_dealer: bool,
+) -> TableSnapshot:
+    """
+    本场数更新（兼容旧调用，已废弃）。
+
+    注意：此函数已废弃，请使用 `update_honba_after_win` 或 `update_honba_after_draw`。
+    """
+    return update_honba_after_win(table, continue_dealer)
 
 
 def settle_abortive_flow(table: TableSnapshot) -> tuple[TableSnapshot, None]:
@@ -227,6 +248,7 @@ def settle_abortive_flow(table: TableSnapshot) -> tuple[TableSnapshot, None]:
 def settle_flow(
     table: TableSnapshot,
     board: "BoardState",
+    flow_kind: FlowKind | None = None,
     winner_seat: int | None = None,
     config: MahjongConfig | None = None,
 ) -> tuple[TableSnapshot, TenpaiResult]:
@@ -234,7 +256,7 @@ def settle_flow(
     流局综合结算。
 
     1. 计算听牌结果
-    2. 检测流局满贯者
+    2. 检测流局满贯者（仅荒牌流局）
     3. 结算流局满贯（替代普通听牌结算）
     4. 结算普通听牌（排除流局满贯者和未听牌者之间的结算）
     5. 连庄/亲流判定
@@ -247,17 +269,23 @@ def settle_flow(
     Args:
         table: 牌桌快照
         board: 牌局状态
+        flow_kind: 流局种类（H-21: 仅 EXHAUSTED 时检测流局满贯）
         winner_seat: 和了者（若本局有和了）
         config: 规则配置（默认从配置加载）
     """
+    from kernel.flow.model import FlowKind
+
     config = config or get_default_config()
     # 1. 计算听牌结果
     tenpai_result = compute_tenpai_result(board)
 
-    # 2. 检测流局满贯者（替代普通听牌结算）
-    flow_mangan_seats = frozenset(
-        s for s in tenpai_result.tenpai_seats if check_flow_mangan(board, table, s)
-    )
+    # 2. 检测流局满贯者（H-21: 仅荒牌流局触发）
+    is_exhausted = flow_kind is None or flow_kind == FlowKind.EXHAUSTED
+    flow_mangan_seats = frozenset()
+    if is_exhausted:
+        flow_mangan_seats = frozenset(
+            s for s in tenpai_result.tenpai_seats if check_flow_mangan(board, table, s)
+        )
 
     # 3. 计算实际参与普通听牌结算的席位
     # - 流局满贯者：中立（不收取也不支付听牌料）
@@ -300,7 +328,7 @@ def settle_flow(
         winner_seat=winner_seat,
     )
 
-    # 7. 本场数更新
-    new_table = update_honba(new_table, continue_dealer)
+    # 7. 本场数更新（H-20: 流局固定 +1，非和了逻辑）
+    new_table = update_honba_after_draw(new_table)
 
     return new_table, tenpai_result

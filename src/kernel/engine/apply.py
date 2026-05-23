@@ -996,7 +996,7 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
 
     # HAND_OVER 阶段：和了后等待下一局或终局
     if phase == GamePhase.HAND_OVER:
-        if kind == ActionKind.NOOP:
+        if kind == ActionKind.NEXT_ROUND:  # H-24: 使用 NEXT_ROUND
             # 先判断是否连庄（亲家和了）
             continue_dealer = (
                 state.ron_winners is not None and state.table.dealer_seat in state.ron_winners
@@ -1067,7 +1067,7 @@ def apply(state: GameState, action: Action, config: MahjongConfig | None = None)
 
     # FLOWN 阶段：流局后等待下一局或终局
     if phase == GamePhase.FLOWN:
-        if kind == ActionKind.NOOP:
+        if kind == ActionKind.NEXT_ROUND:  # H-24: 使用 NEXT_ROUND
             eb = _create_event_builder(state)
             new_state, events = advance_after_flow(
                 state.table,

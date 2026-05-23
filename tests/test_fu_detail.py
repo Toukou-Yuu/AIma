@@ -258,6 +258,33 @@ class TestFuDetailWaitType:
                               self_wind=NAN, round_wind=TON)
         assert d.get("wait", 0) == 0
 
+    # --- H-22: 赤五归一化测试 ---
+
+    def test_tanki_wait_red_five_equivalent(self) -> None:
+        """单骑听：赤五与普通五等效（H-22）。"""
+        SOU5_R = Tile(Suit.SOU, 5, is_red=True)  # 赤五索
+        # 13 tiles: 5s(赤) + 1p2p3p + 4p5p6p + 7p8p9p + 1s2s3s wait 5s
+        # 对家打出普通五 5s，应判定为单骑听
+        c = Counter({SOU5_R: 1, PIN1: 1, PIN2: 1, PIN3: 1, PIN4: 1, PIN5: 1, PIN6: 1,
+                     PIN7: 1, PIN8: 1, PIN9: 1, SOU1: 1, SOU2: 1, SOU3: 1})
+        # win_tile 是普通五，但 before 中有赤五
+        d = compute_fu_detail(c, (), SOU5, for_ron=True, menzen=True, pinfu=False,
+                              self_wind=NAN, round_wind=TON)
+        # H-22 修复后应判定为单骑听 +2 符
+        assert d["wait"] == 2
+
+    def test_kanchan_wait_with_red_five_in_hand(self) -> None:
+        """嵌张听：手牌有赤五，和普通五应等效（H-22）。"""
+        MAN5_R = Tile(Suit.MAN, 5, is_red=True)  # 赤五万
+        # 13 tiles: 4m + 6m + ... wait 5m(赤)
+        # 对家打出赤五 5m(赤)，手牌有 4m 6m（嵌张听）
+        c = Counter({MAN4: 1, MAN6: 1, PIN1: 1, PIN2: 1, PIN3: 1,
+                     PIN4: 1, PIN5: 1, PIN6: 1, PIN7: 1, PIN8: 1, PIN9: 1, MAN7: 2})
+        d = compute_fu_detail(c, (), MAN5_R, for_ron=True, menzen=True, pinfu=False,
+                              self_wind=NAN, round_wind=TON)
+        # H-22 修复后应判定为嵌张听 +2 符
+        assert d["wait"] == 2
+
 
 # --- compute_fu (simplified) ---
 

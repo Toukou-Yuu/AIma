@@ -16,6 +16,8 @@ class ActionKind(Enum):
     """恒等探针；仅在 ``IN_ROUND`` 合法。"""
     BEGIN_ROUND = "begin_round"
     """配牌前 → 局中：须提供完整 136 张牌山并完成配牌与首张表宝指示牌。"""
+    NEXT_ROUND = "next_round"
+    """H-24: 局间推进下一局；在 HAND_OVER/FLOWN 阶段使用，须提供 wall。"""
     DRAW = "draw"
     """自摸：须在 ``IN_ROUND`` 且当前为 ``NEED_DRAW``；``seat`` 可省略（视为 ``current_seat``）。"""
     DISCARD = "discard"

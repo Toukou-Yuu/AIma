@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 
 from kernel.hand.melds import Meld, MeldKind, triplet_key
+from kernel.tiles.key import tile_key, TileKey
 from kernel.tiles.model import Suit, Tile
 
 
@@ -130,6 +131,8 @@ def _wait_type_fu(
     """
     听牌类型加符：嵌张/单骑/边张 +2，两面/双碰 0。
     仅在荣和时判定（自摸的听牌类型由荣和同理推导）。
+
+    H-22: 使用 tile_key 进行比较，赤五与普通五等效。
     """
     # 构造和了前的 13 张门内
     before = Counter(concealed)
@@ -142,18 +145,23 @@ def _wait_type_fu(
         if before[win_tile] == 0:
             del before[win_tile]
 
-    wt_key = triplet_key(win_tile)
+    # H-22: 转换为逻辑牌种 Counter，赤五与普通五归一化
+    before_logical: Counter[TileKey] = Counter()
+    for t, n in before.items():
+        before_logical[tile_key(t)] += n
+
+    win_key = tile_key(win_tile)
 
     # 单骑听：win_tile 在 before 中恰好 1 张（对子听第 3 张）
-    if before.get(win_tile, 0) == 1:
-        test = Counter(before)
-        test[win_tile] -= 1
-        if test[win_tile] == 0:
-            del test[win_tile]
+    if before_logical.get(win_key, 0) == 1:
+        test = Counter(before_logical)
+        test[win_key] -= 1
+        if test[win_key] == 0:
+            del test[win_key]
         # 移除对子的一张后，剩余应恰好组成 4 - 副露组面子
         mentsu_needed = 4 - len(melds)
         if sum(test.values()) == mentsu_needed * 3:
-            if _can_fill_mentsu(_to_vec34(test), mentsu_needed):
+            if _can_fill_mentsu_logical(test, mentsu_needed):
                 return 2
 
     # 顺子听：win_tile 与 before 中的牌组成顺子
@@ -165,33 +173,92 @@ def _wait_type_fu(
 
         # 嵌张：1_3 → 2（中间牌）
         if 2 <= rank <= 8:
-            low = Tile(suit, rank - 1, False)
-            high = Tile(suit, rank + 1, False)
-            if before.get(low, 0) >= 1 and before.get(high, 0) >= 1:
-                test = Counter(before)
-                test[low] -= 1
-                test[high] -= 1
-                if test[low] == 0:
-                    del test[low]
-                if test[high] == 0:
-                    del test[high]
-                if _can_form_melds_and_pair(test, mentsu_needed):
+            low_key = (suit, rank - 1)
+            high_key = (suit, rank + 1)
+            if before_logical.get(low_key, 0) >= 1 and before_logical.get(high_key, 0) >= 1:
+                test = Counter(before_logical)
+                test[low_key] -= 1
+                test[high_key] -= 1
+                if test[low_key] == 0:
+                    del test[low_key]
+                if test[high_key] == 0:
+                    del test[high_key]
+                if _can_form_melds_and_pair_logical(test, mentsu_needed):
                     return 2
 
         # 边张：12 → 3
         if rank == 3:
-            t1, t2 = Tile(suit, 1, False), Tile(suit, 2, False)
-            if before.get(t1, 0) >= 1 and before.get(t2, 0) >= 1:
-                test = Counter(before)
-                test[t1] -= 1
-                test[t2] -= 1
-                for t in (t1, t2):
-                    if test[t] == 0:
-                        del test[t]
-                if _can_form_melds_and_pair(test, mentsu_needed):
+            t1_key, t2_key = (suit, 1), (suit, 2)
+            if before_logical.get(t1_key, 0) >= 1 and before_logical.get(t2_key, 0) >= 1:
+                test = Counter(before_logical)
+                test[t1_key] -= 1
+                test[t2_key] -= 1
+                for k in (t1_key, t2_key):
+                    if test[k] == 0:
+                        del test[k]
+                if _can_form_melds_and_pair_logical(test, mentsu_needed):
                     return 2
 
         # 边张：89 → 7
+        if rank == 7:
+            t8_key, t9_key = (suit, 8), (suit, 9)
+            if before_logical.get(t8_key, 0) >= 1 and before_logical.get(t9_key, 0) >= 1:
+                test = Counter(before_logical)
+                test[t8_key] -= 1
+                test[t9_key] -= 1
+                for k in (t8_key, t9_key):
+                    if test[k] == 0:
+                        del test[k]
+                if _can_form_melds_and_pair_logical(test, mentsu_needed):
+                    return 2
+
+    return 0
+
+
+def _can_fill_mentsu_logical(vec_logical: Counter[TileKey], needed: int) -> bool:
+    """H-22: 使用逻辑牌种的面子填充检查（简化版）。"""
+    # 转换为 vec34 格式
+    vec = [0] * 34
+    for (suit, rank), n in vec_logical.items():
+        idx = _suit_rank_to_idx(suit, rank)
+        vec[idx] = n
+    return _can_fill_mentsu(vec, needed)
+
+
+def _can_form_melds_and_pair_logical(vec_logical: Counter[TileKey], needed: int) -> bool:
+    """H-22: 使用逻辑牌种的面子+对子检查。"""
+    vec = [0] * 34
+    for (suit, rank), n in vec_logical.items():
+        idx = _suit_rank_to_idx(suit, rank)
+        vec[idx] = n
+    return _can_form_melds_and_pair_vec(vec, needed)
+
+
+def _can_form_melds_and_pair_vec(vec: list[int], melds_needed: int) -> bool:
+    """H-22: vec34 版本的面子+对子检查。"""
+    total = sum(vec)
+    if total != melds_needed * 3 + 2:
+        return False
+    # 枚举所有可能的对子
+    for i in range(34):
+        if vec[i] >= 2:
+            test_vec = vec.copy()
+            test_vec[i] -= 2
+            if _can_fill_mentsu(test_vec, melds_needed):
+                return True
+    return False
+
+
+def _suit_rank_to_idx(suit: Suit, rank: int) -> int:
+    """花色+rank 转 vec34 索引。"""
+    if suit == Suit.MAN:
+        return rank - 1
+    elif suit == Suit.PIN:
+        return 9 + rank - 1
+    elif suit == Suit.SOU:
+        return 18 + rank - 1
+    else:  # HONOR
+        return 27 + rank - 1
         if rank == 7:
             t8, t9 = Tile(suit, 8, False), Tile(suit, 9, False)
             if before.get(t8, 0) >= 1 and before.get(t9, 0) >= 1:

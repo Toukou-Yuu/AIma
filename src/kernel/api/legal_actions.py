@@ -155,8 +155,12 @@ def legal_actions(state: GameState, seat: int) -> tuple[LegalAction, ...]:
                 return (LegalAction(kind=ActionKind.DRAW, seat=seat),)
             return ()
 
-    # HAND_OVER / FLOWN / MATCH_END 阶段：只能 NOOP
-    if phase.value in ("hand_over", "flown", "match_end"):
+    # HAND_OVER / FLOWN / MATCH_END 阶段：NEXT_ROUND 或 NOOP
+    if phase.value in ("hand_over", "flown"):
+        # H-24: 返回 NEXT_ROUND（需要 wall）
+        return (LegalAction(kind=ActionKind.NEXT_ROUND, seat=seat),)
+    if phase.value == "match_end":
+        # 终局：返回 NOOP（恒等）
         return (LegalAction(kind=ActionKind.NOOP, seat=seat),)
 
     return ()

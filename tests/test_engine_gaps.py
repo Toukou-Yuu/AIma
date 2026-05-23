@@ -362,10 +362,10 @@ class TestRonHandOver:
             raise AssertionError("expected error for invalid ron shape")
 
 
-# --- HAND_OVER → NOOP 测试 ---
+# --- HAND_OVER → NEXT_ROUND 测试 (H-24) ---
 
 class TestHandOverNoop:
-    """HAND_OVER 阶段 NOOP 路径。"""
+    """HAND_OVER 阶段 NEXT_ROUND 路径（H-24）。"""
 
     def _reach_hand_over(self) -> GameState:
         """走到 HAND_OVER 状态（东一局，seat1 荣和）。"""
@@ -388,17 +388,17 @@ class TestHandOverNoop:
         return result.new_state
 
     def test_hand_over_noop_new_round(self) -> None:
-        """HAND_OVER + NOOP → 新局（非终局）。"""
+        """HAND_OVER + NEXT_ROUND → 新局（非终局）。"""
         g = self._reach_hand_over()
         # 东一局，seat1（非亲家）和了 → 亲流，dealer_seat 轮转
         wall = tuple(build_deck())
-        result = apply(g, Action(ActionKind.NOOP, wall=wall))
+        result = apply(g, Action(ActionKind.NEXT_ROUND, wall=wall))  # H-24
         assert result.new_state.phase == GamePhase.IN_ROUND
         # 亲流：dealer_seat 从 0 变为 1
         assert result.new_state.table.dealer_seat == 1
 
     def test_hand_over_noop_match_end(self) -> None:
-        """HAND_OVER + NOOP → 终局（南四局亲流后）。"""
+        """HAND_OVER + NEXT_ROUND → 终局（南四局亲流后）。"""
         # 构造南四局的 table
         from kernel.table.model import PrevailingWind, RoundNumber
         table = initial_table_snapshot(
@@ -417,25 +417,25 @@ class TestHandOverNoop:
         g = apply(g, Action(ActionKind.PASS_CALL, seat=3)).new_state
         result = apply(g, Action(ActionKind.RON, seat=1))
         assert result.new_state.phase == GamePhase.HAND_OVER
-        # NOOP → 终局
-        result2 = apply(result.new_state, Action(ActionKind.NOOP))
+        # NEXT_ROUND → 终局
+        result2 = apply(result.new_state, Action(ActionKind.NEXT_ROUND))  # H-24
         assert result2.new_state.phase == GamePhase.MATCH_END
 
     def test_hand_over_noop_requires_wall(self) -> None:
-        """HAND_OVER + NOOP 无 wall 应报错。"""
+        """HAND_OVER + NEXT_ROUND 无 wall 应报错。"""
         g = self._reach_hand_over()
         try:
-            apply(g, Action(ActionKind.NOOP))
+            apply(g, Action(ActionKind.NEXT_ROUND))  # H-24
         except Exception:
             pass
         else:
-            raise AssertionError("expected error for NOOP without wall")
+            raise AssertionError("expected error for NEXT_ROUND without wall")
 
 
-# --- FLOWN → NOOP 测试 ---
+# --- FLOWN → NEXT_ROUND 测试 (H-24) ---
 
 class TestFlownNoop:
-    """FLOWN 阶段 NOOP 路径。"""
+    """FLOWN 阶段 NEXT_ROUND 路径（H-24）。"""
 
     def _make_flown_state(self, *, table=None) -> GameState:
         """构造 FLOWN 状态（手动设置）。"""
@@ -452,21 +452,21 @@ class TestFlownNoop:
         )
 
     def test_flown_noop_new_round(self) -> None:
-        """FLOWN + NOOP → 新局。"""
+        """FLOWN + NEXT_ROUND → 新局。"""
         g = self._make_flown_state()
         wall = tuple(build_deck())
-        result = apply(g, Action(ActionKind.NOOP, wall=wall))
+        result = apply(g, Action(ActionKind.NEXT_ROUND, wall=wall))  # H-24
         assert result.new_state.phase == GamePhase.IN_ROUND
 
     def test_flown_noop_match_end(self) -> None:
-        """FLOWN + NOOP → 终局（南四局）。"""
+        """FLOWN + NEXT_ROUND → 终局（南四局）。"""
         from kernel.table.model import PrevailingWind, RoundNumber
         table = initial_table_snapshot(
             prevailing_wind=PrevailingWind.SOUTH,
             round_number=RoundNumber.FOUR,
         )
         g = self._make_flown_state(table=table)
-        result = apply(g, Action(ActionKind.NOOP))
+        result = apply(g, Action(ActionKind.NEXT_ROUND))  # H-24
         assert result.new_state.phase == GamePhase.MATCH_END
 
 
@@ -777,7 +777,7 @@ class TestOpenMeld:
 # --- FLOWN NOOP tenpai 分支 ---
 
 class TestFlownNoopTenpai:
-    """FLOWN NOOP 的连庄/亲流分支。"""
+    """FLOWN NEXT_ROUND 的连庄/亲流分支 (H-24)。"""
 
     def test_flown_noop_dealer_tenpai_continue(self) -> None:
         """亲家听牌 → 连庄。"""
@@ -797,7 +797,7 @@ class TestFlownNoopTenpai:
             tenpai_result=tenpai_result,
         )
         wall = tuple(build_deck())
-        result = apply(g, Action(ActionKind.NOOP, wall=wall))
+        result = apply(g, Action(ActionKind.NEXT_ROUND, wall=wall))  # H-24
         assert result.new_state.phase == GamePhase.IN_ROUND
 
     def test_flown_noop_dealer_noten_advance(self) -> None:
@@ -818,7 +818,7 @@ class TestFlownNoopTenpai:
             tenpai_result=tenpai_result,
         )
         wall = tuple(build_deck())
-        result = apply(g, Action(ActionKind.NOOP, wall=wall))
+        result = apply(g, Action(ActionKind.NEXT_ROUND, wall=wall))  # H-24
         assert result.new_state.phase == GamePhase.IN_ROUND
         # 亲流：dealer_seat 轮转
         assert result.new_state.table.dealer_seat == 1
