@@ -324,6 +324,7 @@ def match_log_document(
     reasons: tuple[str | None, ...] | None = None,
     token_diagnostics: tuple[dict[str, Any] | None, ...] | None = None,
     players: tuple[dict[str, Any], ...] | None = None,
+    is_truncated: bool = False,  # P2-2: max_hands 截断标志
 ) -> dict[str, Any]:
     """组装 CLI/文件用的顶层牌谱 dict。"""
     doc = {
@@ -334,6 +335,7 @@ def match_log_document(
         "final_phase": final_phase,
         "actions": list(actions_wire),
         "events": list(events_wire),
+        "is_truncated": is_truncated,  # P2-2: 添加到输出
     }
     if reasons:
         doc["reasons"] = [r for r in reasons]

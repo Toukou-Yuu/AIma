@@ -443,9 +443,37 @@ class TestFlowIntegration:
         pass
 
     def test_four_kans_flow_integration(self) -> None:
-        """四杠流局集成测试。"""
-        # TODO: 构造四个杠的场景
-        pass
+        """四杠流局集成测试。
+
+        P1-2: 测试四杠散了判定逻辑。
+
+        场景 1: 四人分散四杠触发流局
+        场景 2: 同一玩家四杠不流局（四杠子）
+        场景 3: 部分玩家分散杠触发流局
+        """
+        # 场景 1: 四人各一杠，触发四杠散了
+        kan_counts = (1, 1, 1, 1)  # 每个玩家各 1 个杠
+        assert is_four_kans_flow(kan_counts) is True
+
+        # 场景 2: 同一玩家四杠，不触发流局（四杠子）
+        single_player_kans = (4, 0, 0, 0)  # seat 0 有 4 个杠
+        assert is_four_kans_flow(single_player_kans) is False
+
+        # 场景 3: 两玩家各两杠，触发流局
+        two_player_kans = (2, 2, 0, 0)
+        assert is_four_kans_flow(two_player_kans) is True
+
+        # 场景 4: 三玩家分散，触发流局
+        three_player_kans = (1, 1, 2, 0)
+        assert is_four_kans_flow(three_player_kans) is True
+
+        # 场景 5: 少于四杠，不触发
+        less_than_four = (1, 1, 1, 0)
+        assert is_four_kans_flow(less_than_four) is False
+
+        # 场景 6: 同一玩家三杠，另一玩家一杠，触发流局
+        mixed_kans = (3, 1, 0, 0)
+        assert is_four_kans_flow(mixed_kans) is True
 
     def test_haitei_draw_should_return_must_discard(self) -> None:
         """海底：DRAW 后应返回 MUST_DISCARD（非 FLOWN），给玩家自摸机会。

@@ -292,6 +292,7 @@ class RunResult:
     reasons: tuple[str | None, ...] = ()  # 每个动作的决策理由
     token_diagnostics: tuple[PromptDiagnostics | None, ...] = ()
     players: tuple[dict[str, Any], ...] = ()  # 对局玩家信息
+    is_truncated: bool = False  # P2-2: max_hands 截断标志
 
     def as_match_log(self) -> dict[str, Any]:
         """可 ``json.dump`` 的牌谱顶层结构。"""
@@ -309,6 +310,7 @@ class RunResult:
             reasons=self.reasons,
             token_diagnostics=token_diagnostics_wire,
             players=self.players,
+            is_truncated=self.is_truncated,  # P2-2: 添加到输出
         )
 
 
@@ -560,6 +562,7 @@ def run_llm_match(
     player_steps = 0
     hands_completed = 0  # 已完成的局数
     reason = "match_end"
+    is_truncated = False  # P2-2: max_hands 截断标志
 
     while True:
         # 检查结束条件（每局结束后）
@@ -571,6 +574,7 @@ def run_llm_match(
             should_end, end_reason = match_end.is_match_end(hands_completed, state.table.scores)
             if should_end:
                 reason = end_reason
+                is_truncated = True  # P2-2: MatchEndCondition 触发 = 截断
                 # Phase 4: 更新所有 Agent 的 stats
                 final_scores = state.table.scores
                 final_dealer = state.table.dealer_seat
@@ -589,6 +593,7 @@ def run_llm_match(
 
         if state.phase == GamePhase.MATCH_END:
             reason = "match_end"
+            is_truncated = False  # P2-2: kernel 自然结束 = 非截断
             final_scores = state.table.scores
             final_dealer = state.table.dealer_seat
             sorted_seats = sorted(
@@ -836,4 +841,5 @@ def run_llm_match(
         reasons=tuple(reasons_acc),
         token_diagnostics=tuple(token_diagnostics_acc),
         players=players_wire,
+        is_truncated=is_truncated,  # P2-2: 传递截断标志
     )
