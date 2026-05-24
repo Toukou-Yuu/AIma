@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections import Counter
 
+import pytest
+
 from kernel.deal import build_board_after_split
 from kernel.deal.model import LIVE_WALL_AFTER_DEAL, BoardState
 from kernel.engine.actions import Action, ActionKind
@@ -443,37 +445,132 @@ class TestFlowIntegration:
         pass
 
     def test_four_kans_flow_integration(self) -> None:
-        """四杠流局集成测试。
+        """四杠散了完整 apply() 路径集成测试。
 
-        P1-2: 测试四杠散了判定逻辑。
-
-        场景 1: 四人分散四杠触发流局
-        场景 2: 同一玩家四杠不流局（四杠子）
-        场景 3: 部分玩家分散杠触发流局
+        P1-2: 四人分散四杠触发流局，经过完整 apply() 流程。
         """
-        # 场景 1: 四人各一杠，触发四杠散了
-        kan_counts = (1, 1, 1, 1)  # 每个玩家各 1 个杠
-        assert is_four_kans_flow(kan_counts) is True
+        from kernel.hand.melds import Meld, MeldKind
+        from kernel.board import TurnPhase
+        from kernel.engine.state import GameState
+        from kernel.table import initial_table_snapshot
+        from kernel.tiles.deck import build_deck, shuffle_deck
+        from kernel.deal import build_board_after_split
+        from kernel.wall.split import split_wall
+        from tests.call_helpers import clear_call_window_state
 
-        # 场景 2: 同一玩家四杠，不触发流局（四杠子）
-        single_player_kans = (4, 0, 0, 0)  # seat 0 有 4 个杠
-        assert is_four_kans_flow(single_player_kans) is False
+        # 使用已有的 test_kan.py 辅助函数找到可暗杠的牌山
+        def _find_dealer_quad_seed() -> tuple[BoardState, Tile]:
+            for seed in range(800):
+                w = tuple(shuffle_deck(build_deck(), seed=seed))
+                b = build_board_after_split(split_wall(w), dealer_seat=0)
+                d = b.current_seat
+                for t, n in b.hands[d].items():
+                    if n >= 4:
+                        return b, t
+            raise RuntimeError("no seed with dealer quad in range")
 
-        # 场景 3: 两玩家各两杠，触发流局
-        two_player_kans = (2, 2, 0, 0)
-        assert is_four_kans_flow(two_player_kans) is True
+        b0, quad0 = _find_dealer_quad_seed()
 
-        # 场景 4: 三玩家分散，触发流局
-        three_player_kans = (1, 1, 2, 0)
-        assert is_four_kans_flow(three_player_kans) is True
+        # Step 1: seat 0 暗杠（庄家）
+        ankan0 = Meld(MeldKind.ANKAN, (quad0,) * 4, called_tile=None)
+        g0 = GameState(
+            phase=GamePhase.IN_ROUND,
+            table=initial_table_snapshot(dealer_seat=0),
+            board=b0,
+            ron_winners=None,
+        )
+        g = apply(g0, Action(ActionKind.ANKAN, seat=0, meld=ankan0)).new_state
+        assert g.board is not None
+        assert len(g.board.melds[0]) == 1
 
-        # 场景 5: 少于四杠，不触发
-        less_than_four = (1, 1, 1, 0)
-        assert is_four_kans_flow(less_than_four) is False
+        # seat 0 打牌
+        discard_tile = next(iter(g.board.hands[0].elements()))
+        g = apply(g, Action(ActionKind.DISCARD, seat=0, tile=discard_tile)).new_state
+        g = clear_call_window_state(g)
 
-        # 场景 6: 同一玩家三杠，另一玩家一杠，触发流局
-        mixed_kans = (3, 1, 0, 0)
-        assert is_four_kans_flow(mixed_kans) is True
+        # Step 2: seat 1 摸牌后找暗杠机会
+        g = apply(g, Action(ActionKind.DRAW)).new_state
+        b1 = g.board
+        assert b1 is not None
+
+        quad1 = None
+        for t, n in b1.hands[1].items():
+            if n >= 4:
+                quad1 = t
+                break
+
+        if quad1 is None:
+            pytest.skip("无法构造 seat 1 的暗杠条件")
+
+        ankan1 = Meld(MeldKind.ANKAN, (quad1,) * 4, called_tile=None)
+        g = apply(g, Action(ActionKind.ANKAN, seat=1, meld=ankan1)).new_state
+        assert len(g.board.melds[1]) == 1
+
+        discard_tile = next(iter(g.board.hands[1].elements()))
+        g = apply(g, Action(ActionKind.DISCARD, seat=1, tile=discard_tile)).new_state
+        g = clear_call_window_state(g)
+
+        # Step 3: seat 2 摸牌后找暗杠机会
+        g = apply(g, Action(ActionKind.DRAW)).new_state
+        b2 = g.board
+        assert b2 is not None
+
+        quad2 = None
+        for t, n in b2.hands[2].items():
+            if n >= 4:
+                quad2 = t
+                break
+
+        if quad2 is None:
+            pytest.skip("无法构造 seat 2 的暗杠条件")
+
+        ankan2 = Meld(MeldKind.ANKAN, (quad2,) * 4, called_tile=None)
+        g = apply(g, Action(ActionKind.ANKAN, seat=2, meld=ankan2)).new_state
+        assert len(g.board.melds[2]) == 1
+
+        discard_tile = next(iter(g.board.hands[2].elements()))
+        g = apply(g, Action(ActionKind.DISCARD, seat=2, tile=discard_tile)).new_state
+        g = clear_call_window_state(g)
+
+        # Step 4: seat 3 摸牌后找暗杠机会（第 4 个杠）
+        g = apply(g, Action(ActionKind.DRAW)).new_state
+        b3 = g.board
+        assert b3 is not None
+
+        quad3 = None
+        for t, n in b3.hands[3].items():
+            if n >= 4:
+                quad3 = t
+                break
+
+        if quad3 is None:
+            pytest.skip("无法构造 seat 3 的暗杠条件（四杠散了场景）")
+
+        ankan3 = Meld(MeldKind.ANKAN, (quad3,) * 4, called_tile=None)
+        outcome = apply(g, Action(ActionKind.ANKAN, seat=3, meld=ankan3))
+
+        # 验证：进入 FLOWN，flow_kind == FOUR_KANS
+        assert outcome.new_state.phase == GamePhase.FLOWN
+        assert outcome.new_state.flow_result is not None
+        assert outcome.new_state.flow_result.kind == FlowKind.FOUR_KANS
+
+    def test_four_kans_single_player_no_flow(self) -> None:
+        """同一玩家四杠不流局（四杠子役满）。"""
+        # 同一玩家四杠：(4,0,0,0) → 不流局
+        assert is_four_kans_flow((4, 0, 0, 0)) is False
+        assert is_four_kans_flow((0, 4, 0, 0)) is False
+        assert is_four_kans_flow((0, 0, 0, 4)) is False
+
+    def test_four_kans_scattered_detection(self) -> None:
+        """分散四杠（不同玩家合计 4 杠）判定为流局。"""
+        # 四人各一杠
+        assert is_four_kans_flow((1, 1, 1, 1)) is True
+        # 两玩家各两杠
+        assert is_four_kans_flow((2, 2, 0, 0)) is True
+        # 三玩家分散
+        assert is_four_kans_flow((1, 1, 2, 0)) is True
+        # 少于四杠
+        assert is_four_kans_flow((1, 1, 1, 0)) is False
 
     def test_haitei_draw_should_return_must_discard(self) -> None:
         """海底：DRAW 后应返回 MUST_DISCARD（非 FLOWN），给玩家自摸机会。

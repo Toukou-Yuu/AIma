@@ -135,8 +135,17 @@ def _finalize_agents_episode(
     match_contexts: dict[int, MatchContext],
     seat_clients: dict[int, CompletionClient] | None = None,
     dry_run: bool = False,  # P2-1: 添加 dry_run 参数
+    persist: bool | None = None,  # P2-1: 添加 persist 参数，覆盖 dry_run 默认行为
 ) -> None:
-    """局结束时更新所有 Agent 的 memory 并关闭 EpisodeContext."""
+    """局结束时更新所有 Agent 的 memory 并关闭 EpisodeContext.
+
+    Args:
+        persist: 显式控制持久化。None 表示跟随 dry_run（dry_run=False 时持久化）；
+                 True 表示强制持久化（即使 dry_run）；False 表示强制不持久化。
+    """
+    # 计算实际是否持久化：persist 显式设置时覆盖 dry_run
+    should_persist = persist if persist is not None else not dry_run
+
     for ev in events:
         if isinstance(ev, (HandOverEvent, FlowEvent)):
             for seat in range(4):
@@ -146,8 +155,8 @@ def _finalize_agents_episode(
                     # 关闭本局（更新 MatchContext 的跨局统计）
                     match_contexts[seat].close_episode(seat_contexts[seat])
                     client = seat_clients.get(seat) if seat_clients else None
-                    # P2-1: dry-run 不持久化 memory
-                    if not dry_run:
+                    # P2-1: 根据 persist/dry_run 决定是否持久化 memory
+                    if should_persist:
                         seat_agents[seat].update_memory(seat_contexts[seat], client)
 
 
@@ -378,6 +387,7 @@ def run_llm_match(
     seat_llm_configs: dict[int, LLMClientConfig],
     seat_clients: dict[int, CompletionClient] | None = None,
     dry_run: bool = False,
+    persist: bool | None = None,  # P2-1: 显式控制持久化，覆盖 dry_run 默认
     verbose: bool = False,
     session_audit: bool = False,
     simple_log_file: TextIO | None = None,
@@ -583,9 +593,10 @@ def run_llm_match(
                     key=lambda s: (-final_scores[s], (s - final_dealer) % 4)
                 )
                 placements = {seat: rank + 1 for rank, seat in enumerate(sorted_seats)}
-                # P2-1: dry-run 不持久化 stats
+                # P2-1: 根据 persist 参数决定是否持久化 stats
+                should_persist_stats = persist if persist is not None else not dry_run
                 for seat, agent in seat_agents.items():
-                    if agent.player_id is not None and seat in seat_contexts and not dry_run:
+                    if agent.player_id is not None and seat in seat_contexts and should_persist_stats:
                         agent.update_stats(seat_contexts[seat], placements[seat])
                 shared_journal.archive_current_hand()
                 # 触发 MATCH_END
@@ -771,6 +782,7 @@ def run_llm_match(
                 match_contexts,
                 seat_clients,
                 dry_run=dry_run,  # P2-1: 传递 dry_run 参数
+                persist=persist,  # P2-1: 传递 persist 参数
             )
             state = step_out.new_state
             _write_simple_snapshot(

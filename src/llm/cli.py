@@ -222,6 +222,21 @@ def _merge_config(
             sys.exit(2)
         result.match_end = {"type": "hands", "value": 1, "allow_negative": False}
 
+    # P2-1: 特殊处理 persist/no_persist 参数
+    # --persist 强制开启持久化，--no-persist 强制关闭持久化
+    # 两者互斥，若同时设置则报错
+    persist_cli = getattr(cli_args, "persist", None)
+    no_persist_cli = getattr(cli_args, "no_persist", None)
+    if persist_cli and no_persist_cli:
+        print("--persist 和 --no-persist 不能同时使用", file=sys.stderr)
+        sys.exit(2)
+    if persist_cli:
+        result.persist = True
+    elif no_persist_cli:
+        result.persist = False
+    else:
+        result.persist = None  # 默认行为：跟随 dry_run
+
     return result
 
 
@@ -310,6 +325,7 @@ def _cmd_watch_dry_run(
     show_reason: bool,
     match_end: dict[str, Any] | None = None,
     dry_run: bool = True,
+    persist: bool | None = None,  # P2-1: 显式控制持久化
     players: list[dict[str, Any]] | None = None,
     kernel_config_path: str = "configs/aima_kernel.yaml",
     log_session: str | None = None,
@@ -398,6 +414,7 @@ def _cmd_watch_dry_run(
             match_end=me,
             seat_clients=seat_clients,
             dry_run=dry_run,
+            persist=persist,  # P2-1: 传递 persist 参数
             verbose=False,
             session_audit=session_audit,
             simple_log_file=simple_log_file,
@@ -476,6 +493,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         default=None,
         help="不调用 API；每步取 legal_actions 首项（确定性）",
+    )
+    p.add_argument(
+        "--persist",
+        action="store_true",
+        default=None,
+        help="强制开启持久化（memory/stats），覆盖 dry-run 默认行为",
+    )
+    p.add_argument(
+        "--no-persist",
+        action="store_true",
+        default=None,
+        help="强制关闭持久化（memory/stats），覆盖 dry-run 默认行为",
     )
     p.add_argument(
         "--log-json",
@@ -617,6 +646,7 @@ def main(argv: list[str] | None = None) -> int:
                 wall_file=cfg.wall_file,
                 match_end=cfg.match_end,
                 dry_run=cfg.dry_run,
+                persist=cfg.persist,  # P2-1: 传递 persist 参数
                 request_delay=cfg.request_delay,
                 history_budget=cfg.history_budget,
                 context_scope=cfg.context_scope,
@@ -693,6 +723,7 @@ def main(argv: list[str] | None = None) -> int:
                 match_end=me,
                 seat_clients=seat_clients,
                 dry_run=cfg.dry_run,
+                persist=cfg.persist,  # P2-1: 传递 persist 参数
                 verbose=cfg.verbose,
                 session_audit=cfg.session_audit or log_stem is not None,
                 simple_log_file=simple_fp,
@@ -714,6 +745,7 @@ def main(argv: list[str] | None = None) -> int:
             match_end=me,
             seat_clients=seat_clients,
             dry_run=cfg.dry_run,
+            persist=cfg.persist,  # P2-1: 传递 persist 参数
             verbose=cfg.verbose,
             session_audit=cfg.session_audit or log_stem is not None,
             simple_log_file=None,
