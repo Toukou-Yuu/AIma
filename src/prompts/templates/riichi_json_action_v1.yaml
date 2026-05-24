@@ -1,0 +1,73 @@
+# Riichi Mahjong JSON Action Prompt Template v1
+# For Japanese Riichi Mahjong with JSON action output format
+
+template_id: riichi_json_action_v1
+version: "1.0.0"
+output_format: json_action
+
+budget:
+  max_prompt_tokens: null
+  truncation_policy: drop_oldest_public_events
+
+sections:
+  # System prompt with riichi mahjong rules
+  - id: system_prompt
+    enabled: true
+    variant: riichi
+    renderer: system_prompt
+    options:
+      role: "Japanese Riichi Mahjong player"
+    max_tokens: null
+
+  # Current game state
+  - id: game_state
+    enabled: true
+    renderer: game_state
+    max_tokens: 500
+
+  # Player's hand
+  - id: hand
+    enabled: true
+    renderer: hand
+    max_tokens: 200
+
+  # River (discards)
+  - id: river
+    enabled: true
+    renderer: river
+    max_items: 50  # Limit number of river entries
+    max_tokens: 400
+
+  # Dora indicators
+  - id: dora
+    enabled: true
+    renderer: dora
+    max_tokens: 100
+
+  # Riichi state for all players
+  - id: riichi_state
+    enabled: true
+    renderer: riichi_state
+    max_tokens: 100
+
+  # Available legal actions
+  - id: legal_actions
+    enabled: true
+    renderer: legal_actions
+    max_items: 30  # Limit number of actions shown
+    max_tokens: 600
+
+  # Memory section (optional, disabled by default)
+  # Enable when memory mode is "passive"
+  - id: memory
+    enabled: false
+    renderer: memory
+    source: null
+    max_tokens: 500
+
+  # Output format instructions
+  - id: output_format
+    enabled: true
+    variant: json_action
+    renderer: output_format
+    max_tokens: 300

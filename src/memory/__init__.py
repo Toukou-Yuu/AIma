@@ -1,5 +1,5 @@
 """Memory module: layered memory stores, readers, writers."""
 
-from memory.schema import MemorySpec
+from memory.schema import MemoryLayer, MemorySpec
 
-__all__ = ["MemorySpec"]
+__all__ = ["MemoryLayer", "MemorySpec"]

@@ -1,2 +1,11 @@
 """Model backend implementations."""
-__all__: list[str] = []
+
+from models.backends.dummy import DummyBackend
+from models.backends.mock import MockBackend
+from models.backends.openai_compatible import OpenAICompatibleBackend
+
+__all__ = [
+    "DummyBackend",
+    "MockBackend",
+    "OpenAICompatibleBackend",
+]

@@ -15,6 +15,8 @@ from agents.components.grounding import ActionGrounder
 from agents.components.observation import ObservationBuilder
 from agents.components.parser import OutputParser
 from agents.components.prompt import PromptRenderer
+from context.builders import ContextBuilder
+from memory.manager import MemoryManager
 
 if TYPE_CHECKING:
     from agents.schema import AgentSpec
@@ -30,6 +32,8 @@ class PipelineComponents:
         fallback: 回退策略
         observation: 观测构建器
         prompt: 提示词渲染器
+        context: 上下文构建器（可选）
+        memory: 记忆管理器（可选）
     """
 
     parser: OutputParser
@@ -37,6 +41,8 @@ class PipelineComponents:
     fallback: FallbackStrategy
     observation: ObservationBuilder
     prompt: PromptRenderer
+    context: ContextBuilder | None = None
+    memory: MemoryManager | None = None
 
 
 def build_components(spec: "AgentSpec", seed: int) -> PipelineComponents:
@@ -52,10 +58,22 @@ def build_components(spec: "AgentSpec", seed: int) -> PipelineComponents:
     # 解析回退策略
     fallback_kind = FallbackKind(spec.fallback)
 
+    # 构建上下文构建器（除非 scope=stateless）
+    context_builder: ContextBuilder | None = None
+    if spec.context.scope != "stateless":
+        context_builder = ContextBuilder(spec.context)
+
+    # 构建记忆管理器（除非 mode=off）
+    memory_manager: MemoryManager | None = None
+    if spec.memory.mode != "off":
+        memory_manager = MemoryManager(spec.memory)
+
     return PipelineComponents(
         parser=OutputParser(),
         grounder=ActionGrounder(),
         fallback=FallbackStrategy(kind=fallback_kind, seed=seed),
         observation=ObservationBuilder(),
         prompt=PromptRenderer(),
+        context=context_builder,
+        memory=memory_manager,
     )

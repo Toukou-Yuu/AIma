@@ -43,7 +43,8 @@ def register_builtin_policies() -> None:
     from policies.random_policy import RandomPolicy
     from policies.fixed_heuristic_policy import FixedHeuristicPolicy
     from policies.llm_policy import LLMPolicy
-    from llm.adapters.dummy import DummyBackend
+    from models.registry import build_backend
+    from models.schema import ModelSpec
 
     # Idempotent: skip if already registered
     if "first_legal" not in REGISTRY._factories:
@@ -59,6 +60,8 @@ def register_builtin_policies() -> None:
                 policy_id=spec.id,
                 spec=spec.agent,  # AgentSpec 必须由调用方提供
                 seed=seed,
-                client=DummyBackend(response="pass"),  # v4.0: stub backend
+                client=build_backend(spec.agent.model) if spec.agent else build_backend(
+                    ModelSpec(backend="dummy", model_name="stub")
+                ),
             ),
         )
