@@ -347,11 +347,12 @@ class TestTenpaiResult:
         assert len(result.tenpai_seats) == 0
         assert result.tenpai_types == ("noten", "noten", "noten", "noten")
 
+    @pytest.mark.skip(reason="听牌结果计算测试待实现")
     def test_compute_tenpai_result_some_tenpai(self) -> None:
         """部分听牌。"""
         # 构造一个简单听牌的牌型
         # 这里需要一个实际听牌的例子
-        pass  # TODO: 构造具体听牌牌型
+        pass
 
 
 class TestSettleFlow:
@@ -439,9 +440,9 @@ class TestFlowIntegration:
             # 其他阶段：退出
             break
 
+    @pytest.mark.skip(reason="四家立直集成测试待实现，单元测试已覆盖四家立直判定逻辑")
     def test_four_riichi_flow_integration(self) -> None:
         """四家立直流局集成测试。"""
-        # TODO: 构造四家立直的场景
         pass
 
     def test_four_kans_flow_integration(self) -> None:
@@ -811,6 +812,7 @@ class TestFlowMangan:
 class TestThreeRonFlowIntegration:
     """三家和流局集成测试。"""
 
+    @pytest.mark.skip(reason="三家和集成测试待实现，单元测试已覆盖三家和判定逻辑")
     def test_three_ron_flow_when_multiple_ron_disabled(self) -> None:
         """一炮多响=false 时，三家和触发流局。"""
         from kernel.config import MahjongConfig
@@ -832,8 +834,9 @@ class TestThreeRonFlowIntegration:
         # 2. 设置 config.allow_multiple_ron = False
         # 3. 调用 apply
         # 4. 预期：返回 FLOWN 阶段
-        pass  # 需要更复杂的 board 构造
+        pass
 
+    @pytest.mark.skip(reason="三家和集成测试待实现，单元测试已覆盖三家和判定逻辑")
     def test_three_ron_settlement_when_multiple_ron_enabled(self) -> None:
         """一炮多响=true 时，三家和走正常结算。"""
         from kernel.config import MahjongConfig
@@ -851,5 +854,4 @@ class TestThreeRonFlowIntegration:
         # 2. 设置 config.allow_multiple_ron = True
         # 3. 调用 apply
         # 4. 预期：返回 HAND_OVER 阶段
-        pass  # 需要更复杂的 board 构造
         pass
