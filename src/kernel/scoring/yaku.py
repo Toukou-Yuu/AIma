@@ -862,9 +862,9 @@ def _is_chihou(board: BoardState, winner: int, is_tsumo: bool, dealer_seat: int 
     """
     if not is_tsumo:
         return False
-    if board.current_seat == dealer_seat:  # 亲家不算地和
+    # P1-1: 使用 winner 参数判断，而非 board.current_seat
+    if winner == dealer_seat:  # 庄家不算地和（庄家是天和）
         return False
-    # P1-1: 地和全席位支持
     # 首巡窗口：庄家已打第一张 + 和了者无舍牌 + 无鸣牌
     # river 包含当前巡的舍牌，南家和时 river 有 1 张，西家时有 2 张，北家时有 3 张
     if len(board.river) < 1:  # 庄家还没打出第一张
