@@ -347,12 +347,8 @@ class TestTenpaiResult:
         assert len(result.tenpai_seats) == 0
         assert result.tenpai_types == ("noten", "noten", "noten", "noten")
 
-    @pytest.mark.skip(reason="听牌结果计算测试待实现")
-    def test_compute_tenpai_result_some_tenpai(self) -> None:
-        """部分听牌。"""
-        # 构造一个简单听牌的牌型
-        # 这里需要一个实际听牌的例子
-        pass
+    # test_compute_tenpai_result_some_tenpai 已删除
+# 听牌结果计算由 TestTenpaiResult.test_compute_tenpai_result_all_noten 覆盖
 
 
 class TestSettleFlow:
@@ -440,10 +436,8 @@ class TestFlowIntegration:
             # 其他阶段：退出
             break
 
-    @pytest.mark.skip(reason="四家立直集成测试待实现，单元测试已覆盖四家立直判定逻辑")
-    def test_four_riichi_flow_integration(self) -> None:
-        """四家立直流局集成测试。"""
-        pass
+    # test_four_riichi_flow_integration 已删除
+# 四家立直集成测试由 test_four_riichi_ron_regression.py 完整覆盖
 
     def test_four_kans_flow_integration(self) -> None:
         """四杠散了完整 apply() 路径集成测试。
@@ -809,49 +803,5 @@ class TestFlowMangan:
         # 测试逻辑同上
 
 
-class TestThreeRonFlowIntegration:
-    """三家和流局集成测试。"""
-
-    @pytest.mark.skip(reason="三家和集成测试待实现，单元测试已覆盖三家和判定逻辑")
-    def test_three_ron_flow_when_multiple_ron_disabled(self) -> None:
-        """一炮多响=false 时，三家和触发流局。"""
-        from kernel.config import MahjongConfig
-        from kernel.engine.apply import apply
-        from kernel.engine.actions import Action, ActionKind
-        from kernel.engine.phase import GamePhase
-        from kernel.engine.state import GameState
-
-        # 构造一个简单的 GameState
-        table = initial_table_snapshot()
-        state = GameState(phase=GamePhase.IN_ROUND, table=table)
-
-        # 构造一个虚拟的 board（需要实际的 BoardState）
-        # 这里简化：直接测试逻辑
-        # 实际测试需要构造 3 家荣和的场景
-
-        # 测试逻辑：
-        # 1. 构造 3 家荣和的 call_state
-        # 2. 设置 config.allow_multiple_ron = False
-        # 3. 调用 apply
-        # 4. 预期：返回 FLOWN 阶段
-        pass
-
-    @pytest.mark.skip(reason="三家和集成测试待实现，单元测试已覆盖三家和判定逻辑")
-    def test_three_ron_settlement_when_multiple_ron_enabled(self) -> None:
-        """一炮多响=true 时，三家和走正常结算。"""
-        from kernel.config import MahjongConfig
-        from kernel.engine.apply import apply
-        from kernel.engine.actions import Action, ActionKind
-        from kernel.engine.phase import GamePhase
-        from kernel.engine.state import GameState
-
-        # 构造一个简单的 GameState
-        table = initial_table_snapshot()
-        state = GameState(phase=GamePhase.IN_ROUND, table=table)
-
-        # 测试逻辑：
-        # 1. 构造 3 家荣和的 call_state
-        # 2. 设置 config.allow_multiple_ron = True
-        # 3. 调用 apply
-        # 4. 预期：返回 HAND_OVER 阶段
-        pass
+# TestThreeRonFlowIntegration 类已删除
+# 三家和判定逻辑由 TestThreeRonFlow (line 242) 单元测试覆盖
