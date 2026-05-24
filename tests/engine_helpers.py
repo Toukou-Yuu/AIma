@@ -298,6 +298,65 @@ def shimocha_seat(discarder: int) -> int:
     return (discarder + 1) % 4
 
 
+def make_four_kans_wall() -> tuple[Tile, ...]:
+    """构造固定牌山用于四杠散了测试：四家各有 4 张相同牌可暗杠。
+
+    牌山分配顺序（dealer=0）：
+    - seat 0: live[0:4, 16:20, 32:36, 48, 52]
+    - seat 1: live[4:8, 20:24, 36:40, 49]
+    - seat 2: live[8:12, 24:28, 40:44, 50]
+    - seat 3: live[12:16, 28:32, 44:48, 51]
+
+    构造：
+    - seat 0: MAN1×4（放在 live[0:4])
+    - seat 1: MAN9×4（放在 live[4:8])
+    - seat 2: PIN1×4（放在 live[8:12])
+    - seat 3: PIN9×4（放在 live[12:16])
+
+    其余位置填充标准牌山剩余牌（随机但确定性）。
+    """
+    # 构造标准牌山作为填充来源
+    filler_deck = list(build_deck())
+    # 移除已使用的特殊牌
+    to_remove = [
+        Tile(Suit.MAN, 1), Tile(Suit.MAN, 1), Tile(Suit.MAN, 1), Tile(Suit.MAN, 1),
+        Tile(Suit.MAN, 9), Tile(Suit.MAN, 9), Tile(Suit.MAN, 9), Tile(Suit.MAN, 9),
+        Tile(Suit.PIN, 1), Tile(Suit.PIN, 1), Tile(Suit.PIN, 1), Tile(Suit.PIN, 1),
+        Tile(Suit.PIN, 9), Tile(Suit.PIN, 9), Tile(Suit.PIN, 9), Tile(Suit.PIN, 9),
+    ]
+    filler_counter = Counter(filler_deck)
+    for t in to_remove:
+        filler_counter[t] -= 1
+        if filler_counter[t] == 0:
+            del filler_counter[t]
+    filler = list(filler_counter.elements())
+
+    # 构造完整牌山
+    wall = [None] * 136
+
+    # seat 0 的 4 张 MAN1
+    for i in range(4):
+        wall[i] = Tile(Suit.MAN, 1)
+    # seat 1 的 4 张 MAN9
+    for i in range(4, 8):
+        wall[i] = Tile(Suit.MAN, 9)
+    # seat 2 的 4 张 PIN1
+    for i in range(8, 12):
+        wall[i] = Tile(Suit.PIN, 1)
+    # seat 3 的 4 张 PIN9
+    for i in range(12, 16):
+        wall[i] = Tile(Suit.PIN, 9)
+
+    # 填充剩余位置
+    filler_idx = 0
+    for i in range(136):
+        if wall[i] is None:
+            wall[i] = filler[filler_idx]
+            filler_idx += 1
+
+    return tuple(wall)
+
+
 def make_chi_pon_daiminkan_board(
     *,
     dealer: int = 0,

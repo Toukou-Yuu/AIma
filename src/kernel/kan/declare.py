@@ -191,7 +191,7 @@ def apply_ankan(board: BoardState, seat: int, meld: Meld) -> BoardState:
                         riichi_furiten=intermediate.riichi_furiten,
                     )
 
-    # 无国士例外：正常岭上摸牌流程
+    # 无国士例外：检查四杠流局条件
     new_concealed = remove_tiles(board.hands[seat], meld.tiles)
     new_melds = list(board.melds)
     new_melds[seat] = board.melds[seat] + (meld,)
@@ -217,6 +217,20 @@ def apply_ankan(board: BoardState, seat: int, meld: Meld) -> BoardState:
         temporary_furiten=board.temporary_furiten,
         riichi_furiten=board.riichi_furiten,
     )
+
+    # 四杠流局检测：在岭上摸牌前检查
+    # 如果开杠后总计 4 杠且分散在不同玩家，触发四杠散了流局
+    # 此时不应岭上摸牌和翻开指示牌
+    from kernel.flow.transitions import is_four_kans_flow
+    kan_counts = tuple(
+        sum(1 for m in seat_melds if m.kind in (MeldKind.ANKAN, MeldKind.DAIMINKAN, MeldKind.KAKAN))
+        for seat_melds in intermediate.melds
+    )
+    if is_four_kans_flow(kan_counts):
+        # 四杠散了：直接返回 intermediate，不岭上摸牌
+        # apply.py 会检测并触发流局
+        return intermediate
+
     return apply_after_kan_rinshan_draw(intermediate, seat)
 
 

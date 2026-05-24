@@ -453,23 +453,25 @@ class TestFlowIntegration:
         from kernel.board import TurnPhase
         from kernel.engine.state import GameState
         from kernel.table import initial_table_snapshot
-        from kernel.tiles.deck import build_deck, shuffle_deck
         from kernel.deal import build_board_after_split
         from kernel.wall.split import split_wall
         from tests.call_helpers import clear_call_window_state
+        from tests.engine_helpers import make_four_kans_wall
 
-        # 使用已有的 test_kan.py 辅助函数找到可暗杠的牌山
-        def _find_dealer_quad_seed() -> tuple[BoardState, Tile]:
-            for seed in range(800):
-                w = tuple(shuffle_deck(build_deck(), seed=seed))
-                b = build_board_after_split(split_wall(w), dealer_seat=0)
-                d = b.current_seat
-                for t, n in b.hands[d].items():
-                    if n >= 4:
-                        return b, t
-            raise RuntimeError("no seed with dealer quad in range")
+        # 使用固定牌山：四家各有 4 张相同牌可暗杠
+        wall = make_four_kans_wall()
+        b0 = build_board_after_split(split_wall(wall), dealer_seat=0)
 
-        b0, quad0 = _find_dealer_quad_seed()
+        # 验证配牌结果
+        assert b0.hands[0][Tile(Suit.MAN, 1)] >= 4, "seat 0 应有 4 张一万"
+        assert b0.hands[1][Tile(Suit.MAN, 9)] >= 4, "seat 1 应有 4 张九万"
+        assert b0.hands[2][Tile(Suit.PIN, 1)] >= 4, "seat 2 应有 4 张一筒"
+        assert b0.hands[3][Tile(Suit.PIN, 9)] >= 4, "seat 3 应有 4 张九筒"
+
+        quad0 = Tile(Suit.MAN, 1)
+        quad1 = Tile(Suit.MAN, 9)
+        quad2 = Tile(Suit.PIN, 1)
+        quad3 = Tile(Suit.PIN, 9)
 
         # Step 1: seat 0 暗杠（庄家）
         ankan0 = Meld(MeldKind.ANKAN, (quad0,) * 4, called_tile=None)
@@ -488,19 +490,10 @@ class TestFlowIntegration:
         g = apply(g, Action(ActionKind.DISCARD, seat=0, tile=discard_tile)).new_state
         g = clear_call_window_state(g)
 
-        # Step 2: seat 1 摸牌后找暗杠机会
+        # Step 2: seat 1 摸牌后暗杠
         g = apply(g, Action(ActionKind.DRAW)).new_state
         b1 = g.board
         assert b1 is not None
-
-        quad1 = None
-        for t, n in b1.hands[1].items():
-            if n >= 4:
-                quad1 = t
-                break
-
-        if quad1 is None:
-            pytest.skip("无法构造 seat 1 的暗杠条件")
 
         ankan1 = Meld(MeldKind.ANKAN, (quad1,) * 4, called_tile=None)
         g = apply(g, Action(ActionKind.ANKAN, seat=1, meld=ankan1)).new_state
@@ -510,19 +503,10 @@ class TestFlowIntegration:
         g = apply(g, Action(ActionKind.DISCARD, seat=1, tile=discard_tile)).new_state
         g = clear_call_window_state(g)
 
-        # Step 3: seat 2 摸牌后找暗杠机会
+        # Step 3: seat 2 摸牌后暗杠
         g = apply(g, Action(ActionKind.DRAW)).new_state
         b2 = g.board
         assert b2 is not None
-
-        quad2 = None
-        for t, n in b2.hands[2].items():
-            if n >= 4:
-                quad2 = t
-                break
-
-        if quad2 is None:
-            pytest.skip("无法构造 seat 2 的暗杠条件")
 
         ankan2 = Meld(MeldKind.ANKAN, (quad2,) * 4, called_tile=None)
         g = apply(g, Action(ActionKind.ANKAN, seat=2, meld=ankan2)).new_state
@@ -532,19 +516,10 @@ class TestFlowIntegration:
         g = apply(g, Action(ActionKind.DISCARD, seat=2, tile=discard_tile)).new_state
         g = clear_call_window_state(g)
 
-        # Step 4: seat 3 摸牌后找暗杠机会（第 4 个杠）
+        # Step 4: seat 3 摸牌后暗杠（第 4 个杠）→ 触发四杠散了流局
         g = apply(g, Action(ActionKind.DRAW)).new_state
         b3 = g.board
         assert b3 is not None
-
-        quad3 = None
-        for t, n in b3.hands[3].items():
-            if n >= 4:
-                quad3 = t
-                break
-
-        if quad3 is None:
-            pytest.skip("无法构造 seat 3 的暗杠条件（四杠散了场景）")
 
         ankan3 = Meld(MeldKind.ANKAN, (quad3,) * 4, called_tile=None)
         outcome = apply(g, Action(ActionKind.ANKAN, seat=3, meld=ankan3))
