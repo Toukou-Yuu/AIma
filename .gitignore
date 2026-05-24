@@ -71,3 +71,6 @@ configs/players/*/stats.json
 # 玩家对话日志（调试用，不提交）
 configs/players/*/conversations/
 package.sh
+
+# Claude 本地技能链接
+.claude/skills/
