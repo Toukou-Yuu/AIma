@@ -101,3 +101,16 @@ subprocess.run(["python", "-m", "llm", ...], env=env)
 - 回归测试：文件头部注释说明 BUG 根因
 - 使用 `Counter[Tile]` 构造牌形
 - 异常测试使用 `pytest.raises(Exception, match="pattern")`
+
+## 稳定性 Gate
+
+dry-run 稳定性测试分两档：
+
+|档位 | Seeds | 用途 | 命令 |
+|------|-------|------|------|
+| Fast | 10 | 日常开发、快速回归 | `AIMA_STABILITY_SEEDS=10 pytest -q tests/test_runner_dry_run_stability.py` |
+| Full | 100 | 版本冻结、论文实验前验收 | `AIMA_STABILITY_SEEDS=100 pytest -q tests/test_runner_dry_run_stability.py -m slow` |
+
+默认为 10 seeds（约 2-3 分钟）。正式验收前必须跑一次 100 seeds full gate。
+
+失败时输出：seed、phase、reason、kernel_steps、player_steps、replay path。

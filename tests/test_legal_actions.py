@@ -147,10 +147,12 @@ class TestLegalActions:
         assert actions[0].seat == seat
 
     def test_legal_actions_hand_over(self) -> None:
-        """测试 HAND_OVER 阶段的合法动作。"""
-        # 简化：HAND_OVER 阶段只能 NOOP
-        # 实际测试需要完整的和了流程
-        pass
+        """测试 HAND_OVER 阶段的合法动作。
+
+        H-28: HAND_OVER → NEXT_ROUND 推进下一局。
+        该语义由 test_llm_runner_next_round.py 覆盖，此处不再重复构造。
+        """
+        pytest.skip("HAND_OVER → NEXT_ROUND 由 test_llm_runner_next_round.py 覆盖")
 
     def test_legal_actions_riichi_only_tsumogiri_discard(self) -> None:
         """已立直时打牌枚举仅含摸切（上一张自摸），避免与 ``apply_discard`` 不一致。"""

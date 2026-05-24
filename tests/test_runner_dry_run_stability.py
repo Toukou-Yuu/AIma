@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,7 @@ from tests.llm_test_utils import load_test_runtime_config, load_test_seat_llm_co
 
 pytestmark = pytest.mark.slow
 
-NUM_SEEDS = 100  # Full run per hotfix requirement
+NUM_SEEDS = int(os.environ.get("AIMA_STABILITY_SEEDS", "10"))  # 默认 10，正式验收设 100
 MAX_HANDS = 8
 MAX_KERNEL_STEPS = 6000  # Safety limit (typical: ~500-700 steps/hand, max_hands=8 → ~6000)
 SUCCESS_REASONS = ("match_end", "hands_completed:8")

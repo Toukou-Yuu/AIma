@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from collections import Counter
 from dataclasses import replace
 
@@ -246,8 +247,7 @@ class TestBoardAfterRonWinners:
         except ValueError:
             pass
 
+    @pytest.mark.skip(reason="非法 BoardState 无法通过构造器验证；该路径由 call-window 上层测试覆盖")
     def test_no_ron_claimants_via_direct_call(self) -> None:
         """finished + empty ron_claimants 被 validate_board_state 拦截，
         但 board_after_ron_winners 也检查此条件（行 371）。"""
-        # 无法构造非法 board（validate_board_state 先拦截），跳过
-        pass
