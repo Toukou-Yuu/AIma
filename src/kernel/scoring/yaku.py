@@ -13,6 +13,30 @@ from kernel.tiles.key import logical_counter, tile_key  # H-15: 赤五归一化
 from kernel.win_shape.decompose import menzen_peikou_level
 from kernel.win_shape.pinfu import pinfu_eligible
 
+# P0-1: 役满标签集合 - 役满不计宝牌、赤宝、里宝
+YAKUMAN_LABELS = frozenset([
+    "大三元",
+    "四暗刻单骑",
+    "四暗刻",
+    "国士无双十三面",
+    "国士无双",
+    "清老头",
+    "字一色",
+    "绿一色",
+    "纯正九莲宝灯",
+    "九莲宝灯",
+    "四杠子",
+    "大四喜",
+    "小四喜",
+    "天和",
+    "地和",
+])
+
+
+def is_yakuman(labels: tuple[str, ...]) -> bool:
+    """P0-1: 判断是否为役满手牌（任意标签在役满集合中）。"""
+    return any(label in YAKUMAN_LABELS for label in labels)
+
 
 def _full_tile_counter(
     concealed: Counter[Tile],

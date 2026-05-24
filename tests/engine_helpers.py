@@ -298,6 +298,67 @@ def shimocha_seat(discarder: int) -> int:
     return (discarder + 1) % 4
 
 
+def make_custom_wall_for_hand(
+    target_hand: Counter[Tile],
+    target_seat: int = 0,
+    dealer: int = 0,
+    revealed_indicator: Tile | None = None,
+) -> tuple[Tile, ...]:
+    """构造牌山确保 target_seat 可以拿到 target_hand。
+
+    牌山分配逻辑（dealer=0 时）：
+    - seat 0: live[0:4, 16:20, 32:36, 48, 52]
+    - seat 1: live[4:8, 20:24, 36:40, 49]
+    - seat 2: live[8:12, 24:28, 40:44, 50]
+    - seat 3: live[12:16, 28:32, 44:48, 51]
+
+    target_hand 必须满足：
+    - dealer 时 14 张，否则 13 张
+    """
+    wall = [None] * 136
+
+    # 确定 target_seat 的牌山位置
+    order = [(dealer + i) % 4 for i in range(4)]
+    seat_indices = {
+        order[0]: [0, 1, 2, 3, 16, 17, 18, 19, 32, 33, 34, 35, 48, 52],
+        order[1]: [4, 5, 6, 7, 20, 21, 22, 23, 36, 37, 38, 39, 49],
+        order[2]: [8, 9, 10, 11, 24, 25, 26, 27, 40, 41, 42, 43, 50],
+        order[3]: [12, 13, 14, 15, 28, 29, 30, 31, 44, 45, 46, 47, 51],
+    }
+
+    # 填充 target_hand 到 target_seat 的位置
+    indices = seat_indices[target_seat]
+    hand_tiles = list(target_hand.elements())
+    for i, idx in enumerate(indices):
+        if i < len(hand_tiles):
+            wall[idx] = hand_tiles[i]
+        else:
+            wall[idx] = None  # 不足的用 None 标记，后面填充
+
+    # 填充其余位置
+    filler_deck = list(build_deck())
+    filler_counter = Counter(filler_deck)
+    # 移除已使用的牌
+    for t in hand_tiles:
+        filler_counter[t] -= 1
+        if filler_counter[t] == 0:
+            del filler_counter[t]
+    # 移除 revealed_indicator（如果指定）
+    if revealed_indicator is not None:
+        filler_counter[revealed_indicator] -= 1
+        if filler_counter[revealed_indicator] == 0:
+            del filler_counter[revealed_indicator]
+
+    filler = list(filler_counter.elements())
+    filler_idx = 0
+    for i in range(136):
+        if wall[i] is None:
+            wall[i] = filler[filler_idx]
+            filler_idx += 1
+
+    return tuple(wall)
+
+
 def make_four_kans_wall() -> tuple[Tile, ...]:
     """构造固定牌山用于四杠散了测试：四家各有 4 张相同牌可暗杠。
 

@@ -17,6 +17,7 @@ from kernel.scoring.yaku import (
     is_kokushi_thirteen_waits,
     prevailing_wind_tile,
     non_dora_yaku_han_and_labels,
+    is_yakuman,  # P0-1: 役满检查
     _is_menzen,
 )
 from kernel.table.model import TableSnapshot, seat_wind_rank
@@ -119,38 +120,47 @@ def settle_ron_table(
         if nd_han < 1:
             msg = "荣和须至少一番役（ドラ不可单独计和）"
             raise ValueError(msg)
-        dora_h = count_dora_total(
-            board.hands[w],
-            board.melds[w],
-            win_tile,
-            for_ron=True,
-            revealed_indicators=board.revealed_indicators,
-        )
-        ura_h = 0
-        if board.riichi[w] and ura_indicators:
-            ura_h = count_ura_dora_total(
+
+        # P0-1: 役满不计宝牌、赤宝、里宝
+        if is_yakuman(nd_labels):
+            dora_h = 0
+            ura_h = 0
+            aka_h = 0
+        else:
+            dora_h = count_dora_total(
                 board.hands[w],
                 board.melds[w],
                 win_tile,
                 for_ron=True,
-                ura_indicators=ura_indicators,
+                revealed_indicators=board.revealed_indicators,
             )
-        aka_h = count_aka_dora(
-            board.hands[w],
-            board.melds[w],
-            win_tile,
-            for_ron=True,
-            enabled=red_dora_enabled,
-        )
+            ura_h = 0
+            if board.riichi[w] and ura_indicators:
+                ura_h = count_ura_dora_total(
+                    board.hands[w],
+                    board.melds[w],
+                    win_tile,
+                    for_ron=True,
+                    ura_indicators=ura_indicators,
+                )
+            aka_h = count_aka_dora(
+                board.hands[w],
+                board.melds[w],
+                win_tile,
+                for_ron=True,
+                enabled=red_dora_enabled,
+            )
         han = nd_han + dora_h + ura_h + aka_h
 
         yakus_list = list(nd_labels)
-        if dora_h:
-            yakus_list.append(f"表宝牌{dora_h}")
-        if ura_h:
-            yakus_list.append(f"里宝牌{ura_h}")
-        if aka_h:
-            yakus_list.append(f"赤宝牌{aka_h}")
+        # P0-1: 役满不追加宝牌标签
+        if not is_yakuman(nd_labels):
+            if dora_h:
+                yakus_list.append(f"表宝牌{dora_h}")
+            if ura_h:
+                yakus_list.append(f"里宝牌{ura_h}")
+            if aka_h:
+                yakus_list.append(f"赤宝牌{aka_h}")
 
         pay = child_ron_payment_from_discarder(
             w,
@@ -280,38 +290,47 @@ def settle_tsumo_table(
     if nd_han < 1:
         msg = "自摸须至少一番役（ドラ不可单独计和）"
         raise ValueError(msg)
-    dora_h = count_dora_total(
-        board.hands[winner],
-        board.melds[winner],
-        win_tile,
-        for_ron=False,
-        revealed_indicators=board.revealed_indicators,
-    )
-    ura_h = 0
-    if board.riichi[winner] and ura_indicators:
-        ura_h = count_ura_dora_total(
+
+    # P0-1: 役满不计宝牌、赤宝、里宝
+    if is_yakuman(nd_labels):
+        dora_h = 0
+        ura_h = 0
+        aka_h = 0
+    else:
+        dora_h = count_dora_total(
             board.hands[winner],
             board.melds[winner],
             win_tile,
             for_ron=False,
-            ura_indicators=ura_indicators,
+            revealed_indicators=board.revealed_indicators,
         )
-    aka_h = count_aka_dora(
-        board.hands[winner],
-        board.melds[winner],
-        win_tile,
-        for_ron=False,
-        enabled=red_dora_enabled,
-    )
+        ura_h = 0
+        if board.riichi[winner] and ura_indicators:
+            ura_h = count_ura_dora_total(
+                board.hands[winner],
+                board.melds[winner],
+                win_tile,
+                for_ron=False,
+                ura_indicators=ura_indicators,
+            )
+        aka_h = count_aka_dora(
+            board.hands[winner],
+            board.melds[winner],
+            win_tile,
+            for_ron=False,
+            enabled=red_dora_enabled,
+        )
     han = nd_han + dora_h + ura_h + aka_h
 
     yakus_list = list(nd_labels)
-    if dora_h:
-        yakus_list.append(f"表宝牌{dora_h}")
-    if ura_h:
-        yakus_list.append(f"里宝牌{ura_h}")
-    if aka_h:
-        yakus_list.append(f"赤宝牌{aka_h}")
+    # P0-1: 役满不追加宝牌标签
+    if not is_yakuman(nd_labels):
+        if dora_h:
+            yakus_list.append(f"表宝牌{dora_h}")
+        if ura_h:
+            yakus_list.append(f"里宝牌{ura_h}")
+        if aka_h:
+            yakus_list.append(f"赤宝牌{aka_h}")
 
     deltas = child_tsumo_payments(
         winner,
