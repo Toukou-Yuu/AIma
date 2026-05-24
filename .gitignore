@@ -36,6 +36,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# v4 重构计划文档（本地管理，不提交）
+AIma_v4_refactor_plan/
+
 # Claude：本机覆盖
 .claude/
 
