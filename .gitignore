@@ -1,6 +1,6 @@
 # Conda
 .conda/
-
+RULE_SCOPE.md
 # Python
 __pycache__/
 *.py[cod]
