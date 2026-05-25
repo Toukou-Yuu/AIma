@@ -18,6 +18,7 @@ venv/
 env/
 .env
 logs/
+runs/
 
 # Secrets
 .env
