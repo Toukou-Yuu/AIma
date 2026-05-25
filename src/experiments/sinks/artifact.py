@@ -1,0 +1,194 @@
+"""ArtifactWriter: Writes match artifacts to files."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from kernel.replay_json import game_event_to_wire
+
+if TYPE_CHECKING:
+    from arena.match_result import MatchResult
+    from arena.policy import DecisionContext, PolicyDecision
+    from arena.result import EngineStepResult
+
+
+class ArtifactWriter:
+    """EventSink that writes match artifacts to files.
+
+    在 on_step 时写入 events.jsonl 和 decisions.jsonl，
+    在 on_match_end 时写入 summary.json 和 replay.json。
+
+    文件写入采用 per-record flush 策略，确保崩溃安全。
+    """
+
+    def __init__(self, job_dir: Path, match_id: str, job_id: str, seed: int) -> None:
+        """初始化 ArtifactWriter。
+
+        Args:
+            job_dir: 任务目录（用于存放 artifacts）
+            match_id: 对局唯一标识符
+            job_id: 批处理任务标识符
+            seed: 随机种子
+        """
+        self._job_dir = job_dir
+        self._match_id = match_id
+        self._job_id = job_id
+        self._seed = seed
+
+        # 确保目录存在
+        job_dir.mkdir(parents=True, exist_ok=True)
+
+        # 打开文件句柄
+        self._events_file = (job_dir / "events.jsonl").open("a", encoding="utf-8")
+        self._decisions_file = (job_dir / "decisions.jsonl").open("a", encoding="utf-8")
+
+    def _write_event(self, step_index: int, hand_index: int, event: dict[str, Any]) -> None:
+        """写入单个事件记录到 events.jsonl。
+
+        Args:
+            step_index: 步数索引
+            hand_index: 手牌索引
+            event: 事件字典
+        """
+        record = {
+            "schema_version": 1,
+            "match_id": self._match_id,
+            "job_id": self._job_id,
+            "step_index": step_index,
+            "hand_index": hand_index,
+            "seed": self._seed,
+            "event": event,
+        }
+        self._events_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+        self._events_file.flush()
+
+    def _write_decision(
+        self,
+        step_index: int,
+        seat: int,
+        action: dict[str, Any],
+        parse_status: str,
+        fallback_used: bool,
+        latency_ms: float | None,
+        raw_output: str | None,
+        diagnostics: dict[str, Any],
+    ) -> None:
+        """写入单个决策记录到 decisions.jsonl。
+
+        Args:
+            step_index: 步数索引
+            seat: 玩家座位
+            action: 动作字典
+            parse_status: 解析状态
+            fallback_used: 是否使用 fallback
+            latency_ms: 决策耗时
+            raw_output: 原始输出
+            diagnostics: 诊断信息
+        """
+        record: dict[str, Any] = {
+            "schema_version": 1,
+            "match_id": self._match_id,
+            "job_id": self._job_id,
+            "step_index": step_index,
+            "seat": seat,
+            "action": action,
+            "parse_status": parse_status,
+            "fallback_used": fallback_used,
+        }
+        if latency_ms is not None:
+            record["latency_ms"] = latency_ms
+        if raw_output is not None:
+            record["raw_output"] = raw_output
+        if diagnostics:
+            record["diagnostics"] = diagnostics
+
+        self._decisions_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+        self._decisions_file.flush()
+
+    def on_step(
+        self,
+        ctx: DecisionContext,
+        decision: PolicyDecision,
+        result: EngineStepResult,
+    ) -> None:
+        """每步决策后调用，写入事件和决策记录。
+
+        Args:
+            ctx: 决策上下文
+            decision: 策略决策结果
+            result: 引擎步进结果
+        """
+        # 写入所有事件
+        for event in result.events:
+            event_wire = game_event_to_wire(event)
+            self._write_event(ctx.step_index, ctx.hand_index, event_wire)
+
+        # 写入决策记录
+        action_wire = {
+            "kind": decision.action.kind.value,
+        }
+        if decision.action.seat is not None:
+            action_wire["seat"] = decision.action.seat
+        if decision.action.tile is not None:
+            action_wire["tile"] = decision.action.tile.to_code()
+        if decision.action.declare_riichi:
+            action_wire["declare_riichi"] = True
+        if decision.action.meld is not None:
+            # meld 序列化需要特殊处理
+            from kernel.replay_json import meld_to_wire
+
+            action_wire["meld"] = meld_to_wire(decision.action.meld)
+
+        self._write_decision(
+            step_index=ctx.step_index,
+            seat=ctx.seat,
+            action=action_wire,
+            parse_status=decision.parse_status,
+            fallback_used=decision.fallback_used,
+            latency_ms=decision.latency_ms,
+            raw_output=decision.raw_output,
+            diagnostics=decision.diagnostics,
+        )
+
+    def on_match_end(self, result: MatchResult) -> None:
+        """对局结束时调用，写入 summary.json 和 replay.json。
+
+        Args:
+            result: 对局完整结果
+        """
+        from kernel.replay_json import action_to_wire, match_log_document
+
+        # 写入 summary.json
+        summary = {
+            "schema_version": 1,
+            "match_id": result.match_id,
+            "job_id": result.job_id,
+            "seed": result.seed,
+            "step_count": result.step_count,
+            "stopped_reason": result.stopped_reason,
+        }
+        summary_path = self._job_dir / "summary.json"
+        summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # 从 decisions 中提取 Action 对象并序列化
+        actions_wire = tuple(action_to_wire(d["action"]) for d in result.decisions)
+
+        # events 中每个 dict 的 "event" 键包含原始 GameEvent，需要序列化
+        events_wire = tuple(game_event_to_wire(ev_dict["event"]) for ev_dict in result.events)
+
+        replay = match_log_document(
+            seed=result.seed,
+            stopped_reason=result.stopped_reason or "normal",
+            steps=result.step_count,
+            final_phase=result.final_state.phase.value,
+            actions_wire=actions_wire,
+            events_wire=events_wire,
+        )
+        replay_path = self._job_dir / "replay.json"
+        replay_path.write_text(json.dumps(replay, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # 关闭文件句柄
+        self._events_file.close()
+        self._decisions_file.close()
