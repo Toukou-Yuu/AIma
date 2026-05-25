@@ -45,7 +45,7 @@ omit = ["src/ui/*"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 74
+fail_under = 90
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
