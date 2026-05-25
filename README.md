@@ -2,7 +2,47 @@
 
 让大语言模型打日式麻将。支持四位魂天神社角色（一姬、八木唯、卡维、藤田佳奈）实时对战，提供全屏终端 TUI、动态观战、牌谱记录与回放。
 
-## 快速开始
+## V4 实验平台（新）
+
+v4.0-alpha 提供实验运行、聚合分析、UI查看器等新功能。
+
+### 官方命令
+
+```bash
+# 运行实验
+PYTHONPATH=src python -m experiments.run --config examples/smoke.yaml --output runs
+
+# 聚合分析
+PYTHONPATH=src python -m experiments.aggregate --run runs/smoke
+
+# 重建索引
+PYTHONPATH=src python -m experiments.index --rebuild runs
+```
+
+### 输出结构
+
+```
+runs/{experiment_id}/
+  manifest.yaml          # 配置快照
+  jobs.jsonl            # 作业记录列表
+  jobs/{job_id}/
+    summary.json        # 对局摘要
+    decisions.jsonl     # 决策记录（含 diagnostics）
+    events.jsonl        # 事件记录
+    replay.json         # 牌谱
+  aggregate/
+    report.md           # 分析报告
+    reliability_summary.json
+    decision_metrics.csv
+    match_metrics.csv
+  runs.db               # SQLite 索引
+```
+
+详细文档见 `docs/v4/`。
+
+---
+
+## V3 快速开始（旧版）
 
 ### 1. 环境准备
 
