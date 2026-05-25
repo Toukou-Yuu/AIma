@@ -46,15 +46,16 @@ def _make_decision_context() -> "DecisionContext":
 
 def _make_agent_spec(fallback: str = "first_legal") -> AgentSpec:
     """Create a minimal AgentSpec for testing."""
-    from prompts.schema import PromptSpec, PromptSectionSpec
+    from prompts.schema import PromptSpec
     from models.schema import ModelSpec
 
+    # 使用现有的模板 riichi_json_action_v1
     return AgentSpec(
         pipeline_id="test_pipeline",
         prompt=PromptSpec(
-            template_id="test",
-            version="v1",
-            sections=[PromptSectionSpec(id="base", enabled=True)],
+            template_id="riichi_json_action_v1",
+            version="1.0.0",
+            sections=[],  # 使用模板默认 sections
         ),
         model=ModelSpec(backend="dummy", model_name="test-model"),
         fallback=fallback,

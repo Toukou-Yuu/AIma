@@ -68,12 +68,15 @@ def build_components(spec: "AgentSpec", seed: int) -> PipelineComponents:
     if spec.memory.mode != "off":
         memory_manager = MemoryManager(spec.memory)
 
+    # 使用 AgentSpec 中的 prompt.template_id
+    prompt_renderer = PromptRenderer(template_id=spec.prompt.template_id)
+
     return PipelineComponents(
         parser=OutputParser(),
         grounder=ActionGrounder(),
         fallback=FallbackStrategy(kind=fallback_kind, seed=seed),
         observation=ObservationBuilder(),
-        prompt=PromptRenderer(),
+        prompt=prompt_renderer,
         context=context_builder,
         memory=memory_manager,
     )

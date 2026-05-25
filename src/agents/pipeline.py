@@ -11,7 +11,6 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from agents.components.prompt import DecisionContext as PromptContext
 from agents.pipeline_result import ParseStatus, PipelineResult
 
 if TYPE_CHECKING:
@@ -46,14 +45,14 @@ class AgentPipeline:
 
         流程：
         1. observation: 构建观测描述
-        2. prompt: 渲染提示词
+        2. prompt: 渲染提示词（使用真正的 prompts/renderer.py）
         3. call: 调用 LLM
         4. parse: 解析 LLM 响应
         5. ground: 接地到合法动作
         6. fallback: 必要时选择回退动作
 
         Args:
-            ctx: 决策上下文
+            ctx: 决策上下文（arena.policy.DecisionContext）
 
         Returns:
             PipelineResult 包含最终动作和诊断信息
@@ -65,13 +64,10 @@ class AgentPipeline:
         observation_text = self.components.observation.build(ctx)
         diagnostics["observation"] = observation_text
 
-        # Step 2: prompt
-        prompt_ctx = PromptContext(
-            observation=ctx.observation,
-            legal_actions=ctx.legal_actions,
-        )
-        messages = self.components.prompt.render(prompt_ctx)
+        # Step 2: prompt（使用真正的 prompts/renderer.py）
+        messages = self.components.prompt.render(ctx)
         diagnostics["messages"] = [(m.role, m.content) for m in messages]
+        diagnostics["prompt_template"] = self.components.prompt._template_id
 
         # Step 3: call
         raw_output = self.client.complete(messages)
