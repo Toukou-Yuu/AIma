@@ -9,9 +9,10 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from agents.pipeline_result import ParseStatus, PipelineResult
+from llm.wire import legal_action_to_wire
 
 if TYPE_CHECKING:
     from agents.components.factory import PipelineComponents
@@ -93,7 +94,7 @@ class AgentPipeline:
                 parse_result.choice,
             )
             diagnostics["ground_result"] = {
-                "legal_action": ground_result.legal_action,
+                "legal_action": legal_action_to_wire(ground_result.legal_action) if ground_result.legal_action else None,
                 "status": ground_result.status,
             }
             if ground_result.legal_action is not None:

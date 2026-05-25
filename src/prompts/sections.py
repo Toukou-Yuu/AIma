@@ -52,10 +52,19 @@ def _render_riichi_system_prompt(options: dict[str, Any]) -> str:
     role = options.get("role", "Japanese Riichi Mahjong player")
     return f"""You are an expert {role}.
 
-Your task is to analyze the current game state and choose the best action from the available legal actions.
+CRITICAL: You MUST respond with ONLY a valid JSON object. No explanations before or after. No markdown code blocks. No extra text.
 
-Output format: JSON object with 'action' and 'why' fields.
-Example: {{"action": "DISCARD 1m", "why": "Discarding isolated tile to improve hand shape"}}"""
+Your response must be parseable by JSON.parse() directly.
+
+Example valid response:
+{{"action": "DISCARD 1m", "why": "Isolated tile, improves hand efficiency"}}
+
+Example INVALID responses (DO NOT DO THIS):
+- "Let me think..." (explanation before JSON)
+- ```json{{"action":...}}``` (markdown code block)
+- {{'action': 'DISCARD 1m'}} (single quotes, not valid JSON)
+
+Your task: Analyze the game state and choose the best action from legal_actions."""
 
 
 def render_game_state(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
@@ -114,7 +123,7 @@ def render_hand(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
     tile_strs = []
     for tile in sorted(hand.elements(), key=lambda t: (t.suit.value, t.rank)):
         count = hand[tile]
-        tile_str = str(tile)
+        tile_str = tile.to_code()
         tile_strs.extend([tile_str] * count)
 
     if tile_strs:
@@ -126,7 +135,7 @@ def render_hand(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
     if obs.melds:
         lines.append("\nMelds:")
         for i, meld in enumerate(obs.melds):
-            lines.append(f"  {i + 1}. {meld.kind.value}: {' '.join(str(t) for t in meld.tiles)}")
+            lines.append(f"  {i + 1}. {meld.kind.value}: {' '.join(t.to_code() for t in meld.tiles)}")
 
     return "\n".join(lines)
 
@@ -159,7 +168,7 @@ def render_river(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
 
     by_seat: dict[int, list[str]] = defaultdict(list)
     for entry in river:
-        tile_str = str(entry.tile)
+        tile_str = entry.tile.to_code()
         if entry.is_riichi:
             tile_str += "*"
         if entry.is_tsumogiri:
@@ -186,14 +195,14 @@ def render_dora(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
 
     lines = ["## Dora Indicators"]
     if obs.dora_indicators:
-        dora_strs = [str(t) for t in obs.dora_indicators]
+        dora_strs = [t.to_code() for t in obs.dora_indicators]
         lines.append(" ".join(dora_strs))
     else:
         lines.append("(none revealed)")
 
     if obs.ura_indicators:
         lines.append("\nUra-dora (if you win with riichi):")
-        ura_strs = [str(t) for t in obs.ura_indicators]
+        ura_strs = [t.to_code() for t in obs.ura_indicators]
         lines.append(" ".join(ura_strs))
 
     return "\n".join(lines)
@@ -258,13 +267,13 @@ def _format_action(action: "LegalAction") -> str:
     Returns:
         Formatted action string
     """
-    kind = action.kind.value
+    kind = action.kind.value.upper()
 
     if action.tile is not None:
-        return f"{kind} {action.tile}"
+        return f"{kind} {action.tile.to_code()}"
     if action.meld is not None:
-        tiles_str = " ".join(str(t) for t in action.meld.tiles)
-        return f"{kind} [{tiles_str}]"
+        tiles_str = " ".join(t.to_code() for t in action.meld.tiles)
+        return f"{kind} {tiles_str}"
     return kind
 
 
@@ -318,24 +327,26 @@ def _render_json_action_format() -> str:
     """Render JSON action output format instructions."""
     return """## Output Format
 
-Respond with a JSON object:
-```json
-{
-  "action": "<ACTION>",
-  "why": "<brief explanation>"
-}
-```
+CRITICAL: Respond with ONLY a JSON object. No markdown. No explanations.
 
-For ACTION:
-- To discard: `DISCARD <tile>` (e.g., `DISCARD 1m`, `DISCARD 5p`)
-- To draw: `DRAW`
-- To riichi: `DISCARD <tile>` with riichi declaration already accounted
-- To tsumo: `TSUMO`
-- To ron: `RON`
-- To pass on a call: `PASS_CALL`
-- To chi/pon/kan: `OPEN_MELD <tiles>` (e.g., `OPEN_MELD 1m 2m 3m`)
-- To ankan: `ANKAN <tiles>` (e.g., `ANKAN 1m 1m 1m 1m`)
-- To kakan: `KAKAN <tiles>`"""
+Valid response example:
+{"action": "DISCARD 1m", "why": "Isolated tile"}
+
+INVALID responses (will cause parse failure):
+- ```json{"action":...}```
+- "I think..." before the JSON
+- Any text after the JSON
+
+Action formats:
+- DISCARD <tile>: Discard a tile (e.g., DISCARD 1m, DISCARD 5p, DISCARD 9s)
+- DRAW: Draw from wall
+- PASS_CALL: Pass on chi/pon/kan/ron opportunity
+- OPEN_MELD <tiles>: Call chi/pon/kan (e.g., OPEN_MELD 1m2m3m)
+- ANKAN <tiles>: Concealed kan (e.g., ANKAN 1m1m1m1m)
+- TSUMO: Self-draw win
+- RON: Call win on discard
+
+Copy an action EXACTLY from legal_actions list above. Do not invent actions."""
 
 
 def _render_natural_action_format() -> str:

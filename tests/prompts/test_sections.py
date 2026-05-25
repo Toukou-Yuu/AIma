@@ -44,6 +44,9 @@ class MockTile:
     def __str__(self) -> str:
         return f"{self.rank}m"
 
+    def to_code(self) -> str:
+        return f"{self.rank}m"
+
     def __hash__(self) -> int:
         return hash((self.suit, self.rank))
 
@@ -530,8 +533,7 @@ class TestRenderLegalActions:
         spec = PromptSectionSpec(id="legal_actions")
 
         result = render_legal_actions(ctx, spec)
-        assert "OPEN_MELD" in result
-        assert "[" in result
+        assert "OPEN_MELD 1m 1m 1m" in result
 
 
 # ---------------------------------------------------------------------------
@@ -659,6 +661,4 @@ class TestActionFormatting:
             meld=meld,
         )
         result = _format_action(action)
-        assert "OPEN_MELD" in result
-        assert "[" in result
-        assert "]" in result
+        assert result == "OPEN_MELD 1m 2m 3m"

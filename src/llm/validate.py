@@ -19,20 +19,92 @@ def cn_to_tile_code(cn: str) -> str | None:
 
 
 def parse_cn_action(action_str: str, legal: tuple[LegalAction, ...]) -> LegalAction | None:
-    """解析中文动作描述并匹配合法动作.
+    """解析动作描述并匹配合法动作.
 
     支持格式：
+    中文格式：
     - "打三万" -> discard
     - "打三万并立直" -> discard + riichi
     - "过" -> pass_call
     - "荣和三万" -> ron
     - "自摸" -> tsumo
     - "吃..." -> open_meld
-    - "碰..." -> pon
-    - "大明杠..." -> daiminkan
+
+    英文格式：
+    - "DISCARD 5p" -> discard
+    - "DRAW" -> draw
+    - "PASS_CALL" / "pass_call" -> pass_call
+    - "TSUMO" -> tsumo
+    - "RON" -> ron
+    - "OPEN_MELD 1m2m3m" -> open_meld
+    - "ANKAN 1m1m1m1m" -> ankan
     """
     action_str = action_str.strip()
     normalized = _normalize_action_text(action_str)
+
+    # 先尝试英文格式（大写关键词）
+    upper_str = action_str.upper()
+
+    # 1. PASS_CALL
+    if upper_str in {"PASS_CALL", "PASS"}:
+        for la in legal:
+            if la.kind == ActionKind.PASS_CALL:
+                return la
+        return None
+
+    # 2. DRAW
+    if upper_str == "DRAW":
+        for la in legal:
+            if la.kind == ActionKind.DRAW:
+                return la
+        return None
+
+    # 3. TSUMO
+    if upper_str == "TSUMO":
+        for la in legal:
+            if la.kind == ActionKind.TSUMO:
+                return la
+        return None
+
+    # 4. RON
+    if upper_str == "RON":
+        for la in legal:
+            if la.kind == ActionKind.RON:
+                return la
+        return None
+
+    # 5. DISCARD <tile>
+    discard_match = re.match(r"DISCARD\s+(\d+[mpszMPSZ])", upper_str)
+    if discard_match:
+        tile_code = discard_match.group(1).lower()
+        for la in legal:
+            if la.kind == ActionKind.DISCARD:
+                la_code = la.tile.to_code() if la.tile else None
+                if la_code and la_code.lower() == tile_code:
+                    return la
+        return None
+
+    # 6. OPEN_MELD / ANKAN / KAKAN
+    meld_match = re.match(r"(OPEN_MELD|ANKAN|KAKAN)\s+(.+)", upper_str)
+    if meld_match:
+        meld_kind = meld_match.group(1)
+        tiles_str = meld_match.group(2).strip().lower()
+        for la in legal:
+            if la.meld is not None:
+                meld = la.meld
+                kind_map = {
+                    "OPEN_MELD": {"chi", "pon", "daiminkan"},
+                    "ANKAN": {"ankan"},
+                    "KAKAN": {"kakan"},
+                }
+                if meld.kind.value in kind_map.get(meld_kind, set()):
+                    # 检查tiles是否匹配
+                    meld_tiles_str = "".join(t.to_code() for t in meld.tiles).lower()
+                    if tiles_str.replace(" ", "") in meld_tiles_str or meld_tiles_str in tiles_str.replace(" ", ""):
+                        return la
+        return None
+
+    # 中文格式处理
 
     # 1. 过
     if normalized in {"过", "跳过"}:
