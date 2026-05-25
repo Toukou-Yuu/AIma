@@ -183,9 +183,23 @@ class RunDataSource:
             description = ""
             tags: list[str] = []
 
-            # Try to load metadata from config or manifest
+            # Try to load metadata from config or manifest (v4 layout: manifest.yaml)
+            manifest_yaml_path = exp_dir / "manifest.yaml"
+            if manifest_yaml_path.exists():
+                try:
+                    import yaml
+                    with open(manifest_yaml_path, encoding="utf-8") as f:
+                        manifest = yaml.safe_load(f)
+                    if manifest:
+                        exp_id = manifest.get("experiment", {}).get("id", exp_id)
+                        description = manifest.get("experiment", {}).get("description", "")
+                        tags = manifest.get("experiment", {}).get("tags", [])
+                except Exception:
+                    pass
+
+            # Fallback to config.yaml
             config_path = exp_dir / "config.yaml"
-            if config_path.exists():
+            if config_path.exists() and not description:
                 try:
                     from experiments.schema import ExperimentSpec
 
@@ -196,22 +210,14 @@ class RunDataSource:
                 except Exception:
                     pass
 
-            manifest_path = exp_dir / "manifest.json"
-            if manifest_path.exists():
-                try:
-                    with open(manifest_path, encoding="utf-8") as f:
-                        manifest = json.load(f)
-                    if not description:
-                        description = manifest.get("description", "")
-                    if not tags:
-                        tags = manifest.get("tags", [])
-                except Exception:
-                    pass
-
-            # Count jobs (seed-* directories)
-            job_count = sum(
-                1 for d in exp_dir.iterdir() if d.is_dir() and d.name.startswith("seed-")
-            )
+            # Count jobs: v4 layout (jobs/<job_id>/) or old layout (seed-*)
+            jobs_dir = exp_dir / "jobs"
+            if jobs_dir.exists():
+                job_count = sum(1 for d in jobs_dir.iterdir() if d.is_dir())
+            else:
+                job_count = sum(
+                    1 for d in exp_dir.iterdir() if d.is_dir() and d.name.startswith("seed-")
+                )
 
             result.append(
                 ExperimentInfo(
@@ -280,6 +286,75 @@ class RunDataSource:
 
         result: list[JobInfo] = []
 
+        # v4 layout: jobs/<job_id>/
+        jobs_dir = exp_dir / "jobs"
+        if jobs_dir.exists():
+            for job_dir in jobs_dir.iterdir():
+                if not job_dir.is_dir():
+                    continue
+
+                job_id = job_dir.name
+                seed = 0
+                state = "pending"
+                match_id: str | None = None
+                error_message: str | None = None
+
+                # Check summary.json
+                summary_path = job_dir / "summary.json"
+                if summary_path.exists():
+                    try:
+                        with open(summary_path, encoding="utf-8") as f:
+                            summary = json.load(f)
+
+                        seed = summary.get("seed", 0)
+                        match_id = summary.get("match_id")
+
+                        if summary.get("stopped_reason"):
+                            state = "failed"
+                            error_message = summary.get("stopped_reason")
+                        else:
+                            state = "succeeded"
+                    except Exception:
+                        pass
+
+                # Also check jobs.jsonl for state
+                jobs_jsonl_path = exp_dir / "jobs.jsonl"
+                if jobs_jsonl_path.exists():
+                    try:
+                        with open(jobs_jsonl_path, encoding="utf-8") as f:
+                            for line in f:
+                                if not line.strip():
+                                    continue
+                                record = json.loads(line)
+                                if record.get("job_id") == job_id:
+                                    state = record.get("state", state)
+                                    seed = record.get("seed", seed)
+                                    match_id = record.get("match_id", match_id)
+                                    if record.get("error"):
+                                        err = record["error"]
+                                        if isinstance(err, dict):
+                                            error_message = err.get("message", str(err))
+                                        else:
+                                            error_message = str(err)
+                                    break
+                    except Exception:
+                        pass
+
+                result.append(
+                    JobInfo(
+                        job_id=job_id,
+                        experiment_id=experiment_id,
+                        seed=seed,
+                        state=state,
+                        match_id=match_id,
+                        error_message=error_message,
+                    )
+                )
+
+            result.sort(key=lambda j: j.seed)
+            return result
+
+        # Old layout: seed-* directories
         for seed_dir in exp_dir.iterdir():
             if not seed_dir.is_dir():
                 continue
@@ -350,12 +425,37 @@ class RunDataSource:
         """Load complete data for a single job.
 
         Args:
-            job_id: Job identifier (format: {experiment_id}_seed-{seed}).
+            job_id: Job identifier. For v4 layout, job_id is the directory name.
+                    For old layout, format is {experiment_id}_seed-{seed}.
 
         Returns:
             RunData if job exists, None otherwise.
         """
-        # Parse job_id to get experiment_id and seed_dir
+        # First try v4 layout: jobs/<job_id>/ (job_id contains experiment_id prefix)
+        # Parse job_id to get experiment_id
+        if "_" in job_id:
+            # job_id format: {experiment_id}_seed{N}_match{N} or {experiment_id}_seed-{N}
+            parts = job_id.split("_")
+            experiment_id = parts[0]
+            exp_dir = self.run_root / experiment_id
+            job_dir = exp_dir / "jobs" / job_id
+
+            if job_dir.exists():
+                # Extract seed from summary.json
+                try:
+                    summary_path = job_dir / "summary.json"
+                    if summary_path.exists():
+                        with open(summary_path, encoding="utf-8") as f:
+                            summary = json.load(f)
+                        seed = summary.get("seed", 0)
+                    else:
+                        seed = 0
+                except Exception:
+                    seed = 0
+
+                return load_single_job(job_dir, job_id, seed)
+
+        # Fallback: old layout seed-*
         parts = job_id.rsplit("_seed-", 1)
         if len(parts) != 2:
             logger.warning("Invalid job_id format: %s", job_id)
@@ -377,6 +477,17 @@ class RunDataSource:
             seed = 0
 
         return load_single_job(job_dir, job_id, seed)
+
+    def load_summary(self, job_id: str) -> RunData | None:
+        """Load summary for a job (alias for load_job).
+
+        Args:
+            job_id: Job identifier.
+
+        Returns:
+            RunData if job exists, None otherwise.
+        """
+        return self.load_job(job_id)
 
     def get_metrics(self, experiment_id: str) -> dict[str, Any]:
         """Get aggregated metrics for an experiment.
