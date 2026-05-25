@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
-from models.backend import ChatMessage
+import time
+
+from models.backend import ChatMessage, ModelRequest, ModelResponse
 from models.schema import ModelSpec
 
 
@@ -12,6 +14,7 @@ class DummyBackend:
     """固定响应后端，用于简单测试。
 
     不调用任何外部服务，始终返回配置的固定响应。
+    同时实现 CompletionClient 和 ModelBackend 协议。
     """
 
     def __init__(self, spec: ModelSpec) -> None:
@@ -34,6 +37,16 @@ class DummyBackend:
         return self._spec
 
     @property
+    def backend_name(self) -> str:
+        """后端名称。"""
+        return "dummy"
+
+    @property
+    def model_name(self) -> str:
+        """模型名称。"""
+        return self._spec.model_name
+
+    @property
     def last_messages(self) -> list[ChatMessage] | None:
         """最近一次调用时传入的消息列表，用于调试。"""
         return self._last_messages
@@ -54,7 +67,7 @@ class DummyBackend:
         *,
         model: str | None = None,  # noqa: ARG002
     ) -> str:
-        """返回固定响应。
+        """返回固定响应（CompletionClient 协议）。
 
         Args:
             messages: 消息列表（忽略）
@@ -65,3 +78,27 @@ class DummyBackend:
         """
         self._last_messages = list(messages)
         return self._response
+
+    def generate(self, request: ModelRequest) -> ModelResponse:
+        """生成固定响应（ModelBackend 协议）。
+
+        Args:
+            request: 模型请求
+
+        Returns:
+            ModelResponse 包含固定响应
+        """
+        start_time = time.perf_counter()
+        self._last_messages = list(request.messages)
+
+        latency_ms = (time.perf_counter() - start_time) * 1000
+
+        return ModelResponse(
+            text=self._response,
+            finish_reason="stop",
+            latency_ms=latency_ms,
+            prompt_tokens=0,
+            completion_tokens=0,
+            backend_name=self.backend_name,
+            model_name=self.model_name,
+        )

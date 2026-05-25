@@ -5,11 +5,12 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 import httpx
 
-from models.backend import ChatMessage
+from models.backend import ChatMessage, ModelRequest, ModelResponse
 from models.schema import ModelSpec
 
 
@@ -17,6 +18,7 @@ class OpenAICompatibleBackend:
     """OpenAI 兼容 API 后端。
 
     通过 ``POST /chat/completions`` 调用模型。
+    同时实现 CompletionClient 和 ModelBackend 协议。
     """
 
     def __init__(self, spec: ModelSpec) -> None:
@@ -46,13 +48,23 @@ class OpenAICompatibleBackend:
         """当前模型配置。"""
         return self._spec
 
+    @property
+    def backend_name(self) -> str:
+        """后端名称。"""
+        return "openai_compatible"
+
+    @property
+    def model_name(self) -> str:
+        """模型名称。"""
+        return self._spec.model_name
+
     def complete(
         self,
         messages: list[ChatMessage],
         *,
         model: str | None = None,
     ) -> str:
-        """发送请求。
+        """发送请求（CompletionClient 协议）。
 
         Args:
             messages: 消息列表
@@ -61,8 +73,34 @@ class OpenAICompatibleBackend:
         Returns:
             模型回复内容
         """
+        response = self._call_api(messages, model or self._spec.model_name)
+        return response.text
+
+    def generate(self, request: ModelRequest) -> ModelResponse:
+        """生成响应（ModelBackend 协议）。
+
+        Args:
+            request: 模型请求
+
+        Returns:
+            ModelResponse 包含响应和元信息
+        """
+        return self._call_api(request.messages, request.model_name or self._spec.model_name)
+
+    def _call_api(self, messages: list[ChatMessage], model: str) -> ModelResponse:
+        """调用 API 并返回完整响应。
+
+        Args:
+            messages: 消息列表
+            model: 模型名称
+
+        Returns:
+            ModelResponse 包含响应和元信息
+        """
+        start_time = time.perf_counter()
+
         payload: dict[str, Any] = {
-            "model": model or self._spec.model_name,
+            "model": model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "temperature": self._spec.temperature,
             "max_tokens": self._spec.max_tokens,
@@ -87,8 +125,27 @@ class OpenAICompatibleBackend:
             r.raise_for_status()
             data = r.json()
 
+        latency_ms = (time.perf_counter() - start_time) * 1000
+
         try:
-            return str(data["choices"][0]["message"]["content"] or "").strip()
+            text = str(data["choices"][0]["message"]["content"] or "").strip()
+            finish_reason = data["choices"][0].get("finish_reason", "stop")
         except (KeyError, IndexError, TypeError) as e:
             msg = f"unexpected OpenAI response shape: {data!r}"
             raise RuntimeError(msg) from e
+
+        # 提取 token usage
+        usage = data.get("usage", {})
+        prompt_tokens = usage.get("prompt_tokens")
+        completion_tokens = usage.get("completion_tokens")
+
+        return ModelResponse(
+            text=text,
+            finish_reason=finish_reason,
+            latency_ms=latency_ms,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            raw_response=data,
+            backend_name=self.backend_name,
+            model_name=model,
+        )

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol, TypeAlias, runtime_checkable
+from dataclasses import dataclass, field
+from typing import Any, Protocol, TypeAlias, runtime_checkable
 
 
 @dataclass(frozen=True, slots=True)
@@ -13,6 +13,56 @@ class ChatMessage:
     role: str
     """``system`` / ``user`` / ``assistant``"""
     content: str
+
+
+@dataclass
+class ModelRequest:
+    """模型请求参数。
+
+    Attributes:
+        messages: 消息列表
+        temperature: 温度参数（可选）
+        top_p: top_p 参数（可选）
+        max_tokens: 最大生成 tokens（可选）
+        stop: 停止词列表（可选）
+        response_format: 响应格式（可选）
+        seed: 随机种子（可选）
+        extra_params: 额后参数（可选）
+    """
+
+    messages: list[ChatMessage]
+    temperature: float | None = None
+    top_p: float | None = None
+    max_tokens: int | None = None
+    stop: list[str] | None = None
+    response_format: dict[str, Any] | None = None
+    seed: int | None = None
+    extra_params: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class ModelResponse:
+    """模型响应结果。
+
+    Attributes:
+        text: 生成的文本
+        finish_reason: 结束原因（stop, length, error 等）
+        latency_ms: 调用耗时（毫秒）
+        prompt_tokens: 输入 tokens 数
+        completion_tokens: 输出 tokens 数
+        raw_response: 原始响应对象（可选）
+        backend_name: 后端名称
+        model_name: 模型名称
+    """
+
+    text: str
+    finish_reason: str | None = None
+    latency_ms: float | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    raw_response: Any | None = None
+    backend_name: str = "unknown"
+    model_name: str = "unknown"
 
 
 @runtime_checkable
@@ -40,6 +90,35 @@ class CompletionClient(Protocol):
         ...
 
 
+@runtime_checkable
+class ModelBackend(Protocol):
+    """模型后端协议（v4.0 新接口）。
+
+    返回完整的 ModelResponse，包含 token usage 等信息。
+    """
+
+    def generate(self, request: ModelRequest) -> ModelResponse:
+        """生成模型响应。
+
+        Args:
+            request: 模型请求
+
+        Returns:
+            ModelResponse 包含文本和元信息
+        """
+        ...
+
+    @property
+    def backend_name(self) -> str:
+        """后端名称。"""
+        ...
+
+    @property
+    def model_name(self) -> str:
+        """模型名称。"""
+        ...
+
+
 # Backend 类型标识符
-# "openai_compatible" | "llama_cpp" | "vllm_native" | "mock" | "dummy"
+# "openai_compatible" | "llama_cpp" | "vllm_native" | "mock" | "dummy" | "replay"
 Backend: TypeAlias = str

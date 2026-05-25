@@ -6,6 +6,7 @@ vLLM's OpenAI-compatible endpoint instead.
 
 from __future__ import annotations
 
+from models.backend import ModelRequest, ModelResponse
 from models.schema import ModelSpec
 
 
@@ -34,6 +35,16 @@ class VllmNativeBackend:
         """
         self.spec = spec
 
+    @property
+    def backend_name(self) -> str:
+        """Backend name."""
+        return "vllm_native"
+
+    @property
+    def model_name(self) -> str:
+        """Model name."""
+        return self.spec.model_name
+
     def complete(
         self,
         messages: list,  # list[ChatMessage] - avoid circular import
@@ -57,4 +68,18 @@ class VllmNativeBackend:
             "     backend = 'openai_compatible'\n"
             "     endpoint = 'http://localhost:8000/v1'\n"
             "     model_name = 'model_name'"
+        )
+
+    def generate(self, request: ModelRequest) -> ModelResponse:
+        """Not implemented - raises NotImplementedError.
+
+        Args:
+            request: Model request.
+
+        Raises:
+            NotImplementedError: Always - use openai_compatible backend instead.
+        """
+        raise NotImplementedError(
+            "vLLM native backend is not implemented in v4.0. "
+            "Use openai_compatible backend with vLLM's OpenAI-compatible server."
         )

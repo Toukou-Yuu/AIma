@@ -6,6 +6,7 @@ llama.cpp's OpenAI-compatible server instead.
 
 from __future__ import annotations
 
+from models.backend import ModelRequest, ModelResponse
 from models.schema import ModelSpec
 
 
@@ -34,6 +35,16 @@ class LlamaCppBackend:
         """
         self.spec = spec
 
+    @property
+    def backend_name(self) -> str:
+        """Backend name."""
+        return "llama_cpp"
+
+    @property
+    def model_name(self) -> str:
+        """Model name."""
+        return self.spec.model_name
+
     def complete(
         self,
         messages: list,  # list[ChatMessage] - avoid circular import
@@ -57,4 +68,18 @@ class LlamaCppBackend:
             "     backend = 'openai_compatible'\n"
             "     endpoint = 'http://localhost:8080/v1'\n"
             "     model_name = 'local'"
+        )
+
+    def generate(self, request: ModelRequest) -> ModelResponse:
+        """Not implemented - raises NotImplementedError.
+
+        Args:
+            request: Model request.
+
+        Raises:
+            NotImplementedError: Always - use openai_compatible backend instead.
+        """
+        raise NotImplementedError(
+            "llama.cpp native backend is not implemented in v4.0. "
+            "Use openai_compatible backend with llama.cpp's OpenAI-compatible server."
         )
