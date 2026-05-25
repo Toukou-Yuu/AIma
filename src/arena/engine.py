@@ -24,17 +24,39 @@ class GameEngine:
     GameState、Observation、LegalAction 直接复用 kernel 类型。
     """
 
-    def new_match(self, spec: "MatchSpec", seed: int) -> GameState:
+    def new_match(self, spec: "MatchSpec | None", seed: int) -> GameState:
         """创建新对局，返回 PRE_DEAL 状态。
 
         Args:
-            spec: 对局配置
+            spec: 对局配置（包含 preset, max_hands, allow_negative, step_limit）
+                  如为 None，使用默认半庄配置
             seed: 随机种子
 
         Returns:
             PRE_DEAL 阶段的 GameState
         """
-        starting_points = 25000  # 默认起配点
+        # 根据preset设置起配点和局数
+        if spec is None:
+            # 默认使用半庄配置
+            max_hands = 8
+            starting_points = 25000
+        elif spec.preset == "tonpuu":
+            # 东风战：4局，起配25000
+            max_hands = 4
+            starting_points = 25000
+        elif spec.preset == "hanchan":
+            # 半庄：8局，起配25000
+            max_hands = spec.max_hands or 8
+            starting_points = 25000
+        else:
+            # custom：使用spec中的值
+            max_hands = spec.max_hands or 8
+            starting_points = 25000
+
+        # 存储配置供后续使用（通过state传递或单独存储）
+        # 当前kernel不支持max_hands，需要在match_runner层面处理
+        # 这里我们至少正确设置starting_points
+
         table = initial_table_snapshot(
             dealer_seat=0,
             starting_points=starting_points,

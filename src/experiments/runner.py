@@ -220,16 +220,18 @@ class ExperimentRunner:
 
         return existing_jobs
 
-    def _generate_job_spec(self, seed: int) -> JobSpec:
-        """生成作业规格。
+    def _generate_job_spec(self, seed: int, match_index: int) -> JobSpec:
+        """生成作业规格（使用确定性 ID）。
 
         Args:
             seed: 种子值
+            match_index: 对局索引（从0开始）
 
         Returns:
             JobSpec 实例
         """
-        job_id = uuid.uuid4().hex[:8]
+        # 确定性 ID 格式: {experiment_id}_seed{seed:04d}_match{match_index:04d}
+        job_id = f"{self._spec.experiment.id}_seed{seed:04d}_match{match_index:04d}"
         return JobSpec(
             job_id=job_id,
             experiment_id=self._spec.experiment.id,
@@ -321,7 +323,12 @@ class ExperimentRunner:
             )
 
             # 执行对局
-            result = runner.run(job_spec.match_spec, job_spec.seed)
+            result = runner.run(
+                job_spec.match_spec,
+                job_spec.seed,
+                job_id=job_spec.job_id,
+                match_id=job_spec.job_id,  # match_id 与 job_id 相同
+            )
 
             finished_at = datetime.now(tz=timezone.utc).isoformat()
 
@@ -397,7 +404,7 @@ class ExperimentRunner:
         failed = 0
         skipped = 0
 
-        for seed in seeds:
+        for match_index, seed in enumerate(seeds):
             # 检查是否已完成
             if seed in existing_jobs:
                 existing = existing_jobs[seed]
@@ -410,7 +417,7 @@ class ExperimentRunner:
                     continue
 
             # 生成作业规格并执行
-            job_spec = self._generate_job_spec(seed)
+            job_spec = self._generate_job_spec(seed, match_index)
             record = self._execute_job(job_spec)
 
             # 记录结果

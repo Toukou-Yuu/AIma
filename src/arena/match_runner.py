@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
@@ -114,12 +113,14 @@ class MatchRunner:
 
         return None
 
-    def run(self, spec: MatchSpec, seed: int) -> MatchResult:
+    def run(self, spec: MatchSpec, seed: int, job_id: str | None = None, match_id: str | None = None) -> MatchResult:
         """执行对局，返回 MatchResult。
 
         Args:
-            spec: 对局配置
+            spec: 对局配置（包含 preset, max_hands, step_limit）
             seed: 随机种子
+            job_id: 外部指定的 job_id（可选，如未提供则生成确定性 ID）
+            match_id: 外部指定的 match_id（可选，如未提供则使用 job_id）
 
         Returns:
             MatchResult: 对局完整结果
@@ -127,9 +128,20 @@ class MatchRunner:
         events: list[dict] = []
         decisions: list[dict] = []
 
-        # 生成 match_id 和 job_id
-        match_id = uuid.uuid4().hex[:8]
-        job_id = uuid.uuid4().hex[:8]
+        # ID 生成策略：
+        # 1. 如果提供 job_id，使用它
+        # 2. 否则生成确定性 ID: match_{seed:04d}
+        if job_id is None:
+            job_id = f"match_{seed:04d}"
+        if match_id is None:
+            match_id = job_id  # match_id 默认等于 job_id
+
+        # 使用spec中的max_hands（默认8局）
+        max_hands = spec.max_hands
+        if spec.preset == "tonpuu":
+            max_hands = 4  # 东风战固定4局
+        elif spec.preset == "hanchan" and max_hands == 0:
+            max_hands = 8  # 半庄默认8局
 
         state = self._engine.new_match(spec, seed)
         step_count = 0
@@ -152,6 +164,11 @@ class MatchRunner:
             # HAND_OVER / FLOWN -> NEXT_ROUND
             if phase in (GamePhase.HAND_OVER, GamePhase.FLOWN):
                 hand_index += 1
+                # 检查是否达到max_hands（东风战4局，半庄8局）
+                # 如果已达到局数限制，不再继续下一局
+                if hand_index >= max_hands:
+                    # 这是正常完成，不是截断
+                    break
                 wall_seed = seed + hand_index
                 wall = tuple(shuffle_deck(build_deck(), seed=wall_seed))
                 action = Action(kind=ActionKind.NEXT_ROUND, wall=wall)
@@ -233,10 +250,13 @@ class MatchRunner:
             msg = f"Unhandled phase: {phase}"
             raise ValueError(msg)
 
-        # 检查步数限制
+        # 检查停止原因
         stopped_reason = None
+        outcome = "completed"
+
         if step_count >= self._step_limit and not self._engine.is_terminal(state):
             stopped_reason = "step_limit_exceeded"
+            outcome = "step_limit_reached"
 
         result = MatchResult(
             match_id=match_id,
