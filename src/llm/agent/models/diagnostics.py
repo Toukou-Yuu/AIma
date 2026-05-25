@@ -30,6 +30,7 @@ class PromptDiagnostics:
     latest_user_tokens: int = 0
     history_message_count: int = 0
     collapsed_message_count: int = 0
+    memory_injected_tokens: int = 0  # Tokens injected from memory/history blocks
 
     @property
     def usage_ratio(self) -> float:
@@ -51,6 +52,7 @@ class PromptDiagnostics:
             "latest_user_tokens": self.latest_user_tokens,
             "history_message_count": self.history_message_count,
             "collapsed_message_count": self.collapsed_message_count,
+            "memory_injected_tokens": self.memory_injected_tokens,
             "trimmed_blocks": list(self.trimmed_blocks),
             "selected_blocks": [block.to_wire() for block in self.selected_blocks],
         }
@@ -79,6 +81,7 @@ class PromptDiagnostics:
             latest_user_tokens=int(data.get("latest_user_tokens", 0)),
             history_message_count=int(data.get("history_message_count", 0)),
             collapsed_message_count=int(data.get("collapsed_message_count", 0)),
+            memory_injected_tokens=int(data.get("memory_injected_tokens", 0)),
         )
 
 

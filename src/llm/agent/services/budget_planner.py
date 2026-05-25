@@ -161,6 +161,11 @@ class PromptBudgetPlanner:
         collapsed_message_count = sum(
             1 for block in selected if "summary" in block.block_id
         )
+        memory_injected_tokens = sum(
+            block.estimated_tokens
+            for block in selected
+            if block.block_id == "match_archive" or block.block_id.startswith("history_")
+        )
         diagnostics = PromptDiagnostics(
             estimated_tokens=total,
             prompt_budget_tokens=self._config.prompt_budget_tokens,
@@ -174,6 +179,7 @@ class PromptBudgetPlanner:
             latest_user_tokens=latest_user_tokens,
             history_message_count=history_message_count,
             collapsed_message_count=collapsed_message_count,
+            memory_injected_tokens=memory_injected_tokens,
         )
         return PromptPlan(
             blocks=tuple(selected),
