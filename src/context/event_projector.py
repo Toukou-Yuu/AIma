@@ -87,19 +87,20 @@ class EventProjector:
             return []
 
         if self._config.scope == "per_turn":
-            # Last turn only: return events from the most recent turn_index
+            # Last turn only within the current hand.
             if not events:
                 return []
-            # Find events with turn_index == current_turn_index
-            return [ev for ev in events if ev.turn_index == current_turn_index]
+            return [
+                ev for ev in events
+                if getattr(ev, "hand_index", current_hand_index) == current_hand_index
+                and ev.turn_index == current_turn_index
+            ]
 
         if self._config.scope == "per_hand":
-            # Current hand events: filter by hand_index if available
-            # Note: ContextEvent doesn't have hand_index directly,
-            # so we use turn_index < current_turn_index for "same hand"
-            # For now, include all events as per_match behavior
-            # This may need adjustment based on how hand boundaries are tracked
-            return events
+            return [
+                ev for ev in events
+                if getattr(ev, "hand_index", current_hand_index) == current_hand_index
+            ]
 
         # per_match: full match events
         return events

@@ -11,10 +11,11 @@ from arena.match_result import MatchResult
 from arena.policy import DecisionContext
 from arena.result import EngineStepResult
 from arena.sinks import EventSink
+from context.events import ContextEvent, kernel_event_to_context_event
 from kernel import build_deck, shuffle_deck
 from kernel.engine.actions import Action, ActionKind
 from kernel.engine.phase import GamePhase
-from kernel.event_log import HandOverEvent, MatchEndEvent
+from kernel.event_log import MatchEndEvent
 
 if TYPE_CHECKING:
     from arena.engine import GameEngine
@@ -115,7 +116,13 @@ class MatchRunner:
 
         return None
 
-    def run(self, spec: MatchSpec, seed: int, job_id: str | None = None, match_id: str | None = None) -> MatchResult:
+    def run(
+        self,
+        spec: MatchSpec,
+        seed: int,
+        job_id: str | None = None,
+        match_id: str | None = None,
+    ) -> MatchResult:
         """执行对局，返回 MatchResult。
 
         Args:
@@ -130,6 +137,7 @@ class MatchRunner:
         start_time = time.perf_counter()
         events: list[dict] = []
         decisions: list[dict] = []
+        event_history: list[ContextEvent] = []  # v4 native event history for ContextBuilder
 
         # ID 生成策略：
         # 1. 如果提供 job_id，使用它
@@ -149,6 +157,8 @@ class MatchRunner:
         state = self._engine.new_match(spec, seed)
         step_count = 0
         hand_index = 0
+        turn_index = 0
+        hand_count = 0  # 已完成局数（在 HAND_OVER/FLOWN 时自增，含流局）
 
         # 处理 PRE_DEAL -> BEGIN_ROUND
         if state.phase == GamePhase.PRE_DEAL:
@@ -159,6 +169,16 @@ class MatchRunner:
             step_count += 1
             for ev in result.events:
                 events.append({"match_id": match_id, "step_index": step_count, "event": ev})
+                event_history.append(
+                    kernel_event_to_context_event(
+                        kernel_event=ev,
+                        match_id=match_id,
+                        job_id=job_id,
+                        hand_index=hand_index,
+                        step_index=step_count,
+                        turn_index=turn_index,
+                    )
+                )
 
         # 主循环
         while not self._engine.is_terminal(state) and step_count < self._step_limit:
@@ -166,11 +186,13 @@ class MatchRunner:
 
             # HAND_OVER / FLOWN -> NEXT_ROUND
             if phase in (GamePhase.HAND_OVER, GamePhase.FLOWN):
-                hand_index += 1
-                # 检查是否达到max_hands（东风战4局，半庄8局）
-                # 如果已达到局数限制，不再继续下一局
-                if hand_index >= max_hands:
+                # 局结束（含流局 FLOWN 路径），计入 hand_count
+                hand_count += 1
+                # 检查是否达到 max_hands 局数限制
+                if hand_count >= max_hands:
                     break
+                hand_index += 1
+                turn_index = 0
                 wall_seed = seed + hand_index
                 wall = tuple(shuffle_deck(build_deck(), seed=wall_seed))
                 action = Action(kind=ActionKind.NEXT_ROUND, wall=wall)
@@ -179,6 +201,16 @@ class MatchRunner:
                 step_count += 1
                 for ev in result.events:
                     events.append({"match_id": match_id, "step_index": step_count, "event": ev})
+                    event_history.append(
+                        kernel_event_to_context_event(
+                            kernel_event=ev,
+                            match_id=match_id,
+                            job_id=job_id,
+                            hand_index=hand_index,
+                            step_index=step_count,
+                            turn_index=turn_index,
+                        )
+                    )
                 continue
 
             # IN_ROUND: 策略决策
@@ -212,6 +244,7 @@ class MatchRunner:
                     state=state,
                     observation=obs,
                     legal_actions=legal,
+                    event_history=tuple(event_history),  # v4: 注入事件快照
                 )
 
                 policy = self._policies[seat]
@@ -229,6 +262,7 @@ class MatchRunner:
                 result = self._engine.step(state, decision.action)
                 state = result.new_state
                 step_count += 1
+                turn_index += 1
 
                 # 收集决策/事件
                 decisions.append({
@@ -242,6 +276,16 @@ class MatchRunner:
                 })
                 for ev in result.events:
                     events.append({"match_id": match_id, "step_index": step_count, "event": ev})
+                    event_history.append(
+                        kernel_event_to_context_event(
+                            kernel_event=ev,
+                            match_id=match_id,
+                            job_id=job_id,
+                            hand_index=hand_index,
+                            step_index=step_count,
+                            turn_index=turn_index,
+                        )
+                    )
 
                 # 调用 sinks
                 for s in self._sinks:
@@ -264,7 +308,7 @@ class MatchRunner:
             stopped_reason = "step_limit_exceeded"
             outcome = "step_limit_reached"
         else:
-            # max_hands 截断
+            # max_hands 截断：当前局已经结束（hand_count 已在循环中计入）
             stopped_reason = "max_hands_reached"
             outcome = "truncated"
 
@@ -272,11 +316,8 @@ class MatchRunner:
         end_time = time.perf_counter()
         duration_ms = (end_time - start_time) * 1000
 
-        # 计算局数（hand_over 事件数量）
-        hand_count = sum(
-            1 for ev in events
-            if isinstance(ev.get("event"), HandOverEvent)
-        )
+        # hand_count 已在主循环中按 HAND_OVER/FLOWN局结束时自增
+        # （运行时就统计局数，不再靠 HandOverEvent 统计，避免漏计流局）
 
         # 获取 final_phase
         final_phase = state.phase.value

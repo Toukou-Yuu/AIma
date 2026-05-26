@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from context.builders import BuiltContext, ContextBuilder
-from context.compression import CompressionEngine, CompressionResult
-from context.event_projector import EventFilterConfig, EventProjector
-from context.schema import ContextSpec
-from context.token_budget import TokenBudgetConfig, TokenBudgetManager, TruncationResult
-from llm.agent.context_store import ContextEvent
+from types import SimpleNamespace
 
+from agents.pipeline import AgentPipeline
+from context.builders import ContextBuilder
+from context.compression import CompressionEngine
+from context.event_projector import EventFilterConfig, EventProjector
+from context.events import ContextEvent as V4ContextEvent
+from context.schema import ContextSpec
+from context.token_budget import TokenBudgetConfig, TokenBudgetManager
+from llm.agent.context_store import ContextEvent
 
 # ---------------------------------------------------------------------------
 # 辅助工厂
@@ -42,6 +45,19 @@ def _events(n: int, **kw) -> list[ContextEvent]:
     return [_event(turn=i + 1, action_text=f"打{i + 1}m", **kw) for i in range(n)]
 
 
+def _v4_event(hand: int, turn: int, text: str) -> V4ContextEvent:
+    return V4ContextEvent(
+        match_id="match_001",
+        job_id="job_001",
+        hand_index=hand,
+        step_index=turn + 1,
+        turn_index=turn,
+        seat=0,
+        event_type="DiscardTileEvent",
+        text=text,
+    )
+
+
 # ===================================================================
 # EventProjector: scope 过滤
 # ===================================================================
@@ -64,6 +80,21 @@ def test_scope_per_turn_returns_current_turn() -> None:
     result = projector.project(evs, current_hand_index=0, current_turn_index=5)
     assert len(result) == 1
     assert result[0].turn_index == 5
+
+
+def test_scope_per_turn_is_limited_to_current_hand() -> None:
+    """per_turn scope 不应混入其他手牌中相同 turn_index 的事件。"""
+    config = EventFilterConfig(scope="per_turn")
+    projector = EventProjector(config)
+    evs = [
+        _v4_event(hand=0, turn=0, text="old hand round begin"),
+        _v4_event(hand=0, turn=1, text="old hand discard"),
+        _v4_event(hand=1, turn=0, text="current hand round begin"),
+    ]
+
+    result = projector.project(evs, current_hand_index=1, current_turn_index=0)
+
+    assert [ev.text for ev in result] == ["current hand round begin"]
 
 
 def test_scope_per_hand_returns_all() -> None:
@@ -213,6 +244,27 @@ def test_builder_per_turn_scope() -> None:
     result = builder.build(evs, current_hand_index=0, current_turn_index=5)
     assert result.raw_event_count == 1
     assert "第5巡" in result.text
+
+
+def test_agent_pipeline_build_context_uses_latest_turn_in_current_hand() -> None:
+    """AgentPipeline 调 ContextBuilder 时应传入当前手牌内最新 turn_index。"""
+    spec = ContextSpec(scope="per_turn")
+    builder = ContextBuilder(spec)
+    pipeline = AgentPipeline(SimpleNamespace(context=builder))
+    ctx = SimpleNamespace(
+        hand_index=1,
+        seat=0,
+        event_history=(
+            _v4_event(hand=0, turn=3, text="previous hand latest"),
+            _v4_event(hand=1, turn=0, text="current hand round begin"),
+        ),
+    )
+
+    result = pipeline._build_context(ctx)
+
+    assert result.raw_event_count == 1
+    assert "current hand round begin" in result.text
+    assert "previous hand latest" not in result.text
 
 
 def test_builder_per_hand_scope() -> None:

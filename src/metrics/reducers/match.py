@@ -52,6 +52,7 @@ class MatchReducer:
             "riichi_count": [0, 0, 0, 0],
             "riichi_success_count": [0, 0, 0, 0],
             "decision_latencies": [],
+            "decision_count": 0,
             "prompt_tokens": [],
             "completion_tokens": [],
             "memory_injected_tokens": [],
@@ -97,6 +98,8 @@ class MatchReducer:
             data["outcome"] = values["outcome"]
         if "step_count" in values:
             data["step_count"] = values["step_count"]
+        if "hand_count" in values:
+            data["hand_count"] = values["hand_count"]
         if "duration_ms" in values:
             data["duration_ms"] = values["duration_ms"]
         if "final_points" in values:
@@ -139,6 +142,7 @@ class MatchReducer:
     def _process_decision(self, data: dict[str, Any], record: MetricRecord) -> None:
         """Process decision record for token/latency statistics."""
         values = record.values
+        data["decision_count"] += 1
 
         # Latency
         latency = values.get("latency_ms")
@@ -162,7 +166,13 @@ class MatchReducer:
             data["memory_injected_tokens"].append(memory_injected)
 
         # Parse status
-        parse_status = values.get("parse_status", "ok")
+        parse_status = values.get("parse_status", "not_applicable")
+        if parse_status == "matched":
+            parse_status = "ok"
+        elif parse_status == "parse_failed":
+            parse_status = "error"
+        elif parse_status == "match_failed":
+            parse_status = "fallback" if values.get("fallback_used") else "error"
         if parse_status in data["parse_status_counts"]:
             data["parse_status_counts"][parse_status] += 1
 
@@ -202,7 +212,7 @@ class MatchReducer:
             avg_completion_tokens_per_decision=avg_completion,
             peak_prompt_tokens=data["peak_prompt_tokens"],
             memory_injected_tokens_total=sum(memory_tokens),
-            decision_count=len(latencies),
+            decision_count=data["decision_count"],
             parse_success_count=data["parse_status_counts"]["ok"],
             parse_fallback_count=data["parse_status_counts"]["fallback"],
             parse_error_count=data["parse_status_counts"]["error"],

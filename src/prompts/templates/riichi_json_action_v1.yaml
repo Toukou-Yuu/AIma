@@ -25,6 +25,14 @@ sections:
     renderer: game_state
     max_tokens: 500
 
+  # Public action/event history from ContextBuilder.
+  # Empty runtime content is skipped by the renderer.
+  - id: public_history
+    enabled: true
+    renderer: public_history
+    source: runtime
+    max_tokens: 800
+
   # Player's hand
   - id: hand
     enabled: true
@@ -57,12 +65,11 @@ sections:
     max_items: 30  # Limit number of actions shown
     max_tokens: 600
 
-  # Memory section (optional, disabled by default)
-  # Enable when memory mode is "passive"
+  # Memory section. Empty runtime content is skipped by the renderer.
   - id: memory
-    enabled: false
+    enabled: true
     renderer: memory
-    source: null
+    source: runtime
     max_tokens: 500
 
   # Output format instructions

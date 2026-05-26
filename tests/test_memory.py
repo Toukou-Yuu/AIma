@@ -23,7 +23,6 @@ from memory.writers import (
     write_layer,
 )
 
-
 # ===================================================================
 # MemorySpec & MemoryLayer
 # ===================================================================
@@ -480,6 +479,20 @@ def test_persist_json_writes_to_disk(tmp_path: Path) -> None:
     # 验证文件被创建
     memory_file = tmp_path / "player1" / "persistent" / "memory.json"
     assert memory_file.exists()
+
+
+def test_memory_manager_prompt_interface_returns_text_and_layers() -> None:
+    """AgentPipeline 使用公开接口读取 prompt memory 和诊断层名。"""
+    spec = MemorySpec(mode="passive", layers=["hand"])
+    manager = MemoryManager(spec)
+    player_id = manager.player_id_for_seat(2)
+    manager.update_hand_memory(player_id, {"tiles": "123m"})
+
+    text, layers = manager.get_memory_prompt(player_id)
+
+    assert player_id == "seat2"
+    assert layers == ("hand",)
+    assert "123m" in text
 
 
 # ===================================================================

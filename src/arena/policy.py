@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from context.events import ContextEvent
     from kernel import Action, GameState
     from kernel.api import LegalAction, Observation
 
@@ -37,6 +38,7 @@ class DecisionContext:
     state: GameState
     observation: Observation
     legal_actions: tuple[LegalAction, ...]
+    event_history: "tuple[ContextEvent, ...]" = field(default_factory=tuple)
 
 
 @dataclass(frozen=True, slots=True)

@@ -42,14 +42,14 @@ Examples:
         "--output",
         "-o",
         type=Path,
-        default=Path("aggregate"),
-        help="Output directory for reports (default: aggregate)",
+        default=None,
+        help="Output directory for reports (default: <run>/aggregate)",
     )
 
     args = parser.parse_args()
 
     run_dir = args.run
-    output_dir = args.output
+    output_dir = args.output or (run_dir / "aggregate")
 
     # Validate run directory
     if not run_dir.exists():

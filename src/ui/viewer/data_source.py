@@ -431,6 +431,19 @@ class RunDataSource:
         Returns:
             RunData if job exists, None otherwise.
         """
+        for exp_dir in (self.run_root.iterdir() if self.run_root.exists() else ()):
+            job_dir = exp_dir / "jobs" / job_id
+            if job_dir.exists():
+                seed = 0
+                summary_path = job_dir / "summary.json"
+                if summary_path.exists():
+                    try:
+                        with open(summary_path, encoding="utf-8") as f:
+                            seed = int(json.load(f).get("seed", 0))
+                    except Exception:
+                        seed = 0
+                return load_single_job(job_dir, job_id, seed)
+
         # First try v4 layout: jobs/<job_id>/ (job_id contains experiment_id prefix)
         # Parse job_id to get experiment_id
         if "_" in job_id:

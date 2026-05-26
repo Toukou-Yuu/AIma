@@ -37,6 +37,7 @@ class DecisionRecord:
     fallback_used: bool
     latency_ms: float | None
     diagnostics: dict[str, Any] = field(default_factory=dict)
+    hand_index: int | None = None
 
 
 @dataclass
@@ -102,6 +103,9 @@ def _parse_decision(record: dict[str, Any]) -> DecisionRecord:
     return DecisionRecord(
         match_id=str(record.get("match_id", "")),
         step_index=int(record.get("step_index", 0)),
+        hand_index=(
+            int(record["hand_index"]) if record.get("hand_index") is not None else None
+        ),
         seat=int(record.get("seat", 0)),
         action=action,
         parse_status=str(record.get("parse_status", "ok")),

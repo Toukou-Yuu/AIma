@@ -29,12 +29,14 @@ class JobSpec:
         experiment_id: Parent experiment identifier
         seed: Random seed for this job
         match_spec: Match configuration (reference, not copied)
+        match_index: Zero-based match index in the experiment seed plan
     """
 
     job_id: str
     experiment_id: str
     seed: int
     match_spec: "MatchSpec"
+    match_index: int = 0
 
 
 @dataclass

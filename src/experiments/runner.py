@@ -6,11 +6,9 @@ import json
 import os
 import shutil
 import subprocess
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-import uuid
 
 from arena.engine import GameEngine
 from arena.match_runner import MatchRunner
@@ -237,6 +235,7 @@ class ExperimentRunner:
             experiment_id=self._spec.experiment.id,
             seed=seed,
             match_spec=self._spec.match,
+            match_index=match_index,
         )
 
     def _create_policies(self, job_spec: JobSpec) -> dict[int, "Policy"]:
@@ -293,6 +292,10 @@ class ExperimentRunner:
                 match_id=job_spec.job_id,  # 使用 job_id 作为 match_id
                 job_id=job_spec.job_id,
                 seed=job_spec.seed,
+                experiment_id=job_spec.experiment_id,
+                match_index=job_spec.match_index,
+                preset=job_spec.match_spec.preset,
+                started_at=started_at,
             )
 
             sinks = [artifact_writer]
@@ -310,6 +313,8 @@ class ExperimentRunner:
                     experiment_id=job_spec.experiment_id,
                     seed=job_spec.seed,
                     started_at=started_at,
+                    job_dir=job_dir,
+                    preset=job_spec.match_spec.preset,
                 )
                 sinks.append(index_sink)
 
@@ -388,6 +393,23 @@ class ExperimentRunner:
         self._write_rule_scope()
         self._write_git_info()
         self._write_env_info()
+
+        if self._spec.artifacts.sqlite_index:
+            from experiments.index import create_index, get_index_path, insert_experiment
+
+            db_path = get_index_path(self._spec.artifacts.output_root)
+            create_index(db_path)
+            insert_experiment(
+                db_path=db_path,
+                experiment_id=self._spec.experiment.id,
+                description=self._spec.experiment.description,
+                tags=self._spec.experiment.tags,
+                created_at=datetime.now(tz=timezone.utc).isoformat(),
+                config_path=str(self._config_path) if self._config_path else None,
+                run_dir=str(run_dir),
+                rule_version=self._spec.rules.version,
+                status="running",
+            )
 
         # 生成种子计划
         seeds = self._generate_seed_plan()

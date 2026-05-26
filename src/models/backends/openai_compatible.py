@@ -85,9 +85,16 @@ class OpenAICompatibleBackend:
         Returns:
             ModelResponse 包含响应和元信息
         """
-        return self._call_api(request.messages, request.model_name or self._spec.model_name)
+        model = str(request.extra_params.get("model", self._spec.model_name))
+        return self._call_api(request.messages, model, request=request)
 
-    def _call_api(self, messages: list[ChatMessage], model: str) -> ModelResponse:
+    def _call_api(
+        self,
+        messages: list[ChatMessage],
+        model: str,
+        *,
+        request: ModelRequest | None = None,
+    ) -> ModelResponse:
         """调用 API 并返回完整响应。
 
         Args:
@@ -102,16 +109,39 @@ class OpenAICompatibleBackend:
         payload: dict[str, Any] = {
             "model": model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
-            "temperature": self._spec.temperature,
-            "max_tokens": self._spec.max_tokens,
+            "temperature": (
+                request.temperature
+                if request is not None and request.temperature is not None
+                else self._spec.temperature
+            ),
+            "max_tokens": (
+                request.max_tokens
+                if request is not None and request.max_tokens is not None
+                else self._spec.max_tokens
+            ),
         }
 
-        if self._spec.top_p is not None:
-            payload["top_p"] = self._spec.top_p
+        top_p = request.top_p if request is not None and request.top_p is not None else self._spec.top_p
+        if top_p is not None:
+            payload["top_p"] = top_p
+        if request is not None and request.stop is not None:
+            payload["stop"] = request.stop
+        if request is not None and request.response_format is not None:
+            payload["response_format"] = request.response_format
+        if request is not None and request.seed is not None:
+            payload["seed"] = request.seed
 
         # 合并额外参数
         if self._spec.extra:
             payload.update(self._spec.extra)
+        if request is not None and request.extra_params:
+            payload.update(
+                {
+                    key: value
+                    for key, value in request.extra_params.items()
+                    if key != "model"
+                }
+            )
 
         headers = {
             "Content-Type": "application/json",

@@ -15,7 +15,7 @@ class DecisionExtractor(BaseExtractor):
     Yields MetricRecord for each decision with:
         - kind: "decision"
         - seat: player seat
-        - hand_index: hand index (from step_index, estimated)
+        - hand_index: hand index from artifact record when available
         - values: parse_status, fallback_used, latency_ms,
                   prompt_tokens, completion_tokens, memory_injected_tokens, action_kind
     """
@@ -43,10 +43,11 @@ class DecisionExtractor(BaseExtractor):
             action = decision.action
             action_kind = action.get("kind", "unknown")
 
-            # Determine hand_index (approximate from step_index)
-            # A typical hand has ~20-30 steps, but we don't have exact hand boundaries
-            # We'll track hand_index from events if available, otherwise use step_index // 25
-            hand_index = decision.step_index // 25  # rough estimate
+            hand_index = (
+                decision.hand_index
+                if decision.hand_index is not None
+                else decision.step_index // 25
+            )
 
             yield MetricRecord(
                 kind="decision",

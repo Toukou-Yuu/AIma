@@ -17,9 +17,11 @@ from agents.components.parser import OutputParser
 from agents.components.prompt import PromptRenderer
 from context.builders import ContextBuilder
 from memory.manager import MemoryManager
+from models.registry import build_backend
 
 if TYPE_CHECKING:
     from agents.schema import AgentSpec
+    from models.backend import ModelBackend
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +36,7 @@ class PipelineComponents:
         prompt: 提示词渲染器
         context: 上下文构建器（可选）
         memory: 记忆管理器（可选）
+        backend: 模型后端
     """
 
     parser: OutputParser
@@ -43,6 +46,7 @@ class PipelineComponents:
     prompt: PromptRenderer
     context: ContextBuilder | None = None
     memory: MemoryManager | None = None
+    backend: "ModelBackend | None" = None
 
 
 def build_components(spec: "AgentSpec", seed: int) -> PipelineComponents:
@@ -68,8 +72,9 @@ def build_components(spec: "AgentSpec", seed: int) -> PipelineComponents:
     if spec.memory.mode != "off":
         memory_manager = MemoryManager(spec.memory)
 
-    # 使用 AgentSpec 中的 prompt.template_id
-    prompt_renderer = PromptRenderer(template_id=spec.prompt.template_id)
+    # 使用 AgentSpec 中的 prompt 配置；sections 为空时回退到模板默认 sections。
+    prompt_renderer = PromptRenderer(prompt_spec=spec.prompt)
+    backend = build_backend(spec.model)
 
     return PipelineComponents(
         parser=OutputParser(),
@@ -79,4 +84,5 @@ def build_components(spec: "AgentSpec", seed: int) -> PipelineComponents:
         prompt=prompt_renderer,
         context=context_builder,
         memory=memory_manager,
+        backend=backend,
     )

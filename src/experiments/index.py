@@ -8,8 +8,32 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from experiments.job import JobRecord, JobState
 from experiments.schema import ExperimentSpec
+
+ARTIFACT_FILES: dict[str, str] = {
+    "summary": "summary.json",
+    "metrics": "metrics.json",
+    "replay": "replay.json",
+    "events": "events.jsonl",
+    "decisions": "decisions.jsonl",
+}
+
+METRICS_SUMMARY_COLUMNS = [
+    "match_id",
+    "seat",
+    "final_points_json",
+    "point_delta_json",
+    "final_score",
+    "rank",
+    "win_count",
+    "deal_in_count",
+    "riichi_count",
+    "fallback_count",
+    "parse_error_count",
+    "avg_latency_ms",
+    "avg_prompt_tokens",
+    "avg_completion_tokens",
+]
 
 
 def get_index_path(output_root: str | Path) -> Path:
@@ -45,7 +69,10 @@ def create_index(db_path: str | Path) -> None:
                 tags TEXT,
                 created_at TEXT,
                 config_path TEXT,
-                run_dir TEXT
+                run_dir TEXT,
+                rule_version TEXT,
+                config_hash TEXT,
+                status TEXT
             )
         """)
 
@@ -60,6 +87,7 @@ def create_index(db_path: str | Path) -> None:
                 finished_at TEXT,
                 match_id TEXT,
                 error_message TEXT,
+                output_dir TEXT,
                 FOREIGN KEY (experiment_id) REFERENCES experiments(id)
             )
         """)
@@ -82,28 +110,34 @@ def create_index(db_path: str | Path) -> None:
                 job_id TEXT,
                 experiment_id TEXT,
                 seed INTEGER,
+                preset TEXT,
+                stopped_reason TEXT,
                 final_phase TEXT,
                 outcome TEXT,
                 hand_count INTEGER,
                 step_count INTEGER,
                 decision_count INTEGER,
+                event_count INTEGER,
+                duration_ms REAL,
                 FOREIGN KEY (job_id) REFERENCES jobs(job_id),
                 FOREIGN KEY (experiment_id) REFERENCES experiments(id)
             )
         """)
 
         # Create metrics_summary table (new in v4)
+        _create_metrics_summary_table(cursor)
+
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS metrics_summary (
-                match_id TEXT PRIMARY KEY,
-                final_points_json TEXT,
-                point_delta_json TEXT,
-                fallback_count INTEGER,
-                parse_error_count INTEGER,
-                avg_latency_ms REAL,
-                avg_prompt_tokens REAL,
-                avg_completion_tokens REAL,
-                FOREIGN KEY (match_id) REFERENCES matches(match_id)
+            CREATE TABLE IF NOT EXISTS artifact_paths (
+                experiment_id TEXT,
+                job_id TEXT,
+                match_id TEXT,
+                artifact_type TEXT,
+                path TEXT,
+                PRIMARY KEY (job_id, artifact_type),
+                FOREIGN KEY (job_id) REFERENCES jobs(job_id),
+                FOREIGN KEY (match_id) REFERENCES matches(match_id),
+                FOREIGN KEY (experiment_id) REFERENCES experiments(id)
             )
         """)
 
@@ -118,9 +152,117 @@ def create_index(db_path: str | Path) -> None:
             ON matches(job_id)
         """)
 
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_artifact_paths_job
+            ON artifact_paths(job_id)
+        """)
+
+        _ensure_columns(cursor)
+        _migrate_metrics_summary_primary_key(cursor)
+
         conn.commit()
     finally:
         conn.close()
+
+
+def _create_metrics_summary_table(cursor: sqlite3.Cursor) -> None:
+    """Create the current metrics_summary schema."""
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS metrics_summary (
+            match_id TEXT,
+            seat INTEGER NOT NULL DEFAULT -1,
+            final_points_json TEXT,
+            point_delta_json TEXT,
+            final_score INTEGER,
+            rank INTEGER,
+            win_count INTEGER,
+            deal_in_count INTEGER,
+            riichi_count INTEGER,
+            fallback_count INTEGER,
+            parse_error_count INTEGER,
+            avg_latency_ms REAL,
+            avg_prompt_tokens REAL,
+            avg_completion_tokens REAL,
+            PRIMARY KEY (match_id, seat),
+            FOREIGN KEY (match_id) REFERENCES matches(match_id)
+        )
+    """)
+
+
+def _ensure_columns(cursor: sqlite3.Cursor) -> None:
+    """Best-effort schema migration for databases created by older versions."""
+    migrations = {
+        "experiments": {
+            "rule_version": "TEXT",
+            "config_hash": "TEXT",
+            "status": "TEXT",
+        },
+        "jobs": {
+            "output_dir": "TEXT",
+        },
+        "matches": {
+            "preset": "TEXT",
+            "stopped_reason": "TEXT",
+            "event_count": "INTEGER",
+            "duration_ms": "REAL",
+        },
+        "metrics_summary": {
+            "seat": "INTEGER NOT NULL DEFAULT -1",
+            "final_score": "INTEGER",
+            "rank": "INTEGER",
+            "win_count": "INTEGER",
+            "deal_in_count": "INTEGER",
+            "riichi_count": "INTEGER",
+        },
+    }
+    for table, columns in migrations.items():
+        cursor.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in cursor.fetchall()}
+        for column, decl in columns.items():
+            if column not in existing:
+                try:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+                except sqlite3.OperationalError:
+                    pass
+
+
+def _migrate_metrics_summary_primary_key(cursor: sqlite3.Cursor) -> None:
+    """Migrate old metrics_summary(match_id primary key) to per-seat primary key."""
+    cursor.execute("PRAGMA table_info(metrics_summary)")
+    rows = cursor.fetchall()
+    pk_cols = [
+        row[1]
+        for row in sorted((row for row in rows if row[5]), key=lambda row: row[5])
+    ]
+    if pk_cols == ["match_id", "seat"]:
+        return
+
+    legacy_table = "metrics_summary_legacy_migration"
+    cursor.execute(f"DROP TABLE IF EXISTS {legacy_table}")
+    cursor.execute(f"ALTER TABLE metrics_summary RENAME TO {legacy_table}")
+    _create_metrics_summary_table(cursor)
+
+    legacy_cols = {row[1] for row in rows}
+    select_exprs: list[str] = []
+    insert_cols: list[str] = []
+    for col in METRICS_SUMMARY_COLUMNS:
+        if col not in legacy_cols:
+            continue
+        insert_cols.append(col)
+        if col == "seat":
+            select_exprs.append("COALESCE(seat, -1)")
+        else:
+            select_exprs.append(col)
+
+    if insert_cols:
+        cursor.execute(
+            f"""
+            INSERT OR REPLACE INTO metrics_summary ({", ".join(insert_cols)})
+            SELECT {", ".join(select_exprs)}
+            FROM {legacy_table}
+            """
+        )
+    cursor.execute(f"DROP TABLE {legacy_table}")
 
 
 def insert_experiment(
@@ -131,6 +273,9 @@ def insert_experiment(
     created_at: str,
     config_path: str | None = None,
     run_dir: str | None = None,
+    rule_version: str | None = None,
+    config_hash: str | None = None,
+    status: str | None = None,
 ) -> None:
     """Insert an experiment record into the database.
 
@@ -149,8 +294,9 @@ def insert_experiment(
         cursor.execute(
             """
             INSERT OR REPLACE INTO experiments
-            (id, description, tags, created_at, config_path, run_dir)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (id, description, tags, created_at, config_path, run_dir,
+             rule_version, config_hash, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 experiment_id,
@@ -159,6 +305,9 @@ def insert_experiment(
                 created_at,
                 config_path,
                 run_dir,
+                rule_version,
+                config_hash,
+                status,
             ),
         )
         conn.commit()
@@ -176,6 +325,7 @@ def insert_job(
     finished_at: str | None = None,
     match_id: str | None = None,
     error_message: str | None = None,
+    output_dir: str | None = None,
 ) -> None:
     """Insert a job record into the database.
 
@@ -196,8 +346,9 @@ def insert_job(
         cursor.execute(
             """
             INSERT OR REPLACE INTO jobs
-            (job_id, experiment_id, seed, state, started_at, finished_at, match_id, error_message)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (job_id, experiment_id, seed, state, started_at, finished_at,
+             match_id, error_message, output_dir)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job_id,
@@ -208,6 +359,7 @@ def insert_job(
                 finished_at,
                 match_id,
                 error_message,
+                output_dir,
             ),
         )
         conn.commit()
@@ -223,6 +375,7 @@ def update_job(
     finished_at: str | None = None,
     match_id: str | None = None,
     error_message: str | None = None,
+    output_dir: str | None = None,
 ) -> None:
     """Update a job record in the database.
 
@@ -253,6 +406,9 @@ def update_job(
     if error_message is not None:
         updates.append("error_message = ?")
         values.append(error_message)
+    if output_dir is not None:
+        updates.append("output_dir = ?")
+        values.append(output_dir)
 
     if not updates:
         return
@@ -279,11 +435,15 @@ def insert_match(
     job_id: str,
     experiment_id: str,
     seed: int,
+    preset: str | None = None,
     final_phase: str | None = None,
     outcome: str | None = None,
-    hand_count: int = 0,
-    step_count: int = 0,
-    decision_count: int = 0,
+    stopped_reason: str | None = None,
+    hand_count: int | None = 0,
+    step_count: int | None = 0,
+    decision_count: int | None = 0,
+    event_count: int | None = None,
+    duration_ms: float | None = None,
 ) -> None:
     """Insert a match record into the database.
 
@@ -305,20 +465,25 @@ def insert_match(
         cursor.execute(
             """
             INSERT OR REPLACE INTO matches
-            (match_id, job_id, experiment_id, seed, final_phase, outcome,
-             hand_count, step_count, decision_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (match_id, job_id, experiment_id, seed, preset, stopped_reason,
+             final_phase, outcome, hand_count, step_count, decision_count,
+             event_count, duration_ms)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 match_id,
                 job_id,
                 experiment_id,
                 seed,
+                preset,
+                stopped_reason,
                 final_phase,
                 outcome,
                 hand_count,
                 step_count,
                 decision_count,
+                event_count,
+                duration_ms,
             ),
         )
         conn.commit()
@@ -329,13 +494,19 @@ def insert_match(
 def insert_metrics_summary(
     db_path: str | Path,
     match_id: str,
+    seat: int = -1,
     final_points: tuple[int, ...] | None = None,
     point_delta: tuple[int, ...] | None = None,
+    final_score: int | None = None,
+    rank: int | None = None,
+    win_count: int = 0,
+    deal_in_count: int = 0,
+    riichi_count: int = 0,
     fallback_count: int = 0,
     parse_error_count: int = 0,
-    avg_latency_ms: float = 0.0,
-    avg_prompt_tokens: float = 0.0,
-    avg_completion_tokens: float = 0.0,
+    avg_latency_ms: float | None = 0.0,
+    avg_prompt_tokens: float | None = 0.0,
+    avg_completion_tokens: float | None = 0.0,
 ) -> None:
     """Insert a metrics summary record into the database.
 
@@ -356,15 +527,22 @@ def insert_metrics_summary(
         cursor.execute(
             """
             INSERT OR REPLACE INTO metrics_summary
-            (match_id, final_points_json, point_delta_json,
+            (match_id, seat, final_points_json, point_delta_json,
+             final_score, rank, win_count, deal_in_count, riichi_count,
              fallback_count, parse_error_count, avg_latency_ms,
              avg_prompt_tokens, avg_completion_tokens)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 match_id,
+                seat if seat is not None else -1,
                 json.dumps(final_points) if final_points else None,
                 json.dumps(point_delta) if point_delta else None,
+                final_score,
+                rank,
+                win_count,
+                deal_in_count,
+                riichi_count,
                 fallback_count,
                 parse_error_count,
                 avg_latency_ms,
@@ -375,6 +553,156 @@ def insert_metrics_summary(
         conn.commit()
     finally:
         conn.close()
+
+
+def insert_artifact_path(
+    db_path: str | Path,
+    *,
+    experiment_id: str,
+    job_id: str,
+    match_id: str,
+    artifact_type: str,
+    path: str,
+) -> None:
+    """Insert one artifact path into the rebuildable query index."""
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO artifact_paths
+            (experiment_id, job_id, match_id, artifact_type, path)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (experiment_id, job_id, match_id, artifact_type, path),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def index_job_artifacts(
+    db_path: str | Path,
+    *,
+    experiment_id: str,
+    job_id: str,
+    job_dir: str | Path,
+    default_seed: int = 0,
+    default_preset: str | None = None,
+    state: str | None = None,
+    started_at: str | None = None,
+    finished_at: str | None = None,
+    error_message: str | None = None,
+) -> dict[str, int]:
+    """Index one v4 job directory from its artifact files.
+
+    This is used by both runtime indexing and rebuild so SQLite remains a
+    rebuildable query index over the same source-of-truth files.
+    """
+    job_dir = Path(job_dir)
+    summary = _load_json(job_dir / ARTIFACT_FILES["summary"]) or {}
+    metrics = _load_json(job_dir / ARTIFACT_FILES["metrics"]) or {}
+
+    seed = int(summary.get("seed", default_seed))
+    match_id = str(summary.get("match_id", job_id))
+    preset = summary.get("preset", default_preset)
+    outcome = summary.get("outcome")
+    stopped_reason = summary.get("stopped_reason")
+
+    indexed_state = state
+    indexed_error = error_message
+    if indexed_state is None:
+        if summary.get("error") or outcome == "failed":
+            indexed_state = "failed"
+            indexed_error = str(summary.get("error") or stopped_reason or "failed")
+        elif summary:
+            indexed_state = "succeeded"
+        else:
+            indexed_state = "pending"
+
+    insert_job(
+        db_path=db_path,
+        job_id=job_id,
+        experiment_id=experiment_id,
+        seed=seed,
+        state=indexed_state,
+        started_at=started_at,
+        finished_at=finished_at,
+        match_id=match_id,
+        error_message=indexed_error,
+        output_dir=str(job_dir),
+    )
+
+    counts = {"jobs": 1, "matches": 0, "metrics_summaries": 0, "artifact_paths": 0}
+
+    if summary:
+        insert_match(
+            db_path=db_path,
+            match_id=match_id,
+            job_id=job_id,
+            experiment_id=experiment_id,
+            seed=seed,
+            preset=preset,
+            final_phase=summary.get("final_phase"),
+            outcome=outcome,
+            stopped_reason=stopped_reason,
+            hand_count=summary.get("hand_count"),
+            step_count=summary.get("step_count"),
+            decision_count=summary.get("decision_count"),
+            event_count=summary.get("event_count"),
+            duration_ms=summary.get("duration_ms"),
+        )
+        counts["matches"] = 1
+
+    per_seat = metrics.get("per_seat", [])
+    if isinstance(per_seat, list):
+        for seat_metrics in per_seat:
+            if not isinstance(seat_metrics, dict):
+                continue
+            seat = int(seat_metrics.get("seat", -1))
+            insert_metrics_summary(
+                db_path=db_path,
+                match_id=match_id,
+                seat=seat,
+                final_score=seat_metrics.get("final_score", seat_metrics.get("final_points")),
+                rank=seat_metrics.get("rank"),
+                win_count=seat_metrics.get("win_count", 0),
+                deal_in_count=seat_metrics.get("deal_in_count", 0),
+                riichi_count=seat_metrics.get("riichi_count", 0),
+                fallback_count=seat_metrics.get("fallback_count", 0),
+                parse_error_count=seat_metrics.get("parse_error_count", 0),
+                avg_latency_ms=seat_metrics.get("avg_latency_ms"),
+                avg_prompt_tokens=seat_metrics.get("avg_prompt_tokens"),
+                avg_completion_tokens=seat_metrics.get("avg_completion_tokens"),
+            )
+            counts["metrics_summaries"] += 1
+
+    for artifact_type, filename in ARTIFACT_FILES.items():
+        artifact_path = job_dir / filename
+        if artifact_path.exists():
+            insert_artifact_path(
+                db_path=db_path,
+                experiment_id=experiment_id,
+                job_id=job_id,
+                match_id=match_id,
+                artifact_type=artifact_type,
+                path=str(artifact_path),
+            )
+            counts["artifact_paths"] += 1
+
+    return counts
+
+
+def _load_json(path: Path) -> dict[str, Any] | None:
+    """Load a JSON object from disk, returning None for missing/invalid files."""
+    if not path.exists():
+        return None
+    try:
+        with path.open(encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
 def get_experiment(db_path: str | Path, experiment_id: str) -> dict[str, Any] | None:
@@ -392,7 +720,8 @@ def get_experiment(db_path: str | Path, experiment_id: str) -> dict[str, Any] | 
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT id, description, tags, created_at, config_path, run_dir
+            SELECT id, description, tags, created_at, config_path, run_dir,
+                   rule_version, config_hash, status
             FROM experiments WHERE id = ?
             """,
             (experiment_id,),
@@ -407,6 +736,9 @@ def get_experiment(db_path: str | Path, experiment_id: str) -> dict[str, Any] | 
             "created_at": row[3],
             "config_path": row[4],
             "run_dir": row[5],
+            "rule_version": row[6],
+            "config_hash": row[7],
+            "status": row[8],
         }
     finally:
         conn.close()
@@ -427,7 +759,8 @@ def get_job(db_path: str | Path, job_id: str) -> dict[str, Any] | None:
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT job_id, experiment_id, seed, state, started_at, finished_at, match_id, error_message
+            SELECT job_id, experiment_id, seed, state, started_at, finished_at,
+                   match_id, error_message, output_dir
             FROM jobs WHERE job_id = ?
             """,
             (job_id,),
@@ -444,6 +777,7 @@ def get_job(db_path: str | Path, job_id: str) -> dict[str, Any] | None:
             "finished_at": row[5],
             "match_id": row[6],
             "error_message": row[7],
+            "output_dir": row[8],
         }
     finally:
         conn.close()
@@ -467,8 +801,9 @@ def get_jobs_by_experiment(
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT job_id, experiment_id, seed, state, started_at, finished_at, match_id, error_message
-            FROM jobs WHERE experiment_id = ?
+                SELECT job_id, experiment_id, seed, state, started_at, finished_at,
+                       match_id, error_message, output_dir
+                FROM jobs WHERE experiment_id = ?
             ORDER BY seed
             """,
             (experiment_id,),
@@ -484,6 +819,7 @@ def get_jobs_by_experiment(
                 "finished_at": row[5],
                 "match_id": row[6],
                 "error_message": row[7],
+                "output_dir": row[8],
             }
             for row in rows
         ]
@@ -516,6 +852,7 @@ def rebuild_index(output_root: str | Path) -> dict[str, Any]:
         "jobs": 0,
         "matches": 0,
         "metrics_summaries": 0,
+        "artifact_paths": 0,
         "errors": [],
     }
 
@@ -534,6 +871,8 @@ def rebuild_index(output_root: str | Path) -> dict[str, Any]:
         description = ""
         tags: list[str] = []
         created_at: str | None = None
+        preset: str | None = None
+        rule_version: str | None = None
 
         # Try to load experiment spec from manifest.yaml (v4 layout)
         manifest_yaml_path = exp_dir / "manifest.yaml"
@@ -546,6 +885,9 @@ def rebuild_index(output_root: str | Path) -> dict[str, Any]:
                     experiment_id = manifest.get("experiment", {}).get("id", experiment_id)
                     description = manifest.get("experiment", {}).get("description", "")
                     tags = manifest.get("experiment", {}).get("tags", [])
+                    preset = manifest.get("match", {}).get("preset")
+                    rule_version = manifest.get("rules", {}).get("version")
+                    config_path = str(manifest_yaml_path)
             except Exception as e:
                 stats["errors"].append(
                     f"Failed to load manifest.yaml for {experiment_id}: {e}"
@@ -560,6 +902,8 @@ def rebuild_index(output_root: str | Path) -> dict[str, Any]:
                 description = spec.experiment.description
                 tags = spec.experiment.tags
                 config_path = str(config_yaml_path)
+                preset = spec.match.preset
+                rule_version = spec.rules.version
             except Exception as e:
                 stats["errors"].append(
                     f"Failed to load config.yaml for {experiment_id}: {e}"
@@ -578,6 +922,8 @@ def rebuild_index(output_root: str | Path) -> dict[str, Any]:
             created_at=created_at or datetime.now().isoformat(),
             config_path=config_path,
             run_dir=str(exp_dir),
+            rule_version=rule_version,
+            status="indexed",
         )
         stats["experiments"] += 1
 
@@ -658,68 +1004,11 @@ def rebuild_index(output_root: str | Path) -> dict[str, Any]:
                 continue
 
             job_id = job_dir.name
-
-            # Load job state from summary.json
-            state = "pending"
+            state: str | None = None
             seed = 0
             started_at_job: str | None = None
             finished_at_job: str | None = None
-            match_id: str | None = None
             error_message: str | None = None
-            final_phase: str | None = None
-            outcome: str | None = None
-            hand_count: int = 0
-            step_count: int = 0
-            decision_count: int = 0
-
-            summary_path = job_dir / "summary.json"
-            if summary_path.exists():
-                try:
-                    with open(summary_path, encoding="utf-8") as f:
-                        summary = json.load(f)
-
-                    seed = summary.get("seed", 0)
-                    match_id = summary.get("match_id", job_id)
-                    step_count = summary.get("step_count", 0)
-                    stopped_reason = summary.get("stopped_reason")
-
-                    if stopped_reason:
-                        state = "failed"
-                        error_message = stopped_reason
-                        outcome = "error"
-                    else:
-                        state = "succeeded"
-                        outcome = "completed"
-
-                    # Count decisions from decisions.jsonl
-                    decisions_path = job_dir / "decisions.jsonl"
-                    if decisions_path.exists():
-                        decision_count = 0
-                        with open(decisions_path, encoding="utf-8") as f:
-                            for line in f:
-                                if line.strip():
-                                    decision_count += 1
-
-                    # Estimate hand_count from step_count (roughly 20-30 steps per hand)
-                    hand_count = step_count // 25
-
-                    # Try to get final_phase from events.jsonl
-                    events_path = job_dir / "events.jsonl"
-                    if events_path.exists():
-                        # Read last event
-                        last_event: dict[str, Any] | None = None
-                        with open(events_path, encoding="utf-8") as f:
-                            for line in f:
-                                if line.strip():
-                                    try:
-                                        last_event = json.loads(line)
-                                    except json.JSONDecodeError:
-                                        pass
-                        if last_event:
-                            event_data = last_event.get("event", {})
-                            final_phase = event_data.get("phase")
-                except Exception as e:
-                    stats["errors"].append(f"Failed to load summary for {job_id}: {e}")
 
             # Also check jobs.jsonl for job records
             jobs_jsonl_path = exp_dir / "jobs.jsonl"
@@ -745,62 +1034,22 @@ def rebuild_index(output_root: str | Path) -> dict[str, Any]:
                 except Exception as e:
                     stats["errors"].append(f"Failed to load jobs.jsonl: {e}")
 
-            # Insert job record
-            insert_job(
+            indexed = index_job_artifacts(
                 db_path=db_path,
-                job_id=job_id,
                 experiment_id=experiment_id,
-                seed=seed,
+                job_id=job_id,
+                job_dir=job_dir,
+                default_seed=seed,
+                default_preset=preset,
                 state=state,
                 started_at=started_at_job,
                 finished_at=finished_at_job,
-                match_id=match_id or job_id,
                 error_message=error_message,
             )
-            stats["jobs"] += 1
-
-            # Insert match record
-            insert_match(
-                db_path=db_path,
-                match_id=match_id or job_id,
-                job_id=job_id,
-                experiment_id=experiment_id,
-                seed=seed,
-                final_phase=final_phase,
-                outcome=outcome,
-                hand_count=hand_count,
-                step_count=step_count,
-                decision_count=decision_count,
-            )
-            stats["matches"] += 1
-
-            # Load metrics from aggregate/reliability_summary.json
-            aggregate_dir = exp_dir / "aggregate"
-            reliability_path = aggregate_dir / "reliability_summary.json"
-            if reliability_path.exists():
-                try:
-                    with open(reliability_path, encoding="utf-8") as f:
-                        reliability = json.load(f)
-
-                    # Get counts
-                    fallback_count = reliability.get("parse_fallback_count", 0)
-                    parse_error_count = reliability.get("parse_error_count", 0)
-                    avg_latency_ms = reliability.get("avg_latency_ms", 0.0)
-                    avg_prompt_tokens = reliability.get("avg_prompt_tokens", 0.0)
-                    avg_completion_tokens = reliability.get("avg_completion_tokens", 0.0)
-
-                    insert_metrics_summary(
-                        db_path=db_path,
-                        match_id=match_id or job_id,
-                        fallback_count=fallback_count,
-                        parse_error_count=parse_error_count,
-                        avg_latency_ms=avg_latency_ms,
-                        avg_prompt_tokens=avg_prompt_tokens,
-                        avg_completion_tokens=avg_completion_tokens,
-                    )
-                    stats["metrics_summaries"] += 1
-                except Exception as e:
-                    stats["errors"].append(f"Failed to load metrics for {job_id}: {e}")
+            stats["jobs"] += indexed["jobs"]
+            stats["matches"] += indexed["matches"]
+            stats["metrics_summaries"] += indexed["metrics_summaries"]
+            stats["artifact_paths"] += indexed["artifact_paths"]
 
     return stats
 

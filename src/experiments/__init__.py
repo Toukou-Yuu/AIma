@@ -1,7 +1,6 @@
 """Experiments module: experiment config, runner, jobs."""
 
 from experiments.job import JobRecord, JobSpec, JobState
-from experiments.runner import ExperimentRunner
 from experiments.schema import (
     ArtifactSpec,
     ExperimentMetaSpec,
@@ -11,6 +10,15 @@ from experiments.schema import (
     RuntimeSpec,
     SeedSpec,
 )
+
+
+def __getattr__(name: str):
+    """Lazily expose ExperimentRunner without importing sinks during CLI startup."""
+    if name == "ExperimentRunner":
+        from experiments.runner import ExperimentRunner
+
+        return ExperimentRunner
+    raise AttributeError(name)
 
 __all__ = [
     "ArtifactSpec",

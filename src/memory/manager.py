@@ -55,6 +55,28 @@ class MemoryManager:
         """Get the underlying memory store, or None if disabled."""
         return self._lifecycle.store if self._lifecycle else None
 
+    @staticmethod
+    def player_id_for_seat(seat: int) -> str:
+        """Return the canonical memory player id for a table seat."""
+        return f"seat{seat}"
+
+    def get_enabled_layer_names(self) -> tuple[str, ...]:
+        """Return enabled memory layer names for diagnostics."""
+        if not self.enabled:
+            return ()
+        return tuple(layer.value for layer in self._get_enabled_layers())
+
+    def get_memory_prompt(
+        self,
+        player_id: str,
+        opponent_ids: list[str] | None = None,
+    ) -> tuple[str, tuple[str, ...]]:
+        """Return prompt-ready memory text and enabled layer names."""
+        return (
+            self.get_memory_section(player_id, opponent_ids),
+            self.get_enabled_layer_names(),
+        )
+
     def get_memory_section(
         self,
         player_id: str,

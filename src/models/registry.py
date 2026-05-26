@@ -66,6 +66,10 @@ def build_backend(spec: ModelSpec) -> CompletionClient:
         raise ValueError(msg)
 
     if backend_type == "replay":
+        if spec.extra.get("replay_path"):
+            from models.backends.replay import ReplayBackend
+
+            return ReplayBackend(spec)
         msg = (
             f"Backend type 'replay' is not implemented in v4.0. "
             f"Use 'mock' backend with configured responses instead."

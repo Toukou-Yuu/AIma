@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from experiments.index import insert_job, update_job
+from experiments.index import index_job_artifacts, insert_job
 
 if TYPE_CHECKING:
     from arena.match_result import MatchResult
@@ -26,6 +26,8 @@ class IndexSink:
         experiment_id: str,
         seed: int,
         started_at: str | None = None,
+        job_dir: str | Path | None = None,
+        preset: str | None = None,
     ) -> None:
         """Initialize IndexSink and create initial job record.
 
@@ -40,6 +42,9 @@ class IndexSink:
         self._job_id = job_id
         self._experiment_id = experiment_id
         self._seed = seed
+        self._started_at = started_at
+        self._job_dir = Path(job_dir) if job_dir is not None else None
+        self._preset = preset
 
         # Create initial job record with "running" state
         insert_job(
@@ -49,6 +54,7 @@ class IndexSink:
             seed=seed,
             state="running",
             started_at=started_at,
+            output_dir=str(self._job_dir) if self._job_dir else None,
         )
 
     def on_step(
@@ -73,19 +79,30 @@ class IndexSink:
         Args:
             result: Complete match result.
         """
-        # Determine final state based on stopped_reason
-        if result.stopped_reason:
-            state = "failed"
-            error_message = result.stopped_reason
-        else:
-            state = "succeeded"
-            error_message = None
+        state = "failed" if result.outcome == "failed" else "succeeded"
+        error_message = result.stopped_reason if state == "failed" else None
 
-        update_job(
+        if self._job_dir is None:
+            insert_job(
+                db_path=self._db_path,
+                job_id=self._job_id,
+                experiment_id=self._experiment_id,
+                seed=self._seed,
+                state=state,
+                started_at=self._started_at,
+                match_id=result.match_id,
+                error_message=error_message,
+            )
+            return
+
+        index_job_artifacts(
             db_path=self._db_path,
+            experiment_id=self._experiment_id,
             job_id=self._job_id,
+            job_dir=self._job_dir,
+            default_seed=self._seed,
+            default_preset=self._preset,
             state=state,
-            finished_at=None,  # Will be set by runner if available
-            match_id=result.match_id,
+            started_at=self._started_at,
             error_message=error_message,
         )

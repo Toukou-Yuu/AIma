@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -23,7 +24,18 @@ class ArtifactWriter:
     文件写入采用 per-record flush 策略，确保崩溃安全。
     """
 
-    def __init__(self, job_dir: Path, match_id: str, job_id: str, seed: int) -> None:
+    def __init__(
+        self,
+        job_dir: Path,
+        match_id: str,
+        job_id: str,
+        seed: int,
+        *,
+        experiment_id: str | None = None,
+        match_index: int | None = None,
+        preset: str | None = None,
+        started_at: str | None = None,
+    ) -> None:
         """初始化 ArtifactWriter。
 
         Args:
@@ -36,6 +48,10 @@ class ArtifactWriter:
         self._match_id = match_id
         self._job_id = job_id
         self._seed = seed
+        self._experiment_id = experiment_id
+        self._match_index = match_index
+        self._preset = preset
+        self._started_at = started_at
 
         # 确保目录存在
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -67,6 +83,7 @@ class ArtifactWriter:
     def _write_decision(
         self,
         step_index: int,
+        hand_index: int,
         seat: int,
         action: dict[str, Any],
         parse_status: str,
@@ -92,6 +109,7 @@ class ArtifactWriter:
             "match_id": self._match_id,
             "job_id": self._job_id,
             "step_index": step_index,
+            "hand_index": hand_index,
             "seat": seat,
             "action": action,
             "parse_status": parse_status,
@@ -143,6 +161,7 @@ class ArtifactWriter:
 
         self._write_decision(
             step_index=ctx.step_index,
+            hand_index=ctx.hand_index,
             seat=ctx.seat,
             action=action_wire,
             parse_status=decision.parse_status,
@@ -175,11 +194,16 @@ class ArtifactWriter:
                 actual_decision_count = sum(1 for _ in f)
 
         # 写入 summary.json（使用实际统计值）
+        ending_points = list(result.final_points)
+        starting_points = [25000, 25000, 25000, 25000]
         summary = {
             "schema_version": 1,
+            "experiment_id": self._experiment_id,
             "match_id": result.match_id,
             "job_id": result.job_id,
             "seed": result.seed,
+            "match_index": self._match_index,
+            "preset": self._preset,
             "step_count": result.step_count,
             "stopped_reason": result.stopped_reason,
             "outcome": result.outcome,
@@ -187,10 +211,15 @@ class ArtifactWriter:
             "decision_count": actual_decision_count,
             "event_count": actual_event_count,
             "hand_count": result.hand_count,
-            "final_points": list(result.final_points),
+            "starting_points": starting_points,
+            "final_points": ending_points,
+            "point_delta": list(result.point_delta),
             "rank": list(result.rank),
+            "start_time": self._started_at,
+            "end_time": datetime.now(tz=timezone.utc).isoformat(),
             "duration_ms": result.duration_ms,
         }
+        summary = {key: value for key, value in summary.items() if value is not None}
         summary_path = self._job_dir / "summary.json"
         summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -207,6 +236,8 @@ class ArtifactWriter:
                 "duration_ms": result.duration_ms,
                 "final_phase": result.final_phase,
                 "outcome": result.outcome,
+                "parse_error_count": self._count_parse_errors(decisions_path),
+                "fallback_count": self._count_fallbacks(decisions_path),
             },
             "per_seat": [
                 {
@@ -214,6 +245,14 @@ class ArtifactWriter:
                     "final_points": result.final_points[seat],
                     "point_delta": result.point_delta[seat],
                     "rank": result.rank[seat],
+                    "win_count": 0,
+                    "deal_in_count": 0,
+                    "riichi_count": 0,
+                    "fallback_count": self._count_fallbacks(decisions_path, seat=seat),
+                    "parse_error_count": self._count_parse_errors(decisions_path, seat=seat),
+                    "avg_latency_ms": self._avg_decision_field(decisions_path, "latency_ms", seat=seat),
+                    "avg_prompt_tokens": self._avg_diag_field(decisions_path, "prompt_tokens", seat=seat),
+                    "avg_completion_tokens": self._avg_diag_field(decisions_path, "completion_tokens", seat=seat),
                 }
                 for seat in range(4)
             ],
@@ -241,3 +280,61 @@ class ArtifactWriter:
         # 关闭文件句柄
         self._events_file.close()
         self._decisions_file.close()
+
+    @staticmethod
+    def _iter_decision_records(path: Path):
+        if not path.exists():
+            return
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+    @classmethod
+    def _count_parse_errors(cls, path: Path, *, seat: int | None = None) -> int:
+        count = 0
+        for record in cls._iter_decision_records(path) or ():
+            if seat is not None and record.get("seat") != seat:
+                continue
+            if record.get("parse_status") in {"parse_failed", "match_failed", "error"}:
+                count += 1
+        return count
+
+    @classmethod
+    def _count_fallbacks(cls, path: Path, *, seat: int | None = None) -> int:
+        count = 0
+        for record in cls._iter_decision_records(path) or ():
+            if seat is not None and record.get("seat") != seat:
+                continue
+            if record.get("fallback_used"):
+                count += 1
+        return count
+
+    @classmethod
+    def _avg_decision_field(cls, path: Path, field: str, *, seat: int | None = None) -> float | None:
+        values: list[float] = []
+        for record in cls._iter_decision_records(path) or ():
+            if seat is not None and record.get("seat") != seat:
+                continue
+            value = record.get(field)
+            if isinstance(value, int | float):
+                values.append(float(value))
+        return sum(values) / len(values) if values else None
+
+    @classmethod
+    def _avg_diag_field(cls, path: Path, field: str, *, seat: int | None = None) -> float | None:
+        values: list[float] = []
+        for record in cls._iter_decision_records(path) or ():
+            if seat is not None and record.get("seat") != seat:
+                continue
+            diagnostics = record.get("diagnostics", {})
+            if not isinstance(diagnostics, dict):
+                continue
+            value = diagnostics.get(field)
+            if isinstance(value, int | float):
+                values.append(float(value))
+        return sum(values) / len(values) if values else None

@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
+    from agents.runtime import PromptRuntime
     from arena.policy import DecisionContext
     from kernel.api import LegalAction
     from prompts.schema import PromptSectionSpec
@@ -15,12 +16,16 @@ if TYPE_CHECKING:
 
 # Type alias for section renderer functions
 SectionRenderer = Callable[
-    ["DecisionContext", "PromptSectionSpec"],
+    ["DecisionContext", "PromptSectionSpec", "PromptRuntime | None"],
     str,
 ]
 
 
-def render_system_prompt(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
+def render_system_prompt(
+    ctx: "DecisionContext",
+    spec: "PromptSectionSpec",
+    runtime: "PromptRuntime | None" = None,
+) -> str:
     """Render system prompt section.
 
     Args:
@@ -52,7 +57,8 @@ def _render_riichi_system_prompt(options: dict[str, Any]) -> str:
     role = options.get("role", "Japanese Riichi Mahjong player")
     return f"""You are an expert {role}.
 
-CRITICAL: You MUST respond with ONLY a valid JSON object. No explanations before or after. No markdown code blocks. No extra text.
+CRITICAL: You MUST respond with ONLY a valid JSON object. No explanations before or after.
+No markdown code blocks. No extra text.
 
 Your response must be parseable by JSON.parse() directly.
 
@@ -67,7 +73,11 @@ Example INVALID responses (DO NOT DO THIS):
 Your task: Analyze the game state and choose the best action from legal_actions."""
 
 
-def render_game_state(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
+def render_game_state(
+    ctx: "DecisionContext",
+    spec: "PromptSectionSpec",
+    runtime: "PromptRuntime | None" = None,
+) -> str:
     """Render game state section.
 
     Args:
@@ -98,7 +108,11 @@ def render_game_state(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
     return "\n".join(lines)
 
 
-def render_hand(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
+def render_hand(
+    ctx: "DecisionContext",
+    spec: "PromptSectionSpec",
+    runtime: "PromptRuntime | None" = None,
+) -> str:
     """Render player's hand section.
 
     Args:
@@ -134,12 +148,17 @@ def render_hand(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
     if obs.melds:
         lines.append("\nMelds:")
         for i, meld in enumerate(obs.melds):
-            lines.append(f"  {i + 1}. {meld.kind.value}: {' '.join(t.to_code() for t in meld.tiles)}")
+            tiles = " ".join(t.to_code() for t in meld.tiles)
+            lines.append(f"  {i + 1}. {meld.kind.value}: {tiles}")
 
     return "\n".join(lines)
 
 
-def render_river(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
+def render_river(
+    ctx: "DecisionContext",
+    spec: "PromptSectionSpec",
+    runtime: "PromptRuntime | None" = None,
+) -> str:
     """Render river (discards) section.
 
     Args:
@@ -180,7 +199,11 @@ def render_river(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
     return "\n".join(lines)
 
 
-def render_dora(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
+def render_dora(
+    ctx: "DecisionContext",
+    spec: "PromptSectionSpec",
+    runtime: "PromptRuntime | None" = None,
+) -> str:
     """Render dora indicators section.
 
     Args:
@@ -207,7 +230,11 @@ def render_dora(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
     return "\n".join(lines)
 
 
-def render_riichi_state(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
+def render_riichi_state(
+    ctx: "DecisionContext",
+    spec: "PromptSectionSpec",
+    runtime: "PromptRuntime | None" = None,
+) -> str:
     """Render riichi state section.
 
     Args:
@@ -228,7 +255,11 @@ def render_riichi_state(ctx: "DecisionContext", spec: "PromptSectionSpec") -> st
     return "\n".join(lines)
 
 
-def render_legal_actions(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
+def render_legal_actions(
+    ctx: "DecisionContext",
+    spec: "PromptSectionSpec",
+    runtime: "PromptRuntime | None" = None,
+) -> str:
     """Render legal actions section.
 
     Args:
@@ -276,7 +307,37 @@ def _format_action(action: "LegalAction") -> str:
     return kind
 
 
-def render_memory(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
+def render_observation(
+    ctx: "DecisionContext",
+    spec: "PromptSectionSpec",
+    runtime: "PromptRuntime | None" = None,
+) -> str:
+    """Render the ObservationBuilder output from PromptRuntime."""
+    if spec.source != "runtime":
+        return _render_static_section("Observation", spec)
+    if runtime is None or not runtime.observation.text:
+        return ""
+    return "## Observation\n" + runtime.observation.text
+
+
+def render_public_history(
+    ctx: "DecisionContext",
+    spec: "PromptSectionSpec",
+    runtime: "PromptRuntime | None" = None,
+) -> str:
+    """Render public history from ContextBuilder output."""
+    if spec.source != "runtime":
+        return _render_static_section("Public History", spec)
+    if runtime is None or not runtime.context.text:
+        return ""
+    return "## Public History\n" + runtime.context.text
+
+
+def render_memory(
+    ctx: "DecisionContext",
+    spec: "PromptSectionSpec",
+    runtime: "PromptRuntime | None" = None,
+) -> str:
     """Render memory section.
 
     Args:
@@ -286,24 +347,31 @@ def render_memory(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
     Returns:
         Memory description (stub for now)
     """
-    # Memory integration will be implemented in Phase 4
-    # For now, return empty if no source data
-    source = spec.source
-    if source is None:
+    if spec.source == "runtime":
+        if runtime is None or not runtime.memory.rendered_text:
+            return ""
+        text = runtime.memory.rendered_text
+        return text if text.lstrip().startswith("##") else "## Memory\n" + text
+
+    if spec.source is None:
         return ""
 
-    options = spec.options
-    content = options.get("content", "")
+    return _render_static_section("Memory", spec)
 
+
+def _render_static_section(title: str, spec: "PromptSectionSpec") -> str:
+    """Render static section content from options.content."""
+    content = str(spec.options.get("content", "")).strip()
     if not content:
         return ""
-
-    lines = ["## Memory"]
-    lines.append(content)
-    return "\n".join(lines)
+    return content if content.lstrip().startswith("##") else f"## {title}\n{content}"
 
 
-def render_output_format(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
+def render_output_format(
+    ctx: "DecisionContext",
+    spec: "PromptSectionSpec",
+    runtime: "PromptRuntime | None" = None,
+) -> str:
     """Render output format instructions section.
 
     Args:
@@ -366,6 +434,8 @@ SECTION_RENDERERS: dict[str, SectionRenderer] = {
     "dora": render_dora,
     "riichi_state": render_riichi_state,
     "legal_actions": render_legal_actions,
+    "observation": render_observation,
+    "public_history": render_public_history,
     "memory": render_memory,
     "output_format": render_output_format,
 }
