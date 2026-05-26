@@ -153,14 +153,28 @@ class ArtifactWriter:
         )
 
     def on_match_end(self, result: MatchResult) -> None:
-        """对局结束时调用，写入 summary.json 和 replay.json。
+        """对局结束时调用，写入 summary.json、metrics.json 和 replay.json。
 
         Args:
             result: 对局完整结果
         """
         from kernel.replay_json import action_to_wire, match_log_document
 
-        # 写入 summary.json
+        # 统计实际写入的事件数（从 events.jsonl）
+        events_path = self._job_dir / "events.jsonl"
+        actual_event_count = 0
+        if events_path.exists():
+            with open(events_path, encoding="utf-8") as f:
+                actual_event_count = sum(1 for _ in f)
+
+        # 统计实际写入的决策数（从 decisions.jsonl）
+        decisions_path = self._job_dir / "decisions.jsonl"
+        actual_decision_count = 0
+        if decisions_path.exists():
+            with open(decisions_path, encoding="utf-8") as f:
+                actual_decision_count = sum(1 for _ in f)
+
+        # 写入 summary.json（使用实际统计值）
         summary = {
             "schema_version": 1,
             "match_id": result.match_id,
@@ -169,9 +183,43 @@ class ArtifactWriter:
             "step_count": result.step_count,
             "stopped_reason": result.stopped_reason,
             "outcome": result.outcome,
+            "final_phase": result.final_phase,
+            "decision_count": actual_decision_count,
+            "event_count": actual_event_count,
+            "hand_count": result.hand_count,
+            "final_points": list(result.final_points),
+            "rank": list(result.rank),
+            "duration_ms": result.duration_ms,
         }
         summary_path = self._job_dir / "summary.json"
         summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # 写入 metrics.json（使用实际统计值）
+        metrics = {
+            "schema_version": 1,
+            "match_id": result.match_id,
+            "job_id": result.job_id,
+            "per_match": {
+                "step_count": result.step_count,
+                "decision_count": actual_decision_count,
+                "event_count": actual_event_count,
+                "hand_count": result.hand_count,
+                "duration_ms": result.duration_ms,
+                "final_phase": result.final_phase,
+                "outcome": result.outcome,
+            },
+            "per_seat": [
+                {
+                    "seat": seat,
+                    "final_points": result.final_points[seat],
+                    "point_delta": result.point_delta[seat],
+                    "rank": result.rank[seat],
+                }
+                for seat in range(4)
+            ],
+        }
+        metrics_path = self._job_dir / "metrics.json"
+        metrics_path.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
 
         # 从 decisions 中提取 Action 对象并序列化
         actions_wire = tuple(action_to_wire(d["action"]) for d in result.decisions)

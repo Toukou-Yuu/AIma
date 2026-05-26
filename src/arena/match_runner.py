@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
@@ -13,6 +14,7 @@ from arena.sinks import EventSink
 from kernel import build_deck, shuffle_deck
 from kernel.engine.actions import Action, ActionKind
 from kernel.engine.phase import GamePhase
+from kernel.event_log import HandOverEvent, MatchEndEvent
 
 if TYPE_CHECKING:
     from arena.engine import GameEngine
@@ -125,6 +127,7 @@ class MatchRunner:
         Returns:
             MatchResult: 对局完整结果
         """
+        start_time = time.perf_counter()
         events: list[dict] = []
         decisions: list[dict] = []
 
@@ -265,6 +268,33 @@ class MatchRunner:
             stopped_reason = "max_hands_reached"
             outcome = "truncated"
 
+        # 计算统计数据
+        end_time = time.perf_counter()
+        duration_ms = (end_time - start_time) * 1000
+
+        # 计算局数（hand_over 事件数量）
+        hand_count = sum(
+            1 for ev in events
+            if isinstance(ev.get("event"), HandOverEvent)
+        )
+
+        # 获取 final_phase
+        final_phase = state.phase.value
+
+        # 从 MatchEndEvent 获取 final_points 和 rank
+        final_points: tuple[int, int, int, int] = (25000, 25000, 25000, 25000)
+        rank: tuple[int, int, int, int] = (1, 1, 1, 1)
+        for ev in events:
+            if isinstance(ev.get("event"), MatchEndEvent):
+                match_end = ev["event"]
+                final_points = match_end.final_scores
+                rank = match_end.ranking
+                break
+
+        # 计算点数变化
+        starting_points = (25000, 25000, 25000, 25000)
+        point_delta = tuple(fp - sp for fp, sp in zip(final_points, starting_points, strict=True))
+
         result = MatchResult(
             match_id=match_id,
             job_id=job_id,
@@ -275,6 +305,14 @@ class MatchRunner:
             decisions=tuple(decisions),
             stopped_reason=stopped_reason,
             outcome=outcome,
+            decision_count=len(decisions),
+            event_count=len(events),
+            hand_count=hand_count,
+            duration_ms=duration_ms,
+            final_phase=final_phase,
+            final_points=final_points,
+            point_delta=point_delta,
+            rank=rank,
         )
 
         for s in self._sinks:
