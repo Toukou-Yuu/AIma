@@ -11,7 +11,7 @@ from kernel.engine.actions import Action
 from kernel.engine.apply import apply, ApplyOutcome
 from kernel.engine.phase import GamePhase
 from kernel.engine.state import GameState, initial_game_state
-from kernel.table.model import initial_table_snapshot
+from kernel.table.model import initial_table_snapshot, MatchPreset
 
 if TYPE_CHECKING:
     from experiments.schema import MatchSpec
@@ -40,18 +40,22 @@ class GameEngine:
             # 默认使用半庄配置
             max_hands = 8
             starting_points = 25000
+            match_preset = MatchPreset.HANCHAN
         elif spec.preset == "tonpuu":
             # 东风战：4局，起配25000
             max_hands = 4
             starting_points = 25000
+            match_preset = MatchPreset.TONPUSEN
         elif spec.preset == "hanchan":
             # 半庄：8局，起配25000
             max_hands = spec.max_hands or 8
             starting_points = 25000
+            match_preset = MatchPreset.HANCHAN
         else:
             # custom：使用spec中的值
             max_hands = spec.max_hands or 8
             starting_points = 25000
+            match_preset = MatchPreset.HANCHAN
 
         # 存储配置供后续使用（通过state传递或单独存储）
         # 当前kernel不支持max_hands，需要在match_runner层面处理
@@ -60,6 +64,7 @@ class GameEngine:
         table = initial_table_snapshot(
             dealer_seat=0,
             starting_points=starting_points,
+            match_preset=match_preset,
         )
         return initial_game_state(table)
 

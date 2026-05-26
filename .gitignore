@@ -19,7 +19,7 @@ env/
 .env
 logs/
 runs/
-
+.antigravitycli
 # Secrets
 .env
 .env.*
