@@ -22,6 +22,7 @@ class MatchResult:
         events: 事件日志元组
         decisions: 决策记录元组
         stopped_reason: 停止原因（正常结束为 None，异常为错误描述）
+        outcome: 对局结果类型（"completed" | "truncated" | "step_limit_reached"）
     """
 
     match_id: str
@@ -32,3 +33,4 @@ class MatchResult:
     events: tuple[dict, ...]
     decisions: tuple[dict, ...]
     stopped_reason: str | None = None
+    outcome: str = "completed"

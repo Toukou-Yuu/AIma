@@ -168,6 +168,7 @@ class ArtifactWriter:
             "seed": result.seed,
             "step_count": result.step_count,
             "stopped_reason": result.stopped_reason,
+            "outcome": result.outcome,
         }
         summary_path = self._job_dir / "summary.json"
         summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")

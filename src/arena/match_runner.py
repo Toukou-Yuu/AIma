@@ -167,7 +167,6 @@ class MatchRunner:
                 # 检查是否达到max_hands（东风战4局，半庄8局）
                 # 如果已达到局数限制，不再继续下一局
                 if hand_index >= max_hands:
-                    # 这是正常完成，不是截断
                     break
                 wall_seed = seed + hand_index
                 wall = tuple(shuffle_deck(build_deck(), seed=wall_seed))
@@ -254,9 +253,17 @@ class MatchRunner:
         stopped_reason = None
         outcome = "completed"
 
-        if step_count >= self._step_limit and not self._engine.is_terminal(state):
+        if self._engine.is_terminal(state):
+            # 自然终局：stopped_reason=None, outcome="completed"
+            pass
+        elif step_count >= self._step_limit:
+            # step_limit 截断
             stopped_reason = "step_limit_exceeded"
             outcome = "step_limit_reached"
+        else:
+            # max_hands 截断
+            stopped_reason = "max_hands_reached"
+            outcome = "truncated"
 
         result = MatchResult(
             match_id=match_id,
@@ -267,6 +274,7 @@ class MatchRunner:
             events=tuple(events),
             decisions=tuple(decisions),
             stopped_reason=stopped_reason,
+            outcome=outcome,
         )
 
         for s in self._sinks:
