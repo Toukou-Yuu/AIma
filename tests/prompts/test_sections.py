@@ -42,10 +42,12 @@ class MockTile:
     rank: int = 1
 
     def __str__(self) -> str:
-        return f"{self.rank}m"
+        return self.to_code()
 
     def to_code(self) -> str:
-        return f"{self.rank}m"
+        """根据 suit 返回正确的牌代码。"""
+        suit_char = self.suit.value if self.suit else "m"
+        return f"{self.rank}{suit_char}"
 
     def __hash__(self) -> int:
         return hash((self.suit, self.rank))
@@ -340,6 +342,124 @@ class TestRenderHand:
 
         result = render_hand(ctx, spec)
         assert "Melds:" in result or "melds" in result.lower()
+
+    # ========================================
+    # 回归测试：P0-1 render_hand() Counter 二次展开 bug
+    # Bug: elements() 已按数量展开，代码又乘以 count 导致二次展开
+    # ========================================
+
+    def test_render_pair_should_show_two_tiles_not_four(self) -> None:
+        """回归测试：Counter({2m: 2}) 应渲染 2 张牌，不是 4 张。
+
+        Bug: elements() 返回 [Tile('2m'), Tile('2m')]，遍历时又乘以 count=2，
+        导致输出 4 张而非 2 张。
+        """
+        ctx = MockDecisionContext()
+        mock_suit = MockSuit(value="m")
+        # 一对 2m（2 张相同的牌）
+        tile = MockTile(suit=mock_suit, rank=2)
+        ctx.observation.hand = Counter({tile: 2})
+        spec = PromptSectionSpec(id="hand")
+
+        result = render_hand(ctx, spec)
+
+        # 提取手牌行中的牌代码
+        lines = result.split("\n")
+        hand_line = [l for l in lines if "2m" in l and "##" not in l][0]
+        tiles = hand_line.split()
+
+        # 预期：只有 2 张 "2m"
+        assert len(tiles) == 2, f"预期 2 张牌，实际 {len(tiles)} 张: {tiles}"
+        assert tiles == ["2m", "2m"], f"预期 ['2m', '2m']，实际: {tiles}"
+
+    def test_render_pon_should_show_three_tiles_not_nine(self) -> None:
+        """回归测试：Counter({3p: 3}) 应渲染 3 张牌，不是 9 张。
+
+        Bug: elements() 返回 [Tile('3p'), Tile('3p'), Tile('3p')]，
+        遍历时又乘以 count=3，导致输出 9 张而非 3 张。
+        """
+        ctx = MockDecisionContext()
+        mock_suit = MockSuit(value="p")
+        # 一个刻子 3p（3 张相同的牌）
+        tile = MockTile(suit=mock_suit, rank=3)
+        ctx.observation.hand = Counter({tile: 3})
+        spec = PromptSectionSpec(id="hand")
+
+        result = render_hand(ctx, spec)
+
+        # 提取手牌行中的牌代码
+        lines = result.split("\n")
+        hand_line = [l for l in lines if "3p" in l and "##" not in l][0]
+        tiles = hand_line.split()
+
+        # 预期：只有 3 张 "3p"
+        assert len(tiles) == 3, f"预期 3 张牌，实际 {len(tiles)} 张: {tiles}"
+        assert tiles == ["3p", "3p", "3p"], f"预期 ['3p', '3p', '3p']，实际: {tiles}"
+
+    def test_render_mixed_hand_total_count(self) -> None:
+        """回归测试：混合手牌总牌数应等于 sum(hand.values())。
+
+        Counter({2m: 2, 5p: 1, 7s: 3}) 总共 6 张牌。
+        Bug: 二次展开会导致 2*2 + 1*1 + 3*3 = 14 张。
+        """
+        ctx = MockDecisionContext()
+        suit_m = MockSuit(value="m")
+        suit_p = MockSuit(value="p")
+        suit_s = MockSuit(value="s")
+
+        tile_2m = MockTile(suit=suit_m, rank=2)
+        tile_5p = MockTile(suit=suit_p, rank=5)
+        tile_7s = MockTile(suit=suit_s, rank=7)
+
+        # 混合手牌：2m x2, 5p x1, 7s x3 = 总共 6 张
+        ctx.observation.hand = Counter({tile_2m: 2, tile_5p: 1, tile_7s: 3})
+        spec = PromptSectionSpec(id="hand")
+
+        result = render_hand(ctx, spec)
+
+        # 提取手牌行中的牌代码
+        lines = result.split("\n")
+        hand_line = [l for l in lines if ("2m" in l or "5p" in l or "7s" in l) and "##" not in l][0]
+        tiles = hand_line.split()
+
+        # 预期：总共 6 张牌
+        expected_total = sum(ctx.observation.hand.values())  # 2 + 1 + 3 = 6
+        assert len(tiles) == expected_total, (
+            f"预期 {expected_total} 张牌，实际 {len(tiles)} 张: {tiles}"
+        )
+
+    def test_render_hand_count_equals_counter_values_sum(self) -> None:
+        """回归测试：渲染总牌数应等于 sum(hand.values())。
+
+        这是 P0-1 bug 的核心断言：无论 Counter 内容如何，
+        渲染出的牌数量必须等于 Counter 中存储的牌总数。
+        """
+        ctx = MockDecisionContext()
+        suit_m = MockSuit(value="m")
+
+        # 使用不同数量验证通用性
+        test_cases = [
+            ({MockTile(suit=suit_m, rank=1): 1}, 1),   # 单张
+            ({MockTile(suit=suit_m, rank=2): 2}, 2),   # 对子
+            ({MockTile(suit=suit_m, rank=3): 3}, 3),   # 刻子
+            ({MockTile(suit=suit_m, rank=4): 4}, 4),   # 杠子
+        ]
+
+        for hand_dict, expected_count in test_cases:
+            ctx.observation.hand = Counter(hand_dict)
+            spec = PromptSectionSpec(id="hand")
+
+            result = render_hand(ctx, spec)
+
+            # 提取手牌行中的牌代码
+            lines = result.split("\n")
+            hand_lines = [l for l in lines if "##" not in l and l.strip()]
+            assert len(hand_lines) >= 1, f"未找到手牌行: {result}"
+            tiles = hand_lines[0].split()
+
+            assert len(tiles) == expected_count, (
+                f"手牌 {hand_dict}: 预期 {expected_count} 张，实际 {len(tiles)} 张: {tiles}"
+            )
 
 
 # ---------------------------------------------------------------------------

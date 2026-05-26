@@ -122,9 +122,8 @@ def render_hand(ctx: "DecisionContext", spec: "PromptSectionSpec") -> str:
     hand: Counter[Tile] = obs.hand
     tile_strs = []
     for tile in sorted(hand.elements(), key=lambda t: (t.suit.value, t.rank)):
-        count = hand[tile]
         tile_str = tile.to_code()
-        tile_strs.extend([tile_str] * count)
+        tile_strs.append(tile_str)
 
     if tile_strs:
         lines.append(" ".join(tile_strs))
