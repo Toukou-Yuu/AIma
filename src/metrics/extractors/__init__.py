@@ -10,6 +10,7 @@ from metrics.extractors.event import (
     TsumoExtractor,
 )
 from metrics.extractors.match import HandOverExtractor, MatchEndExtractor
+from metrics.extractors.summary import SummaryExtractor
 
 __all__ = [
     "BaseExtractor",
@@ -21,4 +22,5 @@ __all__ = [
     "RiichiExtractor",
     "CallExtractor",
     "FlowExtractor",
+    "SummaryExtractor",
 ]

@@ -12,6 +12,7 @@ from metrics.extractors import (
     MatchEndExtractor,
     RiichiExtractor,
     RonExtractor,
+    SummaryExtractor,
     TsumoExtractor,
 )
 from metrics.extractors.base import BaseExtractor
@@ -73,6 +74,7 @@ def create_default_pipeline() -> MetricsPipeline:
     """
     return MetricsPipeline(
         extractors=[
+            SummaryExtractor(),
             MatchEndExtractor(),
             HandOverExtractor(),
             DecisionExtractor(),

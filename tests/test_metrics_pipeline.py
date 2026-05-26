@@ -211,9 +211,10 @@ class TestMetricsPipeline:
         pipeline = create_default_pipeline()
 
         # 验证 extractors
-        assert len(pipeline.extractors) == 8
+        assert len(pipeline.extractors) == 9
         extractor_names = {e.name for e in pipeline.extractors}
         assert extractor_names == {
+            "summary",
             "match_end",
             "hand_over",
             "decision",
