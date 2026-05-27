@@ -40,6 +40,7 @@ class PlayerReducer:
             "prompt_tokens": [],
             "completion_tokens": [],
             "memory_injected_tokens": [],
+            "decision_count": 0,
             "decision_latencies": [],
             "parse_status_counts": {"ok": 0, "fallback": 0, "error": 0},
         })
@@ -114,6 +115,9 @@ class PlayerReducer:
         data = seats[seat]
         values = record.values
 
+        # Decision count (always increment, regardless of latency)
+        data["decision_count"] += 1
+
         # Latency
         latency = values.get("latency_ms")
         if latency is not None:
@@ -174,7 +178,7 @@ class PlayerReducer:
         avg_memory = sum(memory_tokens) / len(memory_tokens) if memory_tokens else 0.0
 
         # Reliability
-        total_decisions = len(latencies)
+        total_decisions = data["decision_count"]
         parse_counts = data["parse_status_counts"]
         total_parse = parse_counts["ok"] + parse_counts["fallback"] + parse_counts["error"]
         parse_success_rate = parse_counts["ok"] / total_parse if total_parse > 0 else 1.0
