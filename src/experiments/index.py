@@ -855,6 +855,36 @@ def get_jobs_by_experiment(
         conn.close()
 
 
+def _infer_experiment_status(job_states: list[str]) -> str:
+    """Infer experiment status from job states.
+
+    Args:
+        job_states: List of job states.
+
+    Returns:
+        Inferred experiment status:
+        - "succeeded" if all jobs succeeded
+        - "failed" if all jobs failed
+        - "partial" if mixed succeeded/failed
+        - "indexed" if cannot determine
+    """
+    if not job_states:
+        return "indexed"
+
+    succeeded = sum(1 for s in job_states if s == "succeeded")
+    failed = sum(1 for s in job_states if s == "failed")
+    total = len(job_states)
+
+    if succeeded == total:
+        return "succeeded"
+    elif failed == total:
+        return "failed"
+    elif succeeded > 0 and failed > 0:
+        return "partial"
+    else:
+        return "indexed"
+
+
 def rebuild_index(output_root: str | Path) -> dict[str, Any]:
     """Rebuild the SQLite index by scanning the runs directory.
 
@@ -941,7 +971,7 @@ def rebuild_index(output_root: str | Path) -> dict[str, Any]:
         if not created_at:
             created_at = datetime.fromtimestamp(exp_dir.stat().st_ctime).isoformat()
 
-        # Insert experiment record
+        # Insert experiment record (status will be updated after scanning jobs)
         insert_experiment(
             db_path=db_path,
             experiment_id=experiment_id,
@@ -951,9 +981,12 @@ def rebuild_index(output_root: str | Path) -> dict[str, Any]:
             config_path=config_path,
             run_dir=str(exp_dir),
             rule_version=rule_version,
-            status="indexed",
+            status="indexed",  # Temporary, will be updated after job scan
         )
         stats["experiments"] += 1
+
+        # Track job states for experiment status inference
+        job_states: list[str] = []
 
         # Scan for job directories (v4 layout: jobs/<job_id>/)
         jobs_dir = exp_dir / "jobs"
@@ -1078,6 +1111,18 @@ def rebuild_index(output_root: str | Path) -> dict[str, Any]:
             stats["matches"] += indexed["matches"]
             stats["metrics_summaries"] += indexed["metrics_summaries"]
             stats["artifact_paths"] += indexed["artifact_paths"]
+
+            # Track job state for experiment status inference
+            job_states.append(state)
+
+        # Update experiment status based on job states
+        if job_states:
+            exp_status = _infer_experiment_status(job_states)
+            update_experiment_status(
+                db_path=db_path,
+                experiment_id=experiment_id,
+                status=exp_status,
+            )
 
     return stats
 

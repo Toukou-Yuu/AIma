@@ -141,3 +141,33 @@
   "avg_memory_injected_tokens": 0.0
 }
 ```
+
+---
+
+## Debug Snapshots
+
+v4.0 支持以下 debug artifacts（需在配置中启用 `save_prompts` 或 `save_debug_snapshots`）：
+
+### prompt_messages.jsonl
+
+每行记录发送给 LLM 的完整 prompt messages。
+
+### model_raw_response.jsonl
+
+每行记录 LLM 的原始响应。
+
+### memory_snapshot.jsonl
+
+每行记录 memory 状态快照。
+
+### observation.jsonl
+
+每行记录发送给 policy 的 observation。
+
+### 限制说明
+
+v4.0 debug snapshots 包含 prompt/model/memory/observation 级别的 traces。
+
+**不包含** 完整的 GameState before/after snapshots（`state_before.jsonl` / `state_after.jsonl`）。
+
+完整的 state snapshots 将在 v4.1 的 golden/debug 模式中实现。

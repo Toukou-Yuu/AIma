@@ -420,7 +420,16 @@ class MatchRunner:
     ) -> Iterator[tuple[GameState, Action, EngineStepResult]]:
         """迭代执行对局，每步返回（state, action, result）。
 
-        用于测试和调试。
+        **Debug-only API**: 此方法仅用于测试和调试，不用于实验平台。
+
+        注意：
+        - 没有 event_history 支持
+        - 没有 max_hands 截断
+        - 没有 on_hand_end 回调
+        - 没有 v4 artifact / diagnostics 语义
+        - step limit 使用 runner 内部 _step_limit
+
+        如需完整的对局执行，请使用 run() 方法。
 
         Args:
             spec: 对局配置
