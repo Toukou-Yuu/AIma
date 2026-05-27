@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from experiments.index import index_job_artifacts, insert_job
 
 if TYPE_CHECKING:
+    from arena.hand_result import HandResult
     from arena.match_result import MatchResult
     from arena.policy import DecisionContext, PolicyDecision
     from arena.result import EngineStepResult
@@ -73,6 +75,20 @@ class IndexSink:
         # IndexSink does not track per-step data
         pass
 
+    def on_hand_end(
+        self,
+        hand_index: int,
+        result: "HandResult",
+    ) -> None:
+        """Called when a hand ends. No-op for IndexSink.
+
+        Args:
+            hand_index: Hand index (0-indexed).
+            result: Hand result.
+        """
+        # IndexSink does not track per-hand data
+        pass
+
     def on_match_end(self, result: "MatchResult") -> None:
         """Called when match ends. Updates job record in SQLite.
 
@@ -81,6 +97,7 @@ class IndexSink:
         """
         state = "failed" if result.outcome == "failed" else "succeeded"
         error_message = result.stopped_reason if state == "failed" else None
+        finished_at = datetime.now(tz=timezone.utc).isoformat()
 
         if self._job_dir is None:
             insert_job(
@@ -90,6 +107,7 @@ class IndexSink:
                 seed=self._seed,
                 state=state,
                 started_at=self._started_at,
+                finished_at=finished_at,
                 match_id=result.match_id,
                 error_message=error_message,
             )
@@ -104,5 +122,6 @@ class IndexSink:
             default_preset=self._preset,
             state=state,
             started_at=self._started_at,
+            finished_at=finished_at,
             error_message=error_message,
         )

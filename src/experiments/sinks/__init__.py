@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from arena.hand_result import HandResult
     from arena.match_result import MatchResult
     from arena.policy import DecisionContext, PolicyDecision
     from arena.result import EngineStepResult
@@ -29,6 +30,19 @@ class EventSink(Protocol):
             ctx: Decision context.
             decision: Policy decision result.
             result: Engine step result.
+        """
+        ...
+
+    def on_hand_end(
+        self,
+        hand_index: int,
+        result: "HandResult",
+    ) -> None:
+        """Called when a hand ends.
+
+        Args:
+            hand_index: Hand index (0-indexed).
+            result: Hand result.
         """
         ...
 

@@ -315,6 +315,34 @@ def insert_experiment(
         conn.close()
 
 
+def update_experiment_status(
+    db_path: str | Path,
+    experiment_id: str,
+    status: str,
+    finished_at: str | None = None,
+) -> None:
+    """Update experiment status after completion.
+
+    Args:
+        db_path: Path to the SQLite database file.
+        experiment_id: Unique identifier for the experiment.
+        status: Final status ("succeeded", "failed", or "partial").
+        finished_at: ISO format timestamp when experiment finished (optional).
+    """
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE experiments SET status = ? WHERE id = ?
+            """,
+            (status, experiment_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def insert_job(
     db_path: str | Path,
     job_id: str,

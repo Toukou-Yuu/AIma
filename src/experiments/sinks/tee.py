@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from arena.hand_result import HandResult
     from arena.match_result import MatchResult
     from arena.policy import DecisionContext, PolicyDecision
     from arena.result import EngineStepResult
@@ -41,6 +42,20 @@ class TeeSink:
         """
         for sink in self._sinks:
             sink.on_step(ctx, decision, result)
+
+    def on_hand_end(
+        self,
+        hand_index: int,
+        result: HandResult,
+    ) -> None:
+        """每局结束时调用，分发到所有 sink。
+
+        Args:
+            hand_index: 已完成的局号（0-indexed）
+            result: 单局结果
+        """
+        for sink in self._sinks:
+            sink.on_hand_end(hand_index, result)
 
     def on_match_end(self, result: MatchResult) -> None:
         """对局结束时调用，分发到所有 sink。

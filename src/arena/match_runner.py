@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 from arena.errors import IllegalPolicyDecisionError
+from arena.hand_result import HandResult
 from arena.match_result import MatchResult
 from arena.policy import DecisionContext
 from arena.result import EngineStepResult
@@ -15,6 +16,7 @@ from context.events import ContextEvent, kernel_event_to_context_event
 from kernel import build_deck, shuffle_deck
 from kernel.engine.actions import Action, ActionKind
 from kernel.engine.phase import GamePhase
+from kernel.engine.flow import FlowKind
 from kernel.event_log import MatchEndEvent
 
 if TYPE_CHECKING:
@@ -186,11 +188,30 @@ class MatchRunner:
 
             # HAND_OVER / FLOWN -> NEXT_ROUND
             if phase in (GamePhase.HAND_OVER, GamePhase.FLOWN):
-                # 局结束（含流局 FLOWN 路径），计入 hand_count
-                hand_count += 1
-                # 检查是否达到 max_hands 局数限制
-                if hand_count >= max_hands:
-                    break
+                # 判断是否中途流局连庄（不计入局数）
+                abortive_flow = False
+                if phase == GamePhase.FLOWN and state.flow_result is not None:
+                    abortive_kinds = {
+                        FlowKind.NINE_NINE,
+                        FlowKind.FOUR_WINDS,
+                        FlowKind.FOUR_KANS,
+                        FlowKind.FOUR_RIICHI,
+                    }
+                    abortive_flow = state.flow_result.kind in abortive_kinds
+
+                # 局结束：中途流局连庄不计入 hand_count
+                if not abortive_flow:
+                    hand_count += 1
+
+                # 调用 sinks 的 on_hand_end
+                hand_result = HandResult(
+                    match_id=match_id,
+                    hand_index=hand_index,  # 刚完成的局号
+                    hand_count=hand_count,  # 已完成局数（不含中途流局）
+                )
+                for s in self._sinks:
+                    s.on_hand_end(hand_index, hand_result)
+
                 hand_index += 1
                 turn_index = 0
                 wall_seed = seed + hand_index
@@ -211,6 +232,15 @@ class MatchRunner:
                             turn_index=turn_index,
                         )
                     )
+
+                # 检查 kernel 是否自然终局
+                if state.phase == GamePhase.MATCH_END:
+                    break  # kernel 自然终局，outcome 将设为 completed
+
+                # kernel 返回 IN_ROUND，检查是否应截断
+                if hand_count >= max_hands:
+                    break  # max_hands 截断，outcome 将设为 truncated
+
                 continue
 
             # IN_ROUND: 策略决策

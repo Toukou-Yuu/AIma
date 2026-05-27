@@ -296,6 +296,8 @@ class ExperimentRunner:
                 match_index=job_spec.match_index,
                 preset=job_spec.match_spec.preset,
                 started_at=started_at,
+                save_prompts=self._spec.artifacts.save_prompts,
+                save_debug_snapshots=self._spec.artifacts.save_debug_snapshots,
             )
 
             sinks = [artifact_writer]
@@ -452,6 +454,28 @@ class ExperimentRunner:
                 failed += 1
                 if self._spec.runtime.fail_fast:
                     break
+
+        # 更新实验状态
+        if self._spec.artifacts.sqlite_index:
+            from experiments.index import get_index_path, update_experiment_status
+
+            db_path = get_index_path(self._spec.artifacts.output_root)
+            total_executed = succeeded + failed
+            if total_executed == 0:
+                exp_status = "succeeded"  # 全部跳过视为成功
+            elif failed == 0:
+                exp_status = "succeeded"
+            elif succeeded == 0:
+                exp_status = "failed"
+            else:
+                exp_status = "partial"
+
+            update_experiment_status(
+                db_path=db_path,
+                experiment_id=self._spec.experiment.id,
+                status=exp_status,
+                finished_at=datetime.now(tz=timezone.utc).isoformat(),
+            )
 
         # 返回摘要
         return {

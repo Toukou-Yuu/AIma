@@ -63,7 +63,7 @@ class MemoryLifecycle:
     ) -> None:
         """Handle end of a hand.
 
-        - Updates hand memory with summary (if provided)
+        - Writes hand summary to MATCH layer (accumulates across hands)
         - Clears hand memory for next hand
 
         Args:
@@ -73,11 +73,13 @@ class MemoryLifecycle:
         if not self.enabled:
             return
 
-        if MemoryLayer.HAND in self._layers and hand_summary:
+        # Write hand summary to MATCH layer (accumulates across hands)
+        if MemoryLayer.MATCH in self._layers and hand_summary:
             from memory.writers import write_layer
 
-            write_layer(self._store, player_id, MemoryLayer.HAND, hand_summary)
+            write_layer(self._store, player_id, MemoryLayer.MATCH, hand_summary)
 
+        # Clear HAND layer for next hand
         clear_hand_memory(self._store, player_id)
 
     def on_match_end(

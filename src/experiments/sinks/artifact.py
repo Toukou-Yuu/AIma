@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from kernel.replay_json import game_event_to_wire
 
 if TYPE_CHECKING:
+    from arena.hand_result import HandResult
     from arena.match_result import MatchResult
     from arena.policy import DecisionContext, PolicyDecision
     from arena.result import EngineStepResult
@@ -35,6 +36,8 @@ class ArtifactWriter:
         match_index: int | None = None,
         preset: str | None = None,
         started_at: str | None = None,
+        save_prompts: bool = False,
+        save_debug_snapshots: bool = False,
     ) -> None:
         """初始化 ArtifactWriter。
 
@@ -43,6 +46,8 @@ class ArtifactWriter:
             match_id: 对局唯一标识符
             job_id: 批处理任务标识符
             seed: 随机种子
+            save_prompts: 是否保存 prompt messages
+            save_debug_snapshots: 是否保存 debug snapshots (model_raw_response, memory_snapshot, observation)
         """
         self._job_dir = job_dir
         self._match_id = match_id
@@ -52,6 +57,8 @@ class ArtifactWriter:
         self._match_index = match_index
         self._preset = preset
         self._started_at = started_at
+        self._save_prompts = save_prompts
+        self._save_debug_snapshots = save_debug_snapshots
 
         # 确保目录存在
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -59,6 +66,24 @@ class ArtifactWriter:
         # 打开文件句柄
         self._events_file = (job_dir / "events.jsonl").open("a", encoding="utf-8")
         self._decisions_file = (job_dir / "decisions.jsonl").open("a", encoding="utf-8")
+
+        # 打开 prompt/debug 文件句柄（根据配置）
+        self._prompts_file = None
+        self._model_raw_response_file = None
+        self._memory_snapshot_file = None
+        self._observation_file = None
+
+        if save_prompts:
+            self._prompts_file = (job_dir / "prompt_messages.jsonl").open("a", encoding="utf-8")
+
+        if save_debug_snapshots:
+            self._model_raw_response_file = (job_dir / "model_raw_response.jsonl").open(
+                "a", encoding="utf-8"
+            )
+            self._memory_snapshot_file = (job_dir / "memory_snapshot.jsonl").open(
+                "a", encoding="utf-8"
+            )
+            self._observation_file = (job_dir / "observation.jsonl").open("a", encoding="utf-8")
 
     def _write_event(self, step_index: int, hand_index: int, event: dict[str, Any]) -> None:
         """写入单个事件记录到 events.jsonl。
@@ -125,6 +150,93 @@ class ArtifactWriter:
         self._decisions_file.write(json.dumps(record, ensure_ascii=False) + "\n")
         self._decisions_file.flush()
 
+    def _write_prompt_messages(
+        self,
+        step_index: int,
+        hand_index: int,
+        seat: int,
+        messages: list[tuple[str, str]],
+    ) -> None:
+        """写入 prompt messages 记录到 prompt_messages.jsonl。
+
+        Args:
+            step_index: 步数索引
+            hand_index: 手牌索引
+            seat: 玩家座位
+            messages: message 列表，每个元素为 (role, content) 元组
+        """
+        if self._prompts_file is None:
+            return
+
+        record = {
+            "schema_version": 1,
+            "match_id": self._match_id,
+            "job_id": self._job_id,
+            "step_index": step_index,
+            "hand_index": hand_index,
+            "seat": seat,
+            "messages": [{"role": role, "content": content} for role, content in messages],
+        }
+        self._prompts_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+        self._prompts_file.flush()
+
+    def _write_debug_snapshots(
+        self,
+        step_index: int,
+        hand_index: int,
+        seat: int,
+        diagnostics: dict[str, Any],
+    ) -> None:
+        """写入 debug snapshots 到对应的 jsonl 文件。
+
+        Args:
+            step_index: 步数索引
+            hand_index: 手牌索引
+            seat: 玩家座位
+            diagnostics: 诊断信息字典
+        """
+        # model_raw_response.jsonl
+        if self._model_raw_response_file is not None and "raw_output" in diagnostics:
+            record = {
+                "schema_version": 1,
+                "match_id": self._match_id,
+                "job_id": self._job_id,
+                "step_index": step_index,
+                "hand_index": hand_index,
+                "seat": seat,
+                "raw_output": diagnostics["raw_output"],
+            }
+            self._model_raw_response_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+            self._model_raw_response_file.flush()
+
+        # memory_snapshot.jsonl
+        if self._memory_snapshot_file is not None and "memory" in diagnostics:
+            record = {
+                "schema_version": 1,
+                "match_id": self._match_id,
+                "job_id": self._job_id,
+                "step_index": step_index,
+                "hand_index": hand_index,
+                "seat": seat,
+                "memory": diagnostics["memory"],
+            }
+            self._memory_snapshot_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+            self._memory_snapshot_file.flush()
+
+        # observation.jsonl
+        if self._observation_file is not None and "observation" in diagnostics:
+            record = {
+                "schema_version": 1,
+                "match_id": self._match_id,
+                "job_id": self._job_id,
+                "step_index": step_index,
+                "hand_index": hand_index,
+                "seat": seat,
+                "observation": diagnostics["observation"],
+            }
+            self._observation_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+            self._observation_file.flush()
+
     def on_step(
         self,
         ctx: DecisionContext,
@@ -170,6 +282,38 @@ class ArtifactWriter:
             raw_output=decision.raw_output,
             diagnostics=decision.diagnostics,
         )
+
+        # 写入 prompt messages（如果配置开启）
+        if self._save_prompts and "messages" in decision.diagnostics:
+            self._write_prompt_messages(
+                step_index=ctx.step_index,
+                hand_index=ctx.hand_index,
+                seat=ctx.seat,
+                messages=decision.diagnostics["messages"],
+            )
+
+        # 写入 debug snapshots（如果配置开启）
+        if self._save_debug_snapshots:
+            self._write_debug_snapshots(
+                step_index=ctx.step_index,
+                hand_index=ctx.hand_index,
+                seat=ctx.seat,
+                diagnostics=decision.diagnostics,
+            )
+
+    def on_hand_end(
+        self,
+        hand_index: int,
+        result: HandResult,
+    ) -> None:
+        """每局结束时调用。
+
+        Args:
+            hand_index: 已完成的局号（0-indexed）
+            result: 单局结果
+        """
+        # ArtifactWriter 仅在 on_match_end 时写入 summary，这里不处理
+        pass
 
     def on_match_end(self, result: MatchResult) -> None:
         """对局结束时调用，写入 summary.json、metrics.json 和 replay.json。
@@ -280,6 +424,16 @@ class ArtifactWriter:
         # 关闭文件句柄
         self._events_file.close()
         self._decisions_file.close()
+
+        # 关闭 prompt/debug 文件句柄
+        if self._prompts_file is not None:
+            self._prompts_file.close()
+        if self._model_raw_response_file is not None:
+            self._model_raw_response_file.close()
+        if self._memory_snapshot_file is not None:
+            self._memory_snapshot_file.close()
+        if self._observation_file is not None:
+            self._observation_file.close()
 
     @staticmethod
     def _iter_decision_records(path: Path):

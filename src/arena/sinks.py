@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from arena.hand_result import HandResult
     from arena.match_result import MatchResult
     from arena.policy import DecisionContext, PolicyDecision
     from arena.result import EngineStepResult
@@ -25,6 +26,19 @@ class EventSink(Protocol):
             ctx: 决策上下文
             decision: 策略决策结果
             result: 引擎步进结果
+        """
+        ...
+
+    def on_hand_end(
+        self,
+        hand_index: int,
+        result: HandResult,
+    ) -> None:
+        """每局结束时调用。
+
+        Args:
+            hand_index: 已完成的局号（0-indexed）
+            result: 单局结果
         """
         ...
 
@@ -49,6 +63,14 @@ class NullSink:
         """不做任何操作。"""
         pass
 
+    def on_hand_end(
+        self,
+        hand_index: int,
+        result: HandResult,
+    ) -> None:
+        """不做任何操作。"""
+        pass
+
     def on_match_end(self, result: MatchResult) -> None:
         """不做任何操作。"""
         pass
@@ -60,6 +82,7 @@ class InMemorySink:
     def __init__(self) -> None:
         self.events: list[dict] = []
         self.decisions: list[dict] = []
+        self.hand_summaries: list[dict] = []
 
     def on_step(
         self,
@@ -82,6 +105,17 @@ class InMemorySink:
                 "step_index": ctx.step_index,
                 "event": event,
             })
+
+    def on_hand_end(
+        self,
+        hand_index: int,
+        result: HandResult,
+    ) -> None:
+        """记录局结束摘要。"""
+        self.hand_summaries.append({
+            "hand_index": hand_index,
+            "match_id": result.match_id,
+        })
 
     def on_match_end(self, result: MatchResult) -> None:
         """记录对局结束摘要。"""
