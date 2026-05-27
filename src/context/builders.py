@@ -14,7 +14,7 @@ from context.schema import ContextSpec
 from context.token_budget import TokenBudgetConfig, TokenBudgetManager
 
 if TYPE_CHECKING:
-    from llm.agent.context_store import ContextEvent
+    from context.events import ContextEvent
 
 
 @dataclass(frozen=True, slots=True)

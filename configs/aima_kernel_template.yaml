@@ -89,7 +89,7 @@ llm:
   # - snip：仅裁掉较早记录
   # - micro：裁掉较早记录并压缩单条历史
   # - collapse：折叠较早记录为摘要（默认）
-  # - autocompact：高密度折叠较早历史
+  # - autocompact：高密度折叠（实验性，不建议用于实验对照）
   compression_level: collapse
 
   # 历史预算：控制发送给模型的历史窗口大小

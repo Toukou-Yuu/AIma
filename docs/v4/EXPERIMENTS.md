@@ -155,10 +155,19 @@ seats:
 
 ### Q: 如何使用本地模型？
 
+使用 llama.cpp 服务器 + OpenAI 兼容后端：
+
+```bash
+# 启动 llama.cpp 服务器
+llama-server -m model.gguf --port 8080
+```
+
 ```yaml
+# 配置 ModelSpec
 model:
-  backend: llama_cpp
-  model_path: /path/to/model.gguf
+  backend: openai_compatible
+  endpoint: http://localhost:8080/v1
+  model_name: local
 ```
 
 ### Q: 如何禁用 artifact 保存？

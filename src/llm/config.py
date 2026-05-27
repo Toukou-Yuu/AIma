@@ -232,6 +232,15 @@ def load_llm_runtime_config(
         str(_get_required(llm_cfg, "compression_level")),
         ("none", "snip", "micro", "collapse", "autocompact"),
     )
+    if compression_level == "autocompact":
+        import warnings
+
+        warnings.warn(
+            "compression_level='autocompact' is experimental. "
+            "It should not be used as an experimental control variable.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     threshold = float(_get_required(llm_cfg, "context_compression_threshold"))
     if not 0 < threshold <= 1:

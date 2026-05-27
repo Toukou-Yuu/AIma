@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from llm.agent.context_store import ContextEvent
+    from context.events import ContextEvent
 
 
 # Compression mode type
