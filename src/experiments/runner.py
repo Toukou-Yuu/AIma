@@ -320,6 +320,15 @@ class ExperimentRunner:
                 )
                 sinks.append(index_sink)
 
+            # 如果启用 memory，添加 MemorySink
+            if self._spec.memory and self._spec.memory.mode != "off":
+                from arena.memory_sink import MemorySink
+                from memory.manager import MemoryManager
+
+                memory_manager = MemoryManager(self._spec.memory)
+                memory_sink = MemorySink(memory_manager)
+                sinks.append(memory_sink)
+
             tee_sink = TeeSink(sinks)
 
             runner = MatchRunner(
