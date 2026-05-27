@@ -59,9 +59,40 @@ class MemorySink:
             hand_index: Hand index (0-indexed).
             result: Hand result.
         """
+        # 生成可读的hand summary
+        hand_summary = self._generate_hand_summary(hand_index, result)
+
         for seat in range(4):
             player_id = MemoryManager.player_id_for_seat(seat)
-            self._manager.on_hand_end(player_id, hand_summary=None)
+            self._manager.on_hand_end(player_id, hand_summary=hand_summary)
+
+    def _generate_hand_summary(self, hand_index: int, result: HandResult) -> dict[str, str]:
+        """生成可读的hand summary。
+
+        Args:
+            hand_index: Hand index (0-indexed).
+            result: Hand result.
+
+        Returns:
+            包含summary文本的字典。
+        """
+        scores_str = "/".join(str(s) for s in result.scores)
+
+        if result.end_reason == "flow":
+            summary_text = f"Hand {hand_index} ended by flow. Scores: {scores_str}."
+        elif result.end_reason == "ron":
+            winner = result.winner_seat if result.winner_seat is not None else "?"
+            loser = result.loser_seat if result.loser_seat is not None else "?"
+            points_str = f", points={result.points}" if result.points > 0 else ""
+            summary_text = (
+                f"Hand {hand_index} ended by ron. "
+                f"Winner seat={winner}, loser seat={loser}{points_str}. "
+                f"Scores: {scores_str}."
+            )
+        else:
+            summary_text = f"Hand {hand_index} ended by {result.end_reason}. Scores: {scores_str}."
+
+        return {"text": summary_text, "hand_index": str(hand_index)}
 
     def on_match_end(self, result: MatchResult) -> None:
         """Called when match ends.

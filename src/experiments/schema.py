@@ -66,6 +66,9 @@ class ArtifactSpec(BaseModel):
     sqlite_index: bool = True
 
 
+from memory.schema import MemorySpec
+
+
 class ExperimentSpec(BaseModel):
     """Top-level experiment configuration."""
 
@@ -75,6 +78,7 @@ class ExperimentSpec(BaseModel):
     match: MatchSpec
     runtime: RuntimeSpec = Field(default_factory=RuntimeSpec)
     artifacts: ArtifactSpec = Field(default_factory=ArtifactSpec)
+    memory: MemorySpec = Field(default_factory=MemorySpec)
     policies: dict[str, PolicySpec]
 
     @classmethod

@@ -204,10 +204,32 @@ class MatchRunner:
                     hand_count += 1
 
                 # 调用 sinks 的 on_hand_end
+                # 获取当前分数
+                scores = state.table.scores if state.table else (25000, 25000, 25000, 25000)
+
+                # 确定局结束原因和赢家/输家
+                end_reason = "flow"
+                winner_seat = None
+                loser_seat = None
+                points = 0
+
+                if phase == GamePhase.HAND_OVER and state.ron_winners:
+                    # 荣和或自摸
+                    end_reason = "ron"
+                    winner_seat = min(state.ron_winners)  # 取第一个赢家
+                    # 计算得分（简化：使用当前分数与起始分的差值）
+                    # 注意：这里需要更精确的计算，但暂时使用简化方式
+                    points = 0  # 暂时设为0，后续可以通过事件获取
+
                 hand_result = HandResult(
                     match_id=match_id,
                     hand_index=hand_index,  # 刚完成的局号
                     hand_count=hand_count,  # 已完成局数（不含中途流局）
+                    end_reason=end_reason,
+                    scores=scores,
+                    winner_seat=winner_seat,
+                    loser_seat=loser_seat,
+                    points=points,
                 )
                 for s in self._sinks:
                     s.on_hand_end(hand_index, hand_result)
