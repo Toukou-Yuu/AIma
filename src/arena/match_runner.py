@@ -60,7 +60,7 @@ class MatchRunner:
         engine: GameEngine,
         policies: dict[int, Policy],
         sinks: list[EventSink] | None = None,
-        step_limit: int = 20000,
+        step_limit: int | None = None,
     ) -> None:
         """初始化 MatchRunner。
 
@@ -68,7 +68,7 @@ class MatchRunner:
             engine: GameEngine 门面
             policies: 座位 -> Policy 映射（必须包含 0..3 四席）
             sinks: EventSink 列表（默认为空列表）
-            step_limit: 最大步数限制
+            step_limit: 最大步数限制（如果为None，则使用spec中的step_limit）
         """
         if len(policies) != 4:
             msg = f"policies must contain exactly 4 entries, got {len(policies)}"
@@ -149,12 +149,12 @@ class MatchRunner:
         if match_id is None:
             match_id = job_id  # match_id 默认等于 job_id
 
-        # 使用spec中的max_hands（默认8局）
-        max_hands = spec.max_hands
-        if spec.preset == "tonpuu":
-            max_hands = 4  # 东风战固定4局
-        elif spec.preset == "hanchan" and max_hands == 0:
-            max_hands = 8  # 半庄默认8局
+        # 使用spec中的max_hands（默认采用preset的自然局数）
+        natural_hands = 4 if spec.preset == "tonpuu" else 8
+        max_hands = spec.max_hands if spec.max_hands is not None else natural_hands
+
+        # 使用spec中的step_limit（除非runner构造参数显式指定了step_limit）
+        step_limit = self._step_limit if self._step_limit is not None else spec.step_limit
 
         state = self._engine.new_match(spec, seed)
         step_count = 0
@@ -183,7 +183,7 @@ class MatchRunner:
                 )
 
         # 主循环
-        while not self._engine.is_terminal(state) and step_count < self._step_limit:
+        while not self._engine.is_terminal(state) and step_count < step_limit:
             phase = state.phase
 
             # HAND_OVER / FLOWN -> NEXT_ROUND
@@ -333,7 +333,7 @@ class MatchRunner:
         if self._engine.is_terminal(state):
             # 自然终局：stopped_reason=None, outcome="completed"
             pass
-        elif step_count >= self._step_limit:
+        elif step_count >= step_limit:
             # step_limit 截断
             stopped_reason = "step_limit_exceeded"
             outcome = "step_limit_reached"

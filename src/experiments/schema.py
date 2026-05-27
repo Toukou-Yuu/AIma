@@ -39,7 +39,7 @@ class MatchSpec(BaseModel):
     """Match configuration."""
 
     preset: Literal["tonpuu", "hanchan", "custom"] = "hanchan"
-    max_hands: int = 8
+    max_hands: int | None = None
     allow_negative: bool = False
     step_limit: int = 20000
 
