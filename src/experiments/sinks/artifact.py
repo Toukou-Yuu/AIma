@@ -47,7 +47,7 @@ class ArtifactWriter:
             job_id: 批处理任务标识符
             seed: 随机种子
             save_prompts: 是否保存 prompt messages
-            save_debug_snapshots: 是否保存 debug snapshots (model_raw_response, memory_snapshot, observation)
+            save_debug_snapshots: 是否保存 debug snapshots
         """
         self._job_dir = job_dir
         self._match_id = match_id
@@ -340,6 +340,7 @@ class ArtifactWriter:
         # 写入 summary.json（使用实际统计值）
         ending_points = list(result.final_points)
         starting_points = [25000, 25000, 25000, 25000]
+        finished_at = datetime.now(tz=timezone.utc).isoformat()
         summary = {
             "schema_version": 1,
             "experiment_id": self._experiment_id,
@@ -355,12 +356,19 @@ class ArtifactWriter:
             "decision_count": actual_decision_count,
             "event_count": actual_event_count,
             "hand_count": result.hand_count,
+            "completed_hands": result.hand_count,
+            "truncated_after_completed_hand": (
+                result.outcome == "truncated"
+                and result.stopped_reason == "max_hands_reached"
+            ),
             "starting_points": starting_points,
             "final_points": ending_points,
             "point_delta": list(result.point_delta),
             "rank": list(result.rank),
             "start_time": self._started_at,
-            "end_time": datetime.now(tz=timezone.utc).isoformat(),
+            "end_time": finished_at,
+            "started_at": self._started_at,
+            "finished_at": finished_at,
             "duration_ms": result.duration_ms,
         }
         summary = {key: value for key, value in summary.items() if value is not None}
@@ -394,9 +402,21 @@ class ArtifactWriter:
                     "riichi_count": 0,
                     "fallback_count": self._count_fallbacks(decisions_path, seat=seat),
                     "parse_error_count": self._count_parse_errors(decisions_path, seat=seat),
-                    "avg_latency_ms": self._avg_decision_field(decisions_path, "latency_ms", seat=seat),
-                    "avg_prompt_tokens": self._avg_diag_field(decisions_path, "prompt_tokens", seat=seat),
-                    "avg_completion_tokens": self._avg_diag_field(decisions_path, "completion_tokens", seat=seat),
+                    "avg_latency_ms": self._avg_decision_field(
+                        decisions_path,
+                        "latency_ms",
+                        seat=seat,
+                    ),
+                    "avg_prompt_tokens": self._avg_diag_field(
+                        decisions_path,
+                        "prompt_tokens",
+                        seat=seat,
+                    ),
+                    "avg_completion_tokens": self._avg_diag_field(
+                        decisions_path,
+                        "completion_tokens",
+                        seat=seat,
+                    ),
                 }
                 for seat in range(4)
             ],
@@ -469,7 +489,13 @@ class ArtifactWriter:
         return count
 
     @classmethod
-    def _avg_decision_field(cls, path: Path, field: str, *, seat: int | None = None) -> float | None:
+    def _avg_decision_field(
+        cls,
+        path: Path,
+        field: str,
+        *,
+        seat: int | None = None,
+    ) -> float | None:
         values: list[float] = []
         for record in cls._iter_decision_records(path) or ():
             if seat is not None and record.get("seat") != seat:

@@ -413,39 +413,42 @@ class MatchSettlementScreen(BaseScreen):
         self.session = session
 
     def compose(self) -> ComposeResult:
+        overview, logs, token, standings = self._render_settlement_panels()
         with Vertical(id="screen-body"):
             with Horizontal(classes="pane-row"):
-                yield Static(classes="pane", id="settlement-overview")
-                yield Static(classes="pane", id="settlement-logs")
-            yield Static(classes="pane", id="settlement-token")
-            yield Static(classes="pane", id="settlement-standings")
+                yield Static(overview, classes="pane", id="settlement-overview")
+                yield Static(logs, classes="pane", id="settlement-logs")
+            yield Static(token, classes="pane", id="settlement-token")
+            yield Static(standings, classes="pane", id="settlement-standings")
         yield Static("", id="status-line")
         with Horizontal(classes="action-bar"):
             yield Button("回放这场对局", id="settlement-replay", variant="primary")
             yield Button("再来一局", id="settlement-restart")
             yield Button("返回首页", id="settlement-home")
 
-    def on_mount(self) -> None:
-        self._refresh_settlement()
-
-    def _refresh_settlement(self) -> None:
+    def _render_settlement_panels(self) -> tuple[object, object, object, object]:
         result = self.session.result
         if result is None:
-            self.query_one("#settlement-overview", Static).update(
-                render_empty_state("暂无结果", "后台会话尚未生成结算。")
+            return (
+                render_empty_state("暂无结果", "后台会话尚未生成结算。"),
+                "",
+                "",
+                "",
             )
-            return
-        self.query_one("#settlement-overview", Static).update(
-            render_match_overview_panel(self.session, result)
-        )
-        self.query_one("#settlement-logs", Static).update(render_match_log_panel(result))
         token_diagnostics = result.run_result.token_diagnostics if result.run_result else ()
-        self.query_one("#settlement-token", Static).update(
-            render_token_summary_panel(token_diagnostics)
+        return (
+            render_match_overview_panel(self.session, result),
+            render_match_log_panel(result),
+            render_token_summary_panel(token_diagnostics),
+            render_match_standings_panel(result),
         )
-        self.query_one("#settlement-standings", Static).update(
-            render_match_standings_panel(result)
-        )
+
+    def _refresh_settlement(self) -> None:
+        overview, logs, token, standings = self._render_settlement_panels()
+        self.query_one("#settlement-overview", Static).update(overview)
+        self.query_one("#settlement-logs", Static).update(logs)
+        self.query_one("#settlement-token", Static).update(token)
+        self.query_one("#settlement-standings", Static).update(standings)
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         result = self.session.result

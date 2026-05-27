@@ -12,14 +12,25 @@
   "seed": 42,
   "step_count": 150,
   "hand_count": 8,
+  "completed_hands": 8,
   "stopped_reason": "MATCH_END",
   "outcome": "completed",
+  "final_phase": "match_end",
+  "truncated_after_completed_hand": false,
   "final_points": [35000, 28000, 22000, 15000],
   "point_delta": [10000, 3000, -3000, -10000],
   "starting_points": [25000, 25000, 25000, 25000],
+  "started_at": "2026-05-27T00:00:00+00:00",
+  "finished_at": "2026-05-27T00:00:12+00:00",
   "duration_ms": 12345
 }
 ```
+
+`max_hands` 是实验安全截断上限，表示完成 N 局后停止。runner 会在局结束后
+执行一次 `NEXT_ROUND` 让 kernel 判断是否自然终局；如果未自然终局但达到
+`max_hands`，则 `outcome="truncated"`、`stopped_reason="max_hands_reached"`、
+`truncated_after_completed_hand=true`。此时 `final_phase` 可能是下一局的
+`in_round` 初始状态，这是预期 artifact 语义。
 
 ### replay.json
 
@@ -158,7 +169,8 @@ v4.0 支持以下 debug artifacts（需在配置中启用 `save_prompts` 或 `sa
 
 ### memory_snapshot.jsonl
 
-每行记录 memory 状态快照。
+每行记录 prompt 注入时的 memory 状态快照，包含读取的 layers、token 估算和
+实际渲染进 prompt 的 memory 文本。
 
 ### observation.jsonl
 
@@ -166,7 +178,8 @@ v4.0 支持以下 debug artifacts（需在配置中启用 `save_prompts` 或 `sa
 
 ### 限制说明
 
-v4.0 debug snapshots 包含 prompt/model/memory/observation 级别的 traces。
+v4.0 `save_debug_snapshots=true` 只保存 prompt/model/memory/observation 级别的
+调试 traces。
 
 **不包含** 完整的 GameState before/after snapshots（`state_before.jsonl` / `state_after.jsonl`）。
 

@@ -33,7 +33,8 @@ python -m experiments.run --config examples/smoke.yaml
 python -m experiments.aggregate --run runs/smoke
 
 # 重建索引
-python -m experiments.index --rebuild runs/smoke
+python -m experiments.index --rebuild runs
+python -m experiments.index --rebuild runs/smoke  # 也支持单个 run dir
 
 # 查看实验产物
 python -m ui.viewer --run runs/smoke

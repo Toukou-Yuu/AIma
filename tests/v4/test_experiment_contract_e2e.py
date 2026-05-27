@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 import yaml
@@ -25,7 +24,6 @@ from experiments.index import get_index_path, rebuild_index
 from experiments.runner import ExperimentRunner
 from experiments.schema import ExperimentSpec
 from ui.viewer.data_source import RunDataSource
-
 
 # 测试配置模板
 SMOKE_CONFIG = {
@@ -210,12 +208,16 @@ SUMMARY_REQUIRED_FIELDS = [
     "decision_count",
     "event_count",
     "hand_count",
+    "completed_hands",
+    "truncated_after_completed_hand",
     "starting_points",
     "final_points",
     "point_delta",
     "rank",
     "start_time",
     "end_time",
+    "started_at",
+    "finished_at",
     "duration_ms",
 ]
 
@@ -524,7 +526,9 @@ class TestFullPipeline:
             sys.argv = old_argv
 
         # 验证aggregate输出
-        assert (aggregate_dir / "reliability_summary.json").exists(), "reliability_summary.json不存在"
+        assert (aggregate_dir / "reliability_summary.json").exists(), (
+            "reliability_summary.json不存在"
+        )
 
         # 3. 运行rebuild index
         rebuild_index(run_dir)

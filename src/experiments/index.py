@@ -885,11 +885,16 @@ def _infer_experiment_status(job_states: list[str]) -> str:
         return "indexed"
 
 
+def _is_experiment_run_dir(path: Path) -> bool:
+    """Return whether path looks like one v4 experiment run directory."""
+    return (path / "jobs").is_dir() or (path / "manifest.yaml").exists()
+
+
 def rebuild_index(output_root: str | Path) -> dict[str, Any]:
-    """Rebuild the SQLite index by scanning the runs directory.
+    """Rebuild the SQLite index by scanning an output root or one run directory.
 
     Args:
-        output_root: Root directory for run outputs.
+        output_root: Root directory for run outputs, or a single experiment run directory.
 
     Returns:
         Dictionary with rebuild statistics:
@@ -898,6 +903,13 @@ def rebuild_index(output_root: str | Path) -> dict[str, Any]:
         - errors: List of error messages
     """
     output_root = Path(output_root)
+    if not output_root.exists():
+        msg = f"Rebuild path does not exist: {output_root}"
+        raise FileNotFoundError(msg)
+    if not output_root.is_dir():
+        msg = f"Rebuild path must be a directory: {output_root}"
+        raise NotADirectoryError(msg)
+
     db_path = get_index_path(output_root)
 
     # Create or recreate the index
@@ -914,15 +926,17 @@ def rebuild_index(output_root: str | Path) -> dict[str, Any]:
         "errors": [],
     }
 
-    # Scan for experiment directories
-    if not output_root.exists():
-        return stats
+    # Scan for experiment directories. Passing a single run dir is supported
+    # explicitly so jobs/aggregate are not mistaken for experiments.
+    if _is_experiment_run_dir(output_root):
+        experiment_dirs = [output_root]
+    else:
+        experiment_dirs = [
+            exp_dir for exp_dir in output_root.iterdir()
+            if exp_dir.is_dir() and exp_dir.name != "runs.db"
+        ]
 
-    for exp_dir in output_root.iterdir():
-        if not exp_dir.is_dir():
-            continue
-        if exp_dir.name == "runs.db":
-            continue
+    for exp_dir in experiment_dirs:
 
         experiment_id = exp_dir.name
         config_path: str | None = None
@@ -1057,6 +1071,15 @@ def rebuild_index(output_root: str | Path) -> dict[str, Any]:
                     error_message=error_message,
                 )
                 stats["jobs"] += 1
+                job_states.append(state)
+
+            if job_states:
+                exp_status = _infer_experiment_status(job_states)
+                update_experiment_status(
+                    db_path=db_path,
+                    experiment_id=experiment_id,
+                    status=exp_status,
+                )
             continue
 
         # v4 layout: jobs/<job_id>/
@@ -1113,7 +1136,9 @@ def rebuild_index(output_root: str | Path) -> dict[str, Any]:
             stats["artifact_paths"] += indexed["artifact_paths"]
 
             # Track job state for experiment status inference
-            job_states.append(state)
+            job_record = get_job(db_path, job_id)
+            if job_record is not None:
+                job_states.append(job_record["state"])
 
         # Update experiment status based on job states
         if job_states:
@@ -1137,6 +1162,7 @@ if __name__ == "__main__":
         epilog="""
 Examples:
     python -m experiments.index --rebuild runs
+    python -m experiments.index --rebuild runs/smoke
         """,
     )
     parser.add_argument(
@@ -1148,7 +1174,7 @@ Examples:
         "output_root",
         type=Path,
         nargs="?",
-        help="Output root directory (default: runs)",
+        help="Output root directory or a single experiment run directory (default: runs)",
         default=Path("runs"),
     )
 

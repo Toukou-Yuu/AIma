@@ -4,20 +4,20 @@ from __future__ import annotations
 
 import pytest
 
-from arena import GameEngine
-from kernel import Action, ActionKind, build_deck, shuffle_deck
-from kernel.engine.state import initial_game_state
-from kernel.api.legal_actions import LegalAction
-from kernel.tiles.model import Suit, Tile
-
-from agents.pipeline_result import ParseResult, GroundResult, PipelineResult, ParseStatus
-from agents.components.parser import OutputParser
+from agents.components.factory import build_components
+from agents.components.fallback import FallbackKind, FallbackStrategy
 from agents.components.grounding import ActionGrounder
-from agents.components.fallback import FallbackStrategy, FallbackKind
+from agents.components.parser import OutputParser
 from agents.pipeline import AgentPipeline
-from agents.components.factory import build_components, PipelineComponents
+from agents.pipeline_result import GroundResult, ParseResult, PipelineResult
 from agents.schema import AgentSpec
-from llm.adapters.dummy import DummyBackend
+from arena import DecisionContext, GameEngine
+from kernel import Action, ActionKind, build_deck, shuffle_deck
+from kernel.api.legal_actions import LegalAction
+from kernel.engine.state import initial_game_state
+from kernel.tiles.model import Suit, Tile
+from models.schema import ModelSpec
+from prompts.schema import PromptSpec
 
 
 def _wall136(seed: int = 0) -> tuple:
@@ -33,9 +33,8 @@ def _make_legal_actions() -> tuple[LegalAction, ...]:
     )
 
 
-def _make_decision_context() -> "DecisionContext":
+def _make_decision_context() -> DecisionContext:
     """Create a minimal DecisionContext for testing."""
-    from arena.policy import DecisionContext
 
     engine = GameEngine()
     g0 = initial_game_state()
@@ -58,10 +57,8 @@ def _make_decision_context() -> "DecisionContext":
     )
 
 
-def _make_agent_spec() -> AgentSpec:
+def _make_agent_spec(response: str = "dummy response") -> AgentSpec:
     """Create a minimal AgentSpec for testing."""
-    from prompts.schema import PromptSpec
-    from models.schema import ModelSpec
 
     # 使用现有的模板 riichi_json_action_v1
     return AgentSpec(
@@ -71,7 +68,11 @@ def _make_agent_spec() -> AgentSpec:
             version="1.0.0",
             sections=[],  # 使用模板默认 sections
         ),
-        model=ModelSpec(backend="dummy", model_name="test-model"),
+        model=ModelSpec(
+            backend="dummy",
+            model_name="test-model",
+            extra={"response": response},
+        ),
         fallback="first_legal",
     )
 
@@ -290,15 +291,13 @@ class TestAgentPipeline:
     def test_pipeline_success_path(self) -> None:
         """Full pipeline: backend -> parse -> ground -> legal action."""
         ctx = _make_decision_context()
-        spec = _make_agent_spec()
-        components = build_components(spec, seed=42)
-
-        # Use DummyBackend with a valid JSON response that matches first DISCARD
-        # The game state is at MUST_DISCARD phase, so legal actions are DISCARD variants
         first_action = ctx.legal_actions[0]
         tile_code = first_action.tile.to_code() if first_action.tile else "1m"
-        backend = DummyBackend(response=f'{{"kind":"discard","seat":0,"tile":"{tile_code}"}}')
-        pipeline = AgentPipeline(components, backend)
+        spec = _make_agent_spec(
+            response=f'{{"kind":"discard","seat":0,"tile":"{tile_code}"}}'
+        )
+        components = build_components(spec, seed=42)
+        pipeline = AgentPipeline(components)
 
         result = pipeline.run(ctx)
         assert result.action is not None
@@ -308,12 +307,9 @@ class TestAgentPipeline:
     def test_pipeline_parse_failed_fallback(self) -> None:
         """Parse failure triggers fallback -> fallback_used=True."""
         ctx = _make_decision_context()
-        spec = _make_agent_spec()
+        spec = _make_agent_spec(response="not valid json")
         components = build_components(spec, seed=42)
-
-        # Invalid JSON triggers parse_failed
-        backend = DummyBackend(response="not valid json")
-        pipeline = AgentPipeline(components, backend)
+        pipeline = AgentPipeline(components)
 
         result = pipeline.run(ctx)
         assert result.parse_status == "parse_failed"
@@ -323,12 +319,9 @@ class TestAgentPipeline:
     def test_pipeline_match_failed_fallback(self) -> None:
         """Match failure triggers fallback -> fallback_used=True."""
         ctx = _make_decision_context()
-        spec = _make_agent_spec()
+        spec = _make_agent_spec(response='{"kind":"tsumo","seat":0}')
         components = build_components(spec, seed=42)
-
-        # Valid JSON but non-matching action triggers match_failed
-        backend = DummyBackend(response='{"kind":"tsumo","seat":0}')
-        pipeline = AgentPipeline(components, backend)
+        pipeline = AgentPipeline(components)
 
         result = pipeline.run(ctx)
         assert result.parse_status == "match_failed"
@@ -338,14 +331,13 @@ class TestAgentPipeline:
     def test_pipeline_diagnostics_populated(self) -> None:
         """Pipeline populates diagnostics with parse info."""
         ctx = _make_decision_context()
-        spec = _make_agent_spec()
-        components = build_components(spec, seed=42)
-
-        # Use matching response
         first_action = ctx.legal_actions[0]
         tile_code = first_action.tile.to_code() if first_action.tile else "1m"
-        backend = DummyBackend(response=f'{{"kind":"discard","seat":0,"tile":"{tile_code}"}}')
-        pipeline = AgentPipeline(components, backend)
+        spec = _make_agent_spec(
+            response=f'{{"kind":"discard","seat":0,"tile":"{tile_code}"}}'
+        )
+        components = build_components(spec, seed=42)
+        pipeline = AgentPipeline(components)
 
         result = pipeline.run(ctx)
         assert "raw_output" in result.diagnostics
@@ -355,14 +347,13 @@ class TestAgentPipeline:
     def test_pipeline_latency_recorded(self) -> None:
         """Pipeline records latency_ms."""
         ctx = _make_decision_context()
-        spec = _make_agent_spec()
-        components = build_components(spec, seed=42)
-
-        # Use matching response
         first_action = ctx.legal_actions[0]
         tile_code = first_action.tile.to_code() if first_action.tile else "1m"
-        backend = DummyBackend(response=f'{{"kind":"discard","seat":0,"tile":"{tile_code}"}}')
-        pipeline = AgentPipeline(components, backend)
+        spec = _make_agent_spec(
+            response=f'{{"kind":"discard","seat":0,"tile":"{tile_code}"}}'
+        )
+        components = build_components(spec, seed=42)
+        pipeline = AgentPipeline(components)
 
         result = pipeline.run(ctx)
         assert result.latency_ms >= 0  # Should be non-negative

@@ -4,17 +4,18 @@ from __future__ import annotations
 
 import pytest
 
-from arena import GameEngine
+from arena import DecisionContext, GameEngine
 from kernel import Action, ActionKind, build_deck, shuffle_deck
 from kernel.engine.state import initial_game_state
 from policies import (
-    FirstLegalPolicy,
-    RandomPolicy,
-    FixedHeuristicPolicy,
-    legal_action_to_action,
     REGISTRY,
+    FirstLegalPolicy,
+    FixedHeuristicPolicy,
+    RandomPolicy,
+    legal_action_to_action,
     register_builtin_policies,
 )
+from policies.registry import PolicyFactoryContext, PolicyRegistry
 from policies.schema import PolicySpec
 
 
@@ -27,8 +28,6 @@ class TestFirstLegalPolicy:
 
     def test_returns_first_legal_action(self) -> None:
         """FirstLegalPolicy 返回 legal_actions[0] 对应的 Action。"""
-        from arena import DecisionContext, PolicyDecision
-
         engine = GameEngine()
         g0 = initial_game_state()
         w = _wall136(10)
@@ -63,8 +62,6 @@ class TestRandomPolicy:
 
     def test_deterministic_with_seed(self) -> None:
         """RandomPolicy 使用 seed，结果确定。"""
-        from arena import DecisionContext
-
         engine = GameEngine()
         g0 = initial_game_state()
         w = _wall136(10)
@@ -95,17 +92,41 @@ class TestFixedHeuristicPolicy:
 
     def test_prioritizes_tsumo(self) -> None:
         """FixedHeuristicPolicy 优先自摸。"""
-        # 简化测试：验证 TSUMO 有最高优先级
         from kernel.api.legal_actions import LegalAction
 
-        legal = [
+        engine = GameEngine()
+        g0 = initial_game_state()
+        w = _wall136(10)
+
+        from kernel import apply
+        g1 = apply(g0, Action(ActionKind.BEGIN_ROUND, wall=w)).new_state
+
+        legal = (
             LegalAction(ActionKind.DISCARD, seat=0),
             LegalAction(ActionKind.TSUMO, seat=0),
-        ]
+        )
 
         p = FixedHeuristicPolicy("test")
+
+        decision = p.decide(
+            DecisionContext(
+                match_id="test",
+                job_id="test",
+                hand_index=0,
+                step_index=0,
+                seed=42,
+                seat=0,
+                phase="in_round",
+                state=g1,
+                observation=engine.observe(g1, 0),
+                legal_actions=legal,
+            )
+        )
+
+        assert decision.action.kind == ActionKind.TSUMO
         # 验证 TSUMO 的优先级数值更高
         from policies.fixed_heuristic_policy import ACTION_PRIORITY
+
         assert ACTION_PRIORITY[ActionKind.TSUMO] > ACTION_PRIORITY[ActionKind.DISCARD]
 
 
@@ -125,9 +146,26 @@ class TestPolicyRegistry:
         register_builtin_policies()
 
         spec = PolicySpec(type="first_legal", id="test")
-        p = REGISTRY.create(spec, seed=42)
+        p = REGISTRY.create(spec, PolicyFactoryContext(seed=42))
 
         assert isinstance(p, FirstLegalPolicy)
+
+    def test_registry_context_factory_receives_runtime_context(self) -> None:
+        """Factories receive the full runtime context."""
+        registry = PolicyRegistry()
+        captured_context: dict[str, PolicyFactoryContext] = {}
+
+        def factory(spec: PolicySpec, ctx: PolicyFactoryContext) -> FirstLegalPolicy:
+            captured_context["value"] = ctx
+            return FirstLegalPolicy(spec.id)
+
+        context = PolicyFactoryContext(seed=7, memory_enabled=False)
+        registry.register("first_legal", factory)
+        spec = PolicySpec(type="first_legal", id="context")
+        p = registry.create(spec, context)
+
+        assert isinstance(p, FirstLegalPolicy)
+        assert captured_context["value"] is context
 
     def test_registry_unknown_type_raises(self) -> None:
         """PolicySpec 对未知 type，Pydantic 校验抛出 ValidationError。"""

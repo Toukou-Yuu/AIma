@@ -120,7 +120,25 @@ class EventProjector:
         ):
             return events
 
-        # For now, return all events as we don't have event type info
-        # in ContextEvent to distinguish public vs private events
-        # This could be extended with event metadata in the future
-        return events
+        return [ev for ev in events if self._include_event(ev, self_seat)]
+
+    def _include_event(self, event: ContextEvent, self_seat: int) -> bool:
+        """Return whether one event should remain after type filtering."""
+        event_type = getattr(event, "event_type", "")
+        action_kind = getattr(event, "action_kind", "")
+        event_seat = getattr(event, "seat", None)
+        if event_seat is None:
+            event_seat = getattr(event, "last_discard_seat", None)
+
+        if event_type in {"FlowEvent", "HandOverEvent", "MatchEndEvent"}:
+            return self._config.include_scoreboard
+
+        if event_type == "DiscardTileEvent" or action_kind == "discard":
+            if event_seat == self_seat:
+                return self._config.include_self_discards
+            return self._config.include_opponent_discards
+
+        if event_seat is None:
+            return self._config.include_public_events
+
+        return True

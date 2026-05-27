@@ -19,6 +19,7 @@ from policies.registry import REGISTRY, register_builtin_policies
 
 if TYPE_CHECKING:
     from arena.policy import Policy
+    from memory.stores import MemoryStore
 
 
 class ExperimentRunner:
@@ -238,15 +239,25 @@ class ExperimentRunner:
             match_index=match_index,
         )
 
-    def _create_policies(self, job_spec: JobSpec) -> dict[int, "Policy"]:
+    def _create_policies(
+        self,
+        job_spec: JobSpec,
+        *,
+        memory_store: "MemoryStore | None" = None,
+        memory_enabled: bool = True,
+    ) -> dict[int, "Policy"]:
         """为作业创建策略实例。
 
         Args:
             job_spec: 作业规格
+            memory_store: job 级共享 MemoryStore。
+            memory_enabled: 实验级 memory 总开关。
 
         Returns:
             座位 -> Policy 映射
         """
+        from policies.registry import PolicyFactoryContext
+
         policies: dict[int, Policy] = {}
 
         for seat_str, policy_spec in self._spec.policies.items():
@@ -257,7 +268,15 @@ class ExperimentRunner:
                 seat = int(seat_str)
             # 使用 job_spec.seed + seat 作为策略种子，确保可复现性
             policy_seed = job_spec.seed + seat
-            policy = REGISTRY.create(policy_spec, policy_seed)
+            context = PolicyFactoryContext(
+                seed=policy_seed,
+                memory_store=memory_store,
+                memory_enabled=memory_enabled,
+            )
+            policy = REGISTRY.create(
+                policy_spec,
+                context,
+            )
             policies[seat] = policy
 
         return policies
@@ -280,8 +299,22 @@ class ExperimentRunner:
         started_at = datetime.now(tz=timezone.utc).isoformat()
 
         try:
+            # experiment.memory 是 job 级 memory runtime 总开关和写入 lifecycle。
+            # agent.memory 只决定单个 LLMPolicy 是否读取，以及读取哪些 layers。
+            shared_memory_manager = None
+            shared_memory_store = None
+            if self._spec.memory.mode != "off":
+                from memory.manager import MemoryManager
+
+                shared_memory_manager = MemoryManager(self._spec.memory)
+                shared_memory_store = shared_memory_manager.store
+
             # 创建策略
-            policies = self._create_policies(job_spec)
+            policies = self._create_policies(
+                job_spec,
+                memory_store=shared_memory_store,
+                memory_enabled=shared_memory_store is not None,
+            )
 
             # 创建引擎和运行器
             engine = GameEngine()
@@ -321,12 +354,10 @@ class ExperimentRunner:
                 sinks.append(index_sink)
 
             # 如果启用 memory，添加 MemorySink
-            if self._spec.memory and self._spec.memory.mode != "off":
+            if shared_memory_manager is not None:
                 from arena.memory_sink import MemorySink
-                from memory.manager import MemoryManager
 
-                memory_manager = MemoryManager(self._spec.memory)
-                memory_sink = MemorySink(memory_manager)
+                memory_sink = MemorySink(shared_memory_manager)
                 sinks.append(memory_sink)
 
             tee_sink = TeeSink(sinks)

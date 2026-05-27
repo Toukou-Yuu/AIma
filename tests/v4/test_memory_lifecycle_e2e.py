@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -20,8 +21,6 @@ import yaml
 
 from experiments.runner import ExperimentRunner
 from experiments.schema import ExperimentSpec
-from memory.schema import MemorySpec
-
 
 # 测试配置模板（memory off）
 MEMORY_OFF_CONFIG = {
@@ -128,13 +127,93 @@ MEMORY_PASSIVE_CONFIG = {
 }
 
 
+def _llm_policy(policy_id: str, *, memory_mode: str, memory_layers: list[str]) -> dict[str, Any]:
+    return {
+        "type": "llm",
+        "id": policy_id,
+        "agent": {
+            "pipeline_id": "llm_fixed_v1",
+            "context": {"scope": "stateless"},
+            "memory": {
+                "mode": memory_mode,
+                "layers": memory_layers,
+                "store": "in_memory",
+                "persist": False,
+            },
+            "prompt": {
+                "template_id": "riichi_json_action_v1",
+                "version": "1.0.0",
+                "sections": [],
+            },
+            "model": {
+                "backend": "dummy",
+                "model_name": "dummy",
+                "extra": {"response": "not json; force fallback"},
+            },
+            "fallback": "first_legal",
+        },
+    }
+
+
+def _first_legal_policy(seat: int) -> dict[str, Any]:
+    return {"type": "first_legal", "id": f"first_legal_{seat}", "options": {}}
+
+
+def _shared_memory_config(*, experiment_memory_mode: str) -> dict[str, Any]:
+    config = deepcopy(MEMORY_PASSIVE_CONFIG)
+    config["experiment"]["id"] = f"shared_memory_{experiment_memory_mode}"
+    config["artifacts"]["save_prompts"] = True
+    config["artifacts"]["save_debug_snapshots"] = True
+    config["memory"] = {
+        "mode": experiment_memory_mode,
+        "layers": ["match"] if experiment_memory_mode != "off" else [],
+        "store": "in_memory",
+        "persist": False,
+    }
+    config["policies"] = {
+        "seat0": _llm_policy("dummy_memory_on", memory_mode="passive", memory_layers=["match"]),
+        "seat1": _llm_policy("dummy_memory_off", memory_mode="off", memory_layers=[]),
+        "seat2": _first_legal_policy(2),
+        "seat3": _first_legal_policy(3),
+    }
+    return config
+
+
+def _run_config(tmp_path: Path, config: dict[str, Any]) -> Path:
+    output_root = tmp_path / "runs"
+    output_root.mkdir()
+
+    config = deepcopy(config)
+    config["artifacts"]["output_root"] = str(output_root)
+
+    config_path = tmp_path / f"{config['experiment']['id']}.yaml"
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(config, f, default_flow_style=False)
+
+    spec = ExperimentSpec.from_yaml(config_path)
+    result = ExperimentRunner(spec, config_path=config_path).run()
+    assert result["failed"] == 0
+    return output_root / config["experiment"]["id"]
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    with path.open(encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def _single_job_dir(run_dir: Path) -> Path:
+    job_dirs = [d for d in (run_dir / "jobs").iterdir() if d.is_dir()]
+    assert len(job_dirs) == 1
+    return job_dirs[0]
+
+
 @pytest.fixture
 def memory_off_run_dir(tmp_path: Path) -> Path:
     """运行memory off实验，返回run目录。"""
     output_root = tmp_path / "runs"
     output_root.mkdir()
 
-    config = MEMORY_OFF_CONFIG.copy()
+    config = deepcopy(MEMORY_OFF_CONFIG)
     config["artifacts"]["output_root"] = str(output_root)
 
     config_path = tmp_path / "memory_off.yaml"
@@ -154,7 +233,7 @@ def memory_passive_run_dir(tmp_path: Path) -> Path:
     output_root = tmp_path / "runs"
     output_root.mkdir()
 
-    config = MEMORY_PASSIVE_CONFIG.copy()
+    config = deepcopy(MEMORY_PASSIVE_CONFIG)
     config["artifacts"]["output_root"] = str(output_root)
 
     config_path = tmp_path / "memory_passive.yaml"
@@ -170,6 +249,90 @@ def memory_passive_run_dir(tmp_path: Path) -> Path:
 
 class TestMemoryLifecycleE2E:
     """Memory生命周期端到端测试。"""
+
+    def test_shared_store_injects_previous_hand_summary_into_next_hand_prompt(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """MemorySink 写入的 hand summary 必须能被后续 LLM prompt 读取。"""
+        run_dir = _run_config(tmp_path, _shared_memory_config(experiment_memory_mode="passive"))
+        job_dir = _single_job_dir(run_dir)
+
+        decisions = _read_jsonl(job_dir / "decisions.jsonl")
+        seat0_next_hand = [
+            record for record in decisions
+            if record.get("seat") == 0 and record.get("hand_index", 0) >= 1
+        ]
+        assert seat0_next_hand, "seat0 should make decisions after hand 0"
+        assert any(
+            "Hand 0 ended" in record["diagnostics"]["memory"]["rendered_text"]
+            and record["diagnostics"]["memory_injected_tokens"] > 0
+            and "match" in record["diagnostics"]["memory"]["layers"]
+            for record in seat0_next_hand
+        )
+
+        prompt_records = _read_jsonl(job_dir / "prompt_messages.jsonl")
+        assert any(
+            record.get("seat") == 0
+            and record.get("hand_index", 0) >= 1
+            and "Hand 0 ended" in json.dumps(record["messages"], ensure_ascii=False)
+            for record in prompt_records
+        )
+
+        memory_records = _read_jsonl(job_dir / "memory_snapshot.jsonl")
+        assert any(
+            record.get("seat") == 0
+            and record.get("hand_index", 0) >= 1
+            and "Hand 0 ended" in record["memory"]["rendered_text"]
+            for record in memory_records
+        )
+
+    def test_experiment_memory_off_forces_agent_memory_off(self, tmp_path: Path) -> None:
+        """experiment.memory=off 时，即使 agent.memory=passive 也不能注入 memory。"""
+        run_dir = _run_config(tmp_path, _shared_memory_config(experiment_memory_mode="off"))
+        job_dir = _single_job_dir(run_dir)
+
+        decisions = _read_jsonl(job_dir / "decisions.jsonl")
+        seat0_records = [record for record in decisions if record.get("seat") == 0]
+        assert seat0_records
+        assert all(
+            record["diagnostics"]["memory_injected_tokens"] == 0
+            and record["diagnostics"]["memory"]["layers"] == []
+            and record["diagnostics"]["memory"]["rendered_text"] == ""
+            for record in seat0_records
+        )
+
+        prompt_text = "\n".join(
+            json.dumps(record["messages"], ensure_ascii=False)
+            for record in _read_jsonl(job_dir / "prompt_messages.jsonl")
+            if record.get("seat") == 0
+        )
+        assert "Hand 0 ended" not in prompt_text
+
+    def test_only_agent_with_memory_enabled_reads_shared_store(self, tmp_path: Path) -> None:
+        """同一实验中只有 agent.memory=passive 的 LLM seat 读取共享 memory。"""
+        run_dir = _run_config(tmp_path, _shared_memory_config(experiment_memory_mode="passive"))
+        job_dir = _single_job_dir(run_dir)
+        decisions = _read_jsonl(job_dir / "decisions.jsonl")
+
+        seat0_next_hand = [
+            record for record in decisions
+            if record.get("seat") == 0 and record.get("hand_index", 0) >= 1
+        ]
+        seat1_next_hand = [
+            record for record in decisions
+            if record.get("seat") == 1 and record.get("hand_index", 0) >= 1
+        ]
+
+        assert any(
+            record["diagnostics"]["memory_injected_tokens"] > 0
+            for record in seat0_next_hand
+        )
+        assert seat1_next_hand
+        assert all(
+            record["diagnostics"]["memory_injected_tokens"] == 0
+            for record in seat1_next_hand
+        )
 
     def test_memory_off_no_memory_injection(self, memory_off_run_dir: Path) -> None:
         """memory off 配置下 prompt 不出现 memory。"""
@@ -232,7 +395,7 @@ class TestMemoryLifecycleE2E:
 
     def test_memory_spec_in_experiment_spec(self) -> None:
         """验证MemorySpec正确集成到ExperimentSpec中。"""
-        config = MEMORY_PASSIVE_CONFIG.copy()
+        config = deepcopy(MEMORY_PASSIVE_CONFIG)
         spec = ExperimentSpec.model_validate(config)
 
         assert spec.memory is not None, "ExperimentSpec应包含memory字段"
@@ -241,7 +404,7 @@ class TestMemoryLifecycleE2E:
 
     def test_memory_off_spec(self) -> None:
         """验证memory off配置正确。"""
-        config = MEMORY_OFF_CONFIG.copy()
+        config = deepcopy(MEMORY_OFF_CONFIG)
         spec = ExperimentSpec.model_validate(config)
 
         assert spec.memory is not None, "ExperimentSpec应包含memory字段"

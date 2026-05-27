@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from agents.schema import AgentSpec, ContextSpec, MemorySpec
+from agents.schema import AgentSpec
 from context.schema import ContextSpec as ContextSpecModule
 from experiments.schema import (
     ArtifactSpec,
@@ -95,9 +95,13 @@ class TestMatchSpec:
     def test_defaults(self) -> None:
         spec = MatchSpec()
         assert spec.preset == "hanchan"
-        assert spec.max_hands == 8
+        assert spec.max_hands is None
         assert spec.allow_negative is False
         assert spec.step_limit == 20000
+
+    def test_explicit_max_hands_override(self) -> None:
+        spec = MatchSpec(max_hands=8)
+        assert spec.max_hands == 8
 
 
 class TestRuntimeSpec:

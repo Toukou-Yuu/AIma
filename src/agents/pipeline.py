@@ -10,7 +10,7 @@ v4 改动：
 - 显式调用 ContextBuilder（读取 ctx.event_history）
 - 显式调用 MemoryManager（读取分层记忆）
 - 构建 PromptRuntime，交给 PromptRenderer
-- 调用 ModelBackend.generate() 替代旧 client.complete()
+- 调用 ModelBackend.generate()
 - diagnostics 包含 context / memory / token 信息
 """
 
@@ -40,16 +40,13 @@ class AgentPipeline:
     def __init__(
         self,
         components: "PipelineComponents",
-        backend: Any | None = None,
     ) -> None:
         """初始化流水线.
 
         Args:
             components: 流水线组件容器
-            backend: ModelBackend。保留该参数以兼容既有调用点。
         """
         self.components = components
-        self.backend = backend
 
     def run(self, ctx: "DecisionContext") -> PipelineResult:
         """执行决策流水线.
@@ -87,6 +84,7 @@ class AgentPipeline:
             "rendered_event_count": built_context.rendered_event_count,
             "truncated": built_context.truncated,
             "token_estimate": estimate_tokens(built_context.text),
+            **built_context.diagnostics,
         }
         diagnostics["context_scope"] = built_context.scope
         diagnostics["context_event_count"] = built_context.rendered_event_count
@@ -97,6 +95,7 @@ class AgentPipeline:
         memory_result = self._read_memory(ctx)
         diagnostics["memory"] = {
             "layers": list(memory_result.layers),
+            "rendered_text": memory_result.rendered_text,
             "token_estimate": memory_result.token_estimate,
         }
         diagnostics["memory_layers"] = list(memory_result.layers)
@@ -118,7 +117,7 @@ class AgentPipeline:
             estimate_tokens(m.content) for m in messages
         )
 
-        # Step 6: generate（ModelBackend.generate，替代旧 client.complete）
+        # Step 6: generate（ModelBackend.generate）
         model_request = ModelRequest(messages=list(messages))
         model_response = self._generate(model_request)
         raw_output = model_response.text
@@ -186,34 +185,16 @@ class AgentPipeline:
         )
 
     def _generate(self, request: ModelRequest) -> ModelResponse:
-        """Call the configured backend through ModelBackend.generate().
-
-        Older tests and adapters still provide only ``complete()``. Those are
-        adapted at the boundary so the pipeline's main path still produces a
-        full ModelResponse shape for diagnostics and metrics.
-        """
-        backend = self.backend or getattr(self.components, "backend", None)
+        """Call the configured backend through ModelBackend.generate()."""
+        backend = getattr(self.components, "backend", None)
         if backend is None:
             msg = "AgentPipeline requires a model backend"
             raise ValueError(msg)
 
-        if hasattr(backend, "generate"):
-            return backend.generate(request)
-
-        if hasattr(backend, "complete"):
-            start = time.perf_counter()
-            text = backend.complete(request.messages)
-            latency_ms = (time.perf_counter() - start) * 1000
-            return ModelResponse(
-                text=text,
-                finish_reason="stop",
-                latency_ms=latency_ms,
-                backend_name=backend.__class__.__name__,
-                model_name="unknown",
-            )
-
-        msg = "Backend must implement generate() or complete()"
-        raise TypeError(msg)
+        if not hasattr(backend, "generate"):
+            msg = "AgentPipeline backend must implement generate()"
+            raise TypeError(msg)
+        return backend.generate(request)
 
     def _build_context(self, ctx: "DecisionContext") -> BuiltContext:
         """调用 ContextBuilder 构建公共历史.
@@ -252,6 +233,11 @@ class AgentPipeline:
             rendered_event_count=result.rendered_event_count,
             scope=builder.spec.scope,
             truncated=result.prompt_truncated,
+            diagnostics={
+                "snipped_event_count": result.snipped_event_count,
+                "collapsed_event_count": result.collapsed_event_count,
+                "compression_mode": result.compression_mode,
+            },
         )
 
     def _read_memory(self, ctx: "DecisionContext") -> MemoryReadResult:

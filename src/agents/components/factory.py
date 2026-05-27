@@ -21,6 +21,7 @@ from models.registry import build_backend
 
 if TYPE_CHECKING:
     from agents.schema import AgentSpec
+    from memory.stores import MemoryStore
     from models.backend import ModelBackend
 
 
@@ -49,12 +50,20 @@ class PipelineComponents:
     backend: "ModelBackend | None" = None
 
 
-def build_components(spec: "AgentSpec", seed: int) -> PipelineComponents:
+def build_components(
+    spec: "AgentSpec",
+    seed: int,
+    *,
+    memory_store: "MemoryStore | None" = None,
+    memory_enabled: bool = True,
+) -> PipelineComponents:
     """根据 AgentSpec 构建所有 pipeline 组件.
 
     Args:
         spec: Agent 配置规格
         seed: 随机种子
+        memory_store: 可选的 job 级共享 MemoryStore。
+        memory_enabled: 实验级 memory 总开关；False 时强制关闭 agent memory。
 
     Returns:
         组装好的 PipelineComponents
@@ -69,8 +78,11 @@ def build_components(spec: "AgentSpec", seed: int) -> PipelineComponents:
 
     # 构建记忆管理器（除非 mode=off）
     memory_manager: MemoryManager | None = None
-    if spec.memory.mode != "off":
-        memory_manager = MemoryManager(spec.memory)
+    if memory_enabled and spec.memory.mode != "off":
+        if memory_store is not None:
+            memory_manager = MemoryManager.with_store(spec.memory, memory_store)
+        else:
+            memory_manager = MemoryManager(spec.memory)
 
     # 使用 AgentSpec 中的 prompt 配置；sections 为空时回退到模板默认 sections。
     prompt_renderer = PromptRenderer(prompt_spec=spec.prompt)

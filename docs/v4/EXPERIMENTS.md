@@ -79,6 +79,24 @@ seats:
         template_id: riichi_json_action_v1
 ```
 
+### MatchSpec 语义
+
+`preset` 定义规则自然终局类型：`tonpuu` 默认 4 局，`hanchan` 默认 8 局。
+`max_hands` 是实验安全截断上限，表示“完成 N 局后停止”；`null` 表示使用
+`preset` 的自然局数，不额外提前截断。`step_limit` 是防死循环安全上限。
+
+为了区分自然终局和实验截断，runner 会在局结束后执行一次 `NEXT_ROUND`，
+让 kernel 判断是否进入 `match_end`。如果未到自然终局但已达到 `max_hands`，
+则 artifact 中写入：
+
+```text
+outcome=truncated
+stopped_reason=max_hands_reached
+hand_count=<已完成局数>
+```
+
+此时 `final_phase` 可能已经是下一局的 `in_round` 初始状态，这是预期行为。
+
 ---
 
 ## 输出结构
@@ -124,7 +142,8 @@ python -m experiments.run --config examples/smoke.yaml
 ### 建立索引
 
 ```bash
-python -m experiments.index --rebuild runs/smoke
+python -m experiments.index --rebuild runs
+python -m experiments.index --rebuild runs/smoke  # 也支持单个 experiment run dir
 ```
 
 ### 索引表结构
@@ -132,9 +151,8 @@ python -m experiments.index --rebuild runs/smoke
 - experiments: 实验元数据
 - jobs: Job 状态
 - matches: Match 结果
-- policies: Policy 绑定
-- models: 模型配置
 - metrics_summary: 指标摘要
+- artifact_paths: 关键 artifact 路径
 
 ---
 

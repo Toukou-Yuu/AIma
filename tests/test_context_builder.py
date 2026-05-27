@@ -45,15 +45,22 @@ def _events(n: int, **kw) -> list[ContextEvent]:
     return [_event(turn=i + 1, action_text=f"打{i + 1}m", **kw) for i in range(n)]
 
 
-def _v4_event(hand: int, turn: int, text: str) -> V4ContextEvent:
+def _v4_event(
+    hand: int,
+    turn: int,
+    text: str,
+    *,
+    seat: int | None = 0,
+    event_type: str = "DiscardTileEvent",
+) -> V4ContextEvent:
     return V4ContextEvent(
         match_id="match_001",
         job_id="job_001",
         hand_index=hand,
         step_index=turn + 1,
         turn_index=turn,
-        seat=0,
-        event_type="DiscardTileEvent",
+        seat=seat,
+        event_type=event_type,
         text=text,
     )
 
@@ -113,6 +120,34 @@ def test_scope_per_match_returns_all() -> None:
     evs = _events(5)
     result = projector.project(evs, current_hand_index=0, current_turn_index=3)
     assert len(result) == 5
+
+
+def test_type_filter_can_exclude_self_discards() -> None:
+    """include_self_discards=false 时过滤自家弃牌。"""
+    config = EventFilterConfig(scope="per_match", include_self_discards=False)
+    projector = EventProjector(config)
+    evs = [
+        _v4_event(0, 1, "self discard", seat=0),
+        _v4_event(0, 2, "opponent discard", seat=1),
+    ]
+
+    result = projector.project(evs, current_hand_index=0, current_turn_index=2, self_seat=0)
+
+    assert [ev.text for ev in result] == ["opponent discard"]
+
+
+def test_type_filter_can_exclude_opponent_discards() -> None:
+    """include_opponent_discards=false 时过滤他家弃牌。"""
+    config = EventFilterConfig(scope="per_match", include_opponent_discards=False)
+    projector = EventProjector(config)
+    evs = [
+        _v4_event(0, 1, "self discard", seat=0),
+        _v4_event(0, 2, "opponent discard", seat=1),
+    ]
+
+    result = projector.project(evs, current_hand_index=0, current_turn_index=2, self_seat=0)
+
+    assert [ev.text for ev in result] == ["self discard"]
 
 
 def test_max_events_limit() -> None:

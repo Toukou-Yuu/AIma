@@ -40,6 +40,17 @@ class MemoryManager:
         self._spec = spec
         self._lifecycle = lifecycle or create_memory_lifecycle(spec, persist_dir)
 
+    @classmethod
+    def with_store(
+        cls,
+        spec: MemorySpec,
+        store: MemoryStore,
+        persist_dir: str = "configs/players",
+    ) -> "MemoryManager":
+        """Create a manager with its own spec over a shared store."""
+        lifecycle = MemoryLifecycle(spec, store=store, persist_dir=persist_dir)
+        return cls(spec, lifecycle=lifecycle, persist_dir=persist_dir)
+
     @property
     def enabled(self) -> bool:
         """Check if memory is enabled."""
