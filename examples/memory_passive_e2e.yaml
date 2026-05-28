@@ -1,3 +1,12 @@
+# Memory passive 注入E2E测试
+#
+# 用途：验证memory passive injection完整生命周期
+# 是否需要真实LLM：否（使用dummy backend + fallback）
+# 是否写debug artifact：是（save_prompts=true, save_debug_snapshots=true）
+# 建议运行：PYTHONPATH=src python -m experiments.run --config examples/memory_passive_e2e.yaml --output runs
+# 预期输出：prompt_messages.jsonl、memory_snapshot.jsonl等debug文件
+# 注意：memory.mode需用引号"passive"，避免YAML布尔陷阱
+
 experiment:
   id: memory_passive_e2e
   description: "Memory passive E2E smoke"

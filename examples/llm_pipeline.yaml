@@ -1,3 +1,16 @@
+# AgentPipeline + 真实LLM后端测试
+#
+# 用途：验证LLM Agent完整决策流程
+# 是否需要真实LLM：是（使用DeepSeek API）
+# 是否写debug artifact：是（save_prompts=true）
+# 建议运行：PYTHONPATH=src DEEPSEEK_API_KEY=xxx python -m experiments.run --config examples/llm_pipeline.yaml --output runs
+# 预期输出：runs/llm_pipeline_test/ 包含真实LLM决策记录
+# 注意：需要设置DEEPSEEK_API_KEY环境变量
+#
+# 本地模型替代方案：启动llama.cpp/vLLM服务器后修改endpoint为localhost地址
+#   backend: openai_compatible
+#   endpoint: http://localhost:8080/v1  # llama.cpp或vLLM服务地址
+
 experiment:
   id: llm_pipeline_test
   description: "Test AgentPipeline with real LLM backend (DeepSeek)"

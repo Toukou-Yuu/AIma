@@ -2,9 +2,24 @@
 
 让大语言模型打日式麻将。支持四位魂天神社角色（一姬、八木唯、卡维、藤田佳奈）实时对战，提供全屏终端 TUI、动态观战、牌谱记录与回放。
 
-## V4 实验平台（新）
+## V4 实验平台
 
-v4.0-alpha 提供实验运行、聚合分析、UI查看器等新功能。
+**当前版本：v4.0-freeze** — 最小可信实验平台冻结版
+
+v4.0 提供实验运行、聚合分析、artifact查看器等核心功能。
+
+### 版本状态
+
+| 功能 | 状态 |
+|------|------|
+| 实验运行 + artifact | ✅ |
+| M2 指标聚合 | ✅ |
+| Memory passive injection | ✅ |
+| OpenAI-compatible backend | ✅ |
+| Native llama.cpp/vLLM | ❌ (v4.3+) |
+| Tool-call Agent | ❌ (v4.3+) |
+
+详细文档见 `docs/v4/`。版本路线见 `docs/v4/ROADMAP.md`。
 
 ### 官方命令
 
