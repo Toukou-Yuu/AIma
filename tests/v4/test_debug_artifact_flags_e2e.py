@@ -122,9 +122,11 @@ SAVE_FLAGS_ENABLED_CONFIG = {
 }
 
 
-@pytest.fixture
-def save_flags_disabled_run_dir(tmp_path: Path) -> Path:
-    """运行save flags disabled实验，返回run目录。"""
+@pytest.fixture(scope="module")
+def save_flags_disabled_run_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Module-scope fixture: 运行save flags disabled实验，返回run目录。"""
+    tmp_path = tmp_path_factory.mktemp("debug_flags_module")
+
     output_root = tmp_path / "runs"
     output_root.mkdir()
 
@@ -142,9 +144,11 @@ def save_flags_disabled_run_dir(tmp_path: Path) -> Path:
     return output_root / "save_flags_disabled"
 
 
-@pytest.fixture
-def save_flags_enabled_run_dir(tmp_path: Path) -> Path:
-    """运行save flags enabled实验，返回run目录。"""
+@pytest.fixture(scope="module")
+def save_flags_enabled_run_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Module-scope fixture: 运行save flags enabled实验，返回run目录。"""
+    tmp_path = tmp_path_factory.mktemp("debug_flags_enabled_module")
+
     output_root = tmp_path / "runs"
     output_root.mkdir()
 

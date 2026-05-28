@@ -72,6 +72,60 @@ SMOKE_CONFIG = {
 }
 
 
+# ============================================================================
+# Module-scope fixtures (for read-only tests)
+# ============================================================================
+
+
+@pytest.fixture(scope="module")
+def module_e2e_run_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Module-scope fixture: 运行真实ExperimentRunner，返回run目录。
+
+    用于只读测试，整个模块只运行一次实验。
+    """
+    tmp_path = tmp_path_factory.mktemp("e2e_module")
+
+    # 创建配置文件
+    config_path = tmp_path / "smoke_e2e.yaml"
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(SMOKE_CONFIG, f, default_flow_style=False)
+
+    output_root = tmp_path / "runs"
+    output_root.mkdir()
+
+    # 修改配置中的output_root
+    config = SMOKE_CONFIG.copy()
+    config["artifacts"]["output_root"] = str(output_root)
+
+    config_path = tmp_path / "smoke_e2e_modified.yaml"
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(config, f, default_flow_style=False)
+
+    # 加载配置并运行
+    spec = ExperimentSpec.from_yaml(config_path)
+    runner = ExperimentRunner(spec, config_path=config_path)
+    runner.run()
+
+    # 返回experiment目录
+    return output_root / "e2e_smoke"
+
+
+@pytest.fixture(scope="module")
+def module_e2e_job_dir(module_e2e_run_dir: Path) -> Path:
+    """Module-scope fixture: 获取第一个job目录。"""
+    jobs_dir = module_e2e_run_dir / "jobs"
+    assert jobs_dir.exists(), "jobs目录不存在"
+
+    job_dirs = [d for d in jobs_dir.iterdir() if d.is_dir()]
+    assert len(job_dirs) >= 1, "jobs目录下无job子目录"
+    return job_dirs[0]
+
+
+# ============================================================================
+# Function-scope fixtures (for modification tests)
+# ============================================================================
+
+
 @pytest.fixture
 def smoke_config_path(tmp_path: Path) -> Path:
     """创建smoke配置文件。"""
@@ -82,8 +136,11 @@ def smoke_config_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def e2e_run_dir(tmp_path: Path, smoke_config_path: Path) -> Path:
-    """运行真实ExperimentRunner，返回run目录。"""
+def isolated_e2e_run_dir(tmp_path: Path, smoke_config_path: Path) -> Path:
+    """Function-scope fixture: 运行真实ExperimentRunner，返回run目录。
+
+    用于修改数据的测试，每个测试有独立隔离的实验目录。
+    """
     output_root = tmp_path / "runs"
     output_root.mkdir()
 
@@ -105,9 +162,9 @@ def e2e_run_dir(tmp_path: Path, smoke_config_path: Path) -> Path:
 
 
 @pytest.fixture
-def e2e_job_dir(e2e_run_dir: Path) -> Path:
-    """获取第一个job目录。"""
-    jobs_dir = e2e_run_dir / "jobs"
+def isolated_e2e_job_dir(isolated_e2e_run_dir: Path) -> Path:
+    """Function-scope fixture: 获取第一个job目录。"""
+    jobs_dir = isolated_e2e_run_dir / "jobs"
     assert jobs_dir.exists(), "jobs目录不存在"
 
     job_dirs = [d for d in jobs_dir.iterdir() if d.is_dir()]
@@ -122,38 +179,38 @@ def e2e_job_dir(e2e_run_dir: Path) -> Path:
 class TestRunDirectoryStructure:
     """验证run目录结构完整性。"""
 
-    def test_manifest_exists(self, e2e_run_dir: Path) -> None:
+    def test_manifest_exists(self, module_e2e_run_dir: Path) -> None:
         """manifest.yaml必须存在。"""
-        manifest_path = e2e_run_dir / "manifest.yaml"
+        manifest_path = module_e2e_run_dir / "manifest.yaml"
         assert manifest_path.exists(), "manifest.yaml不存在"
 
-    def test_jobs_jsonl_exists(self, e2e_run_dir: Path) -> None:
+    def test_jobs_jsonl_exists(self, module_e2e_run_dir: Path) -> None:
         """jobs.jsonl必须存在且有数据。"""
-        jobs_path = e2e_run_dir / "jobs.jsonl"
+        jobs_path = module_e2e_run_dir / "jobs.jsonl"
         assert jobs_path.exists(), "jobs.jsonl不存在"
 
         with open(jobs_path, encoding="utf-8") as f:
             content = f.read()
         assert content.strip(), "jobs.jsonl为空"
 
-    def test_jobs_directory_exists(self, e2e_run_dir: Path) -> None:
+    def test_jobs_directory_exists(self, module_e2e_run_dir: Path) -> None:
         """jobs目录必须存在。"""
-        jobs_dir = e2e_run_dir / "jobs"
+        jobs_dir = module_e2e_run_dir / "jobs"
         assert jobs_dir.exists(), "jobs目录不存在"
 
-    def test_git_info_exists(self, e2e_run_dir: Path) -> None:
+    def test_git_info_exists(self, module_e2e_run_dir: Path) -> None:
         """git_info.json必须存在。"""
-        git_info_path = e2e_run_dir / "git_info.json"
+        git_info_path = module_e2e_run_dir / "git_info.json"
         assert git_info_path.exists(), "git_info.json不存在"
 
-    def test_env_info_exists(self, e2e_run_dir: Path) -> None:
+    def test_env_info_exists(self, module_e2e_run_dir: Path) -> None:
         """env_info.json必须存在。"""
-        env_info_path = e2e_run_dir / "env_info.json"
+        env_info_path = module_e2e_run_dir / "env_info.json"
         assert env_info_path.exists(), "env_info.json不存在"
 
-    def test_seed_plan_exists(self, e2e_run_dir: Path) -> None:
+    def test_seed_plan_exists(self, module_e2e_run_dir: Path) -> None:
         """seed_plan.json必须存在。"""
-        seed_plan_path = e2e_run_dir / "seed_plan.json"
+        seed_plan_path = module_e2e_run_dir / "seed_plan.json"
         assert seed_plan_path.exists(), "seed_plan.json不存在"
 
 
@@ -164,29 +221,29 @@ class TestRunDirectoryStructure:
 class TestJobDirectoryStructure:
     """验证job目录结构完整性。"""
 
-    def test_summary_json_exists(self, e2e_job_dir: Path) -> None:
+    def test_summary_json_exists(self, module_e2e_job_dir: Path) -> None:
         """summary.json必须存在。"""
-        summary_path = e2e_job_dir / "summary.json"
+        summary_path = module_e2e_job_dir / "summary.json"
         assert summary_path.exists(), "summary.json不存在"
 
-    def test_metrics_json_exists(self, e2e_job_dir: Path) -> None:
+    def test_metrics_json_exists(self, module_e2e_job_dir: Path) -> None:
         """metrics.json必须存在。"""
-        metrics_path = e2e_job_dir / "metrics.json"
+        metrics_path = module_e2e_job_dir / "metrics.json"
         assert metrics_path.exists(), "metrics.json不存在"
 
-    def test_replay_json_exists(self, e2e_job_dir: Path) -> None:
+    def test_replay_json_exists(self, module_e2e_job_dir: Path) -> None:
         """replay.json必须存在。"""
-        replay_path = e2e_job_dir / "replay.json"
+        replay_path = module_e2e_job_dir / "replay.json"
         assert replay_path.exists(), "replay.json不存在"
 
-    def test_events_jsonl_exists(self, e2e_job_dir: Path) -> None:
+    def test_events_jsonl_exists(self, module_e2e_job_dir: Path) -> None:
         """events.jsonl必须存在。"""
-        events_path = e2e_job_dir / "events.jsonl"
+        events_path = module_e2e_job_dir / "events.jsonl"
         assert events_path.exists(), "events.jsonl不存在"
 
-    def test_decisions_jsonl_exists(self, e2e_job_dir: Path) -> None:
+    def test_decisions_jsonl_exists(self, module_e2e_job_dir: Path) -> None:
         """decisions.jsonl必须存在。"""
-        decisions_path = e2e_job_dir / "decisions.jsonl"
+        decisions_path = module_e2e_job_dir / "decisions.jsonl"
         assert decisions_path.exists(), "decisions.jsonl不存在"
 
 
@@ -225,9 +282,9 @@ SUMMARY_REQUIRED_FIELDS = [
 class TestSummaryContract:
     """验证summary.json契约。"""
 
-    def test_summary_has_all_required_fields(self, e2e_job_dir: Path) -> None:
+    def test_summary_has_all_required_fields(self, module_e2e_job_dir: Path) -> None:
         """summary.json必须包含所有契约定义的字段。"""
-        summary_path = e2e_job_dir / "summary.json"
+        summary_path = module_e2e_job_dir / "summary.json"
         with open(summary_path, encoding="utf-8") as f:
             summary = json.load(f)
 
@@ -237,9 +294,9 @@ class TestSummaryContract:
             f"现有字段: {list(summary.keys())}"
         )
 
-    def test_summary_field_types(self, e2e_job_dir: Path) -> None:
+    def test_summary_field_types(self, module_e2e_job_dir: Path) -> None:
         """summary.json字段类型正确。"""
-        summary_path = e2e_job_dir / "summary.json"
+        summary_path = module_e2e_job_dir / "summary.json"
         with open(summary_path, encoding="utf-8") as f:
             summary = json.load(f)
 
@@ -270,9 +327,9 @@ class TestSummaryContract:
         assert isinstance(duration_ms, (int, float)), "duration_ms应为数值"
         assert duration_ms >= 0, f"duration_ms应为非负数，实际为{duration_ms}"
 
-    def test_summary_outcome_semantics(self, e2e_job_dir: Path) -> None:
+    def test_summary_outcome_semantics(self, module_e2e_job_dir: Path) -> None:
         """summary.json的outcome语义正确。"""
-        summary_path = e2e_job_dir / "summary.json"
+        summary_path = module_e2e_job_dir / "summary.json"
         with open(summary_path, encoding="utf-8") as f:
             summary = json.load(f)
 
@@ -281,10 +338,10 @@ class TestSummaryContract:
             f"outcome应为completed/truncated/step_limit_reached，实际为{outcome}"
         )
 
-    def test_summary_decision_count_matches_file(self, e2e_job_dir: Path) -> None:
+    def test_summary_decision_count_matches_file(self, module_e2e_job_dir: Path) -> None:
         """summary.json的decision_count与decisions.jsonl行数一致。"""
-        summary_path = e2e_job_dir / "summary.json"
-        decisions_path = e2e_job_dir / "decisions.jsonl"
+        summary_path = module_e2e_job_dir / "summary.json"
+        decisions_path = module_e2e_job_dir / "decisions.jsonl"
 
         with open(summary_path, encoding="utf-8") as f:
             summary = json.load(f)
@@ -297,10 +354,10 @@ class TestSummaryContract:
             f"decisions.jsonl行数={actual_count}"
         )
 
-    def test_summary_event_count_matches_file(self, e2e_job_dir: Path) -> None:
+    def test_summary_event_count_matches_file(self, module_e2e_job_dir: Path) -> None:
         """summary.json的event_count与events.jsonl行数一致。"""
-        summary_path = e2e_job_dir / "summary.json"
-        events_path = e2e_job_dir / "events.jsonl"
+        summary_path = module_e2e_job_dir / "summary.json"
+        events_path = module_e2e_job_dir / "events.jsonl"
 
         with open(summary_path, encoding="utf-8") as f:
             summary = json.load(f)
@@ -321,10 +378,10 @@ class TestSummaryContract:
 class TestAggregateContract:
     """验证aggregate流程。"""
 
-    def test_aggregate_generates_reports(self, e2e_run_dir: Path) -> None:
+    def test_aggregate_generates_reports(self, isolated_e2e_run_dir: Path) -> None:
         """aggregate必须生成报告文件。"""
         # 运行aggregate
-        aggregate_dir = e2e_run_dir / "aggregate"
+        aggregate_dir = isolated_e2e_run_dir / "aggregate"
         aggregate_dir.mkdir(exist_ok=True)
 
         # 模拟aggregate_main的参数
@@ -333,7 +390,7 @@ class TestAggregateContract:
         try:
             sys.argv = [
                 "experiments.aggregate",
-                "--run", str(e2e_run_dir),
+                "--run", str(isolated_e2e_run_dir),
                 "--output", str(aggregate_dir),
             ]
             aggregate_main()
@@ -361,26 +418,26 @@ class TestAggregateContract:
 class TestRebuildIndexContract:
     """验证rebuild index流程。"""
 
-    def test_rebuild_index_creates_database(self, e2e_run_dir: Path) -> None:
+    def test_rebuild_index_creates_database(self, isolated_e2e_run_dir: Path) -> None:
         """rebuild index必须创建SQLite数据库。"""
         # 删除现有数据库（如果存在）
-        db_path = get_index_path(e2e_run_dir)
+        db_path = get_index_path(isolated_e2e_run_dir)
         if db_path.exists():
             db_path.unlink()
 
         # 运行rebuild
-        rebuild_index(e2e_run_dir)
+        rebuild_index(isolated_e2e_run_dir)
 
         # 验证数据库创建
         assert db_path.exists(), "rebuild index未创建数据库"
 
-    def test_rebuild_index_has_required_tables(self, e2e_run_dir: Path) -> None:
+    def test_rebuild_index_has_required_tables(self, isolated_e2e_run_dir: Path) -> None:
         """rebuild index创建的数据库必须有必需的表。"""
         import sqlite3
 
-        db_path = get_index_path(e2e_run_dir)
+        db_path = get_index_path(isolated_e2e_run_dir)
         if not db_path.exists():
-            rebuild_index(e2e_run_dir)
+            rebuild_index(isolated_e2e_run_dir)
 
         conn = sqlite3.connect(db_path)
         try:
@@ -402,13 +459,13 @@ class TestRebuildIndexContract:
 class TestRunDataSourceContract:
     """验证RunDataSource能读取数据。"""
 
-    def test_data_source_lists_experiments(self, e2e_run_dir: Path) -> None:
+    def test_data_source_lists_experiments(self, isolated_e2e_run_dir: Path) -> None:
         """RunDataSource必须能列出实验。"""
         # 先rebuild index
-        rebuild_index(e2e_run_dir)
+        rebuild_index(isolated_e2e_run_dir)
 
         # RunDataSource需要接收output_root，而不是experiment目录
-        output_root = e2e_run_dir.parent
+        output_root = isolated_e2e_run_dir.parent
         data_source = RunDataSource(output_root)
         experiments = data_source.list_experiments()
 
@@ -419,25 +476,25 @@ class TestRunDataSourceContract:
         assert exp.experiment_id == "e2e_smoke"
         assert exp.job_count >= 1
 
-    def test_data_source_lists_jobs(self, e2e_run_dir: Path) -> None:
+    def test_data_source_lists_jobs(self, isolated_e2e_run_dir: Path) -> None:
         """RunDataSource必须能列出job。"""
         # 先rebuild index
-        rebuild_index(e2e_run_dir)
+        rebuild_index(isolated_e2e_run_dir)
 
         # RunDataSource需要接收output_root，而不是experiment目录
-        output_root = e2e_run_dir.parent
+        output_root = isolated_e2e_run_dir.parent
         data_source = RunDataSource(output_root)
         jobs = data_source.get_jobs("e2e_smoke")
 
         assert len(jobs) >= 1, "RunDataSource未列出任何job"
 
-    def test_data_source_reads_job_summary(self, e2e_run_dir: Path) -> None:
+    def test_data_source_reads_job_summary(self, isolated_e2e_run_dir: Path) -> None:
         """RunDataSource必须能读取job summary。"""
         # 先rebuild index
-        rebuild_index(e2e_run_dir)
+        rebuild_index(isolated_e2e_run_dir)
 
         # RunDataSource需要接收output_root，而不是experiment目录
-        output_root = e2e_run_dir.parent
+        output_root = isolated_e2e_run_dir.parent
         data_source = RunDataSource(output_root)
         jobs = data_source.get_jobs("e2e_smoke")
 
@@ -462,13 +519,13 @@ class TestRunDataSourceContract:
 class TestIDConsistency:
     """验证跨文件ID一致性。"""
 
-    def test_jobs_jsonl_matches_summary(self, e2e_run_dir: Path) -> None:
+    def test_jobs_jsonl_matches_summary(self, module_e2e_run_dir: Path) -> None:
         """jobs.jsonl中的job_id与summary.json一致。"""
-        jobs_path = e2e_run_dir / "jobs.jsonl"
+        jobs_path = module_e2e_run_dir / "jobs.jsonl"
         with open(jobs_path, encoding="utf-8") as f:
             job_record = json.loads(f.readline())
 
-        jobs_dir = e2e_run_dir / "jobs"
+        jobs_dir = module_e2e_run_dir / "jobs"
         job_dirs = [d for d in jobs_dir.iterdir() if d.is_dir()]
         assert len(job_dirs) >= 1
 

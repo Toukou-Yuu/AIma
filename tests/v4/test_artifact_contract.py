@@ -121,13 +121,15 @@ def _write_replay(job_dir: Path, match_result: Any) -> None:
         json.dump(replay, f, indent=2, default=str)
 
 
-@pytest.fixture
-def smoke_run_dir(tmp_path: Path) -> Path:
-    """在 tmp_path 下运行最小 smoke 实验。
+@pytest.fixture(scope="module")
+def smoke_run_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Module-scope fixture: 在 tmp_path 下运行最小 smoke 实验。
 
     使用 MatchRunner + FirstLegalPolicy 运行东风战（4局）。
     生成完整的 artifact 文件结构。
     """
+    tmp_path = tmp_path_factory.mktemp("artifact_module")
+
     run_dir = tmp_path / "smoke" / "smoke"
     run_dir.mkdir(parents=True)
 
@@ -184,9 +186,9 @@ seeds:
     return run_dir
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def smoke_job_dir(smoke_run_dir: Path) -> Path:
-    """smoke实验的job目录。"""
+    """Module-scope fixture: smoke实验的job目录。"""
     jobs_dir = smoke_run_dir / "jobs"
     job_dirs = [d for d in jobs_dir.iterdir() if d.is_dir()]
     assert job_dirs, "jobs目录下无job子目录"

@@ -207,9 +207,14 @@ def _single_job_dir(run_dir: Path) -> Path:
     return job_dirs[0]
 
 
-@pytest.fixture
-def memory_off_run_dir(tmp_path: Path) -> Path:
-    """运行memory off实验，返回run目录。"""
+@pytest.fixture(scope="module")
+def module_memory_off_run_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Module-scope fixture: 运行memory off实验，返回run目录。
+
+    用于只读测试，整个模块只运行一次实验。
+    """
+    tmp_path = tmp_path_factory.mktemp("memory_off_module")
+
     output_root = tmp_path / "runs"
     output_root.mkdir()
 
@@ -227,9 +232,14 @@ def memory_off_run_dir(tmp_path: Path) -> Path:
     return output_root / "memory_off_test"
 
 
-@pytest.fixture
-def memory_passive_run_dir(tmp_path: Path) -> Path:
-    """运行memory passive实验，返回run目录。"""
+@pytest.fixture(scope="module")
+def module_memory_passive_run_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Module-scope fixture: 运行memory passive实验，返回run目录。
+
+    用于只读测试，整个模块只运行一次实验。
+    """
+    tmp_path = tmp_path_factory.mktemp("memory_passive_module")
+
     output_root = tmp_path / "runs"
     output_root.mkdir()
 
@@ -334,10 +344,10 @@ class TestMemoryLifecycleE2E:
             for record in seat1_next_hand
         )
 
-    def test_memory_off_no_memory_injection(self, memory_off_run_dir: Path) -> None:
+    def test_memory_off_no_memory_injection(self, module_memory_off_run_dir: Path) -> None:
         """memory off 配置下 prompt 不出现 memory。"""
         # 检查decisions.jsonl中没有memory_injected相关的diagnostics
-        jobs_dir = memory_off_run_dir / "jobs"
+        jobs_dir = module_memory_off_run_dir / "jobs"
         job_dirs = [d for d in jobs_dir.iterdir() if d.is_dir()]
         assert len(job_dirs) >= 1, "没有job目录"
 
@@ -353,10 +363,10 @@ class TestMemoryLifecycleE2E:
                     "memory off配置下不应有memory_injected_tokens"
                 )
 
-    def test_memory_passive_match_lifecycle(self, memory_passive_run_dir: Path) -> None:
+    def test_memory_passive_match_lifecycle(self, module_memory_passive_run_dir: Path) -> None:
         """memory passive 配置下，验证match memory lifecycle。"""
         # 检查实验成功运行
-        jobs_dir = memory_passive_run_dir / "jobs"
+        jobs_dir = module_memory_passive_run_dir / "jobs"
         job_dirs = [d for d in jobs_dir.iterdir() if d.is_dir()]
         assert len(job_dirs) >= 1, "没有job目录"
 
@@ -376,11 +386,11 @@ class TestMemoryLifecycleE2E:
             f"outcome应为completed或truncated，实际为{summary['outcome']}"
         )
 
-    def test_hand_result_has_summary_fields(self, memory_passive_run_dir: Path) -> None:
+    def test_hand_result_has_summary_fields(self, module_memory_passive_run_dir: Path) -> None:
         """验证HandResult包含summary字段。"""
         # 这个测试通过检查MemorySink是否正常工作来间接验证
         # 如果MemorySink能正常运行，说明HandResult包含了必要的字段
-        jobs_dir = memory_passive_run_dir / "jobs"
+        jobs_dir = module_memory_passive_run_dir / "jobs"
         job_dirs = [d for d in jobs_dir.iterdir() if d.is_dir()]
         assert len(job_dirs) >= 1, "没有job目录"
 
