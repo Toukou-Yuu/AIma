@@ -1,0 +1,28 @@
+/* Viewer App Styles */
+
+HomeScreen {
+    layout: vertical;
+    align: center middle;
+}
+
+#experiment-list-container {
+    width: 90;
+    height: auto;
+    max-height: 20;
+    padding: 1 2;
+}
+
+.list-title {
+    padding: 1;
+}
+
+#experiment-list {
+    height: auto;
+    max-height: 18;
+}
+
+#status-line {
+    dock: bottom;
+    height: 1;
+    padding: 0 2;
+}

@@ -1,0 +1,83 @@
+# Memory passive 注入E2E测试
+#
+# 用途：验证memory passive injection完整生命周期
+# 是否需要真实LLM：否（使用dummy backend + fallback）
+# 是否写debug artifact：是（save_prompts=true, save_debug_snapshots=true）
+# 建议运行：PYTHONPATH=src python -m experiments.run --config examples/memory_passive_e2e.yaml --output runs
+# 预期输出：prompt_messages.jsonl、memory_snapshot.jsonl等debug文件
+# 注意：memory.mode需用引号"passive"，避免YAML布尔陷阱
+
+experiment:
+  id: memory_passive_e2e
+  description: "Memory passive E2E smoke"
+  tags: ["memory", "e2e", "v4"]
+
+rules:
+  version: "v3.1.3-cleanup"
+  scope_file: "RULE_SCOPE.md"
+
+seeds:
+  start: 0
+  count: 1
+  common_walls: true
+
+match:
+  preset: tonpuu
+  max_hands: 2
+  allow_negative: false
+  step_limit: 20000
+
+runtime:
+  mode: serial
+  debug_snapshots: false
+  no_persist: true
+  resume: false
+  fail_fast: true
+
+artifacts:
+  output_root: runs
+  save_replay: true
+  save_events: true
+  save_decisions: true
+  save_prompts: true
+  save_debug_snapshots: true
+  sqlite_index: true
+
+memory:
+  mode: passive
+  layers: ["match"]
+  store: in_memory
+  persist: false
+
+policies:
+  seat0:
+    type: llm
+    id: dummy_memory_agent
+    agent:
+      pipeline_id: llm_fixed_v1
+      context:
+        scope: stateless
+      memory:
+        mode: passive
+        layers: ["match"]
+        store: in_memory
+        persist: false
+      prompt:
+        template_id: riichi_json_action_v1
+        version: "1.0.0"
+        sections: []
+      model:
+        backend: dummy
+        model_name: dummy
+        extra:
+          response: "not json; force fallback"
+      fallback: first_legal
+  seat1:
+    type: first_legal
+    id: baseline_1
+  seat2:
+    type: first_legal
+    id: baseline_2
+  seat3:
+    type: first_legal
+    id: baseline_3

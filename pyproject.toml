@@ -20,10 +20,11 @@ rich = [
     "textual>=8.2",
     "wcwidth>=0.2",
 ]
+experiment = ["pydantic>=2", "pyyaml>=6"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["kernel*", "llm*", "ui*"]
+include = ["kernel*", "llm*", "ui*", "arena*", "policies*", "agents*", "prompts*", "context*", "memory*", "models*", "experiments*", "metrics*", "replay*", "profiles*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -44,7 +45,7 @@ omit = ["src/ui/*"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 74
+fail_under = 90
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]

@@ -18,7 +18,9 @@ venv/
 env/
 .env
 logs/
-
+runs/
+.antigravitycli/
+aggregate/
 # Secrets
 .env
 .env.*
@@ -35,6 +37,9 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# v4 重构计划文档（本地管理，不提交）
+AIma_v4_refactor_plan/
 
 # Claude：本机覆盖
 .claude/
@@ -68,3 +73,6 @@ configs/players/*/stats.json
 # 玩家对话日志（调试用，不提交）
 configs/players/*/conversations/
 package.sh
+
+# Claude 本地技能链接
+.claude/skills/

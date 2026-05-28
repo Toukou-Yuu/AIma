@@ -1,0 +1,76 @@
+# AgentPipeline + 真实LLM后端测试
+#
+# 用途：验证LLM Agent完整决策流程
+# 是否需要真实LLM：是（使用DeepSeek API）
+# 是否写debug artifact：是（save_prompts=true）
+# 建议运行：PYTHONPATH=src DEEPSEEK_API_KEY=xxx python -m experiments.run --config examples/llm_pipeline.yaml --output runs
+# 预期输出：runs/llm_pipeline_test/ 包含真实LLM决策记录
+# 注意：需要设置DEEPSEEK_API_KEY环境变量
+#
+# 本地模型替代方案：启动llama.cpp/vLLM服务器后修改endpoint为localhost地址
+#   backend: openai_compatible
+#   endpoint: http://localhost:8080/v1  # llama.cpp或vLLM服务地址
+
+experiment:
+  id: llm_pipeline_test
+  description: "Test AgentPipeline with real LLM backend (DeepSeek)"
+  tags: ["llm", "pipeline", "v4"]
+
+rules:
+  version: "v3.1.3-cleanup"
+  scope_file: "RULE_SCOPE.md"
+
+seeds:
+  start: 0
+  count: 1
+  common_walls: true
+
+match:
+  preset: tonpuu
+  max_hands: 1
+  allow_negative: false
+  step_limit: 100
+
+runtime:
+  mode: serial
+  debug_snapshots: false
+  no_persist: false
+  resume: false
+  fail_fast: true
+
+artifacts:
+  output_root: runs
+  save_replay: true
+  save_events: true
+  save_decisions: true
+  save_prompts: true
+  save_debug_snapshots: false
+  sqlite_index: true
+
+policies:
+  seat0:
+    type: llm
+    id: deepseek_agent
+    agent:
+      pipeline_id: llm_fixed_v1
+      prompt:
+        template_id: riichi_json_action_v1
+        version: "1.0.0"
+        sections: []
+      model:
+        backend: openai_compatible
+        endpoint: https://api.deepseek.com/v1
+        model_name: deepseek-chat
+        api_key_env: DEEPSEEK_API_KEY
+        temperature: 0.1
+        max_tokens: 256
+      fallback: first_legal
+  seat1:
+    type: first_legal
+    id: baseline_1
+  seat2:
+    type: first_legal
+    id: baseline_2
+  seat3:
+    type: first_legal
+    id: baseline_3
