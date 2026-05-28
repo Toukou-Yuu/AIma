@@ -21,6 +21,7 @@
 |------|------|
 | [ARCHITECTURE](ARCHITECTURE.md) | 模块边界与架构 |
 | [EXPERIMENTS](EXPERIMENTS.md) | 实验运行与配置 |
+| [CONFIG_SCHEMA](CONFIG_SCHEMA.md) | YAML配置字段解释 |
 
 ### 数据格式
 | 文档 | 内容 |
@@ -28,11 +29,24 @@
 | [ARTIFACTS](ARTIFACTS.md) | 产物文件格式 |
 | [METRICS](METRICS.md) | M2 指标定义 |
 
+### Agent机制
+| 文档 | 内容 |
+|------|------|
+| [MEMORY](MEMORY.md) | Memory被动注入机制 |
+| [CONTEXT_PROMPT](CONTEXT_PROMPT.md) | Context范围与Prompt DSL |
+| [AGENT_PIPELINE](AGENT_PIPELINE.md) | Agent流水线说明 |
+
+### 边界说明
+| 文档 | 内容 |
+|------|------|
+| [BACKENDS](BACKENDS.md) | 模型后端类型与限制 |
+| [UI_VIEWER](UI_VIEWER.md) | UI viewer边界（v4.3+扩展） |
+| [TESTING](TESTING.md) | 测试分层与markers |
+
 ### 迁移指南
 | 文档 | 内容 |
 |------|------|
 | [MIGRATION](MIGRATION.md) | v3 → v4 迁移说明 |
-| [AGENT_PIPELINE](AGENT_PIPELINE.md) | Agent流水线说明 |
 
 ---
 
